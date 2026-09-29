@@ -1,11 +1,11 @@
 name: Deploy Card Scanner
 
-# Builds card-scanner/ and publishes it to GitHub Pages.
+# Tests and builds card-scanner/ on every change, and publishes it to GitHub
+# Pages from the repository's default branch (whatever it is named).
 # One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
 
 on:
   push:
-    branches: [main]
     paths:
       - 'card-scanner/**'
       - '.github/workflows/deploy-card-scanner.yml'
@@ -21,7 +21,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -40,13 +40,13 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v4
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:
           path: card-scanner/dist
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
     needs: build
     runs-on: ubuntu-latest
     environment:

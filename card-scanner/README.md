@@ -69,16 +69,24 @@ below provides it.
 
 ## Putting it online for free (GitHub Pages)
 
-The workflow in `.github/workflows/deploy-card-scanner.yml` builds and publishes the app
-whenever `card-scanner/` changes on `main`. One-time setup:
+The workflow in `.github/workflows/deploy-card-scanner.yml` tests every change and
+publishes the app whenever `card-scanner/` changes on the repository's default branch.
+One-time setup:
 
 1. On GitHub, open the repo's **Settings → Pages**.
 2. Under **Build and deployment → Source**, choose **GitHub Actions**.
-3. Push to `main` (or run the workflow from the **Actions** tab).
+3. Run the **Deploy Card Scanner** workflow from the **Actions** tab (or push a change).
 
-The app is then live at `https://<your-user-or-org>.github.io/<repo>/`. Open it on your
-phone and choose **Add to Home Screen**. Anyone with the link can use it, and each
-person's collection is stored in their own browser.
+The app is then live at `https://<your-user-or-org>.github.io/<repo>/`. Anyone with the
+link can use it, and each person's collection is stored in their own browser.
+
+### Installing it on a phone
+
+- **iPhone:** open the link in **Safari**, tap **Share**, then **Add to Home Screen**.
+- **Android:** open the link in **Chrome**, tap the **⋮** menu, then **Install app** (or
+  **Add to Home screen**).
+
+The first scan downloads the text-recognition engine (about 7 MB); after that it's cached.
 
 ## Project layout
 
