@@ -17,8 +17,12 @@ interface FetchJsonOptions {
   init?: RequestInit;
 }
 
-/** Minimum gap between requests to the same host (Scryfall asks for 50–100 ms). */
-const hostSpacingMs: Record<string, number> = { 'api.scryfall.com': 100 };
+/** Minimum gap between requests to the same host, per each API's usage rules. */
+const hostSpacingMs: Record<string, number> = {
+  'api.scryfall.com': 100, // 50–100 ms
+  'api.lorcast.com': 100, // 50–100 ms
+  'db.ygoprodeck.com': 60, // max 20 requests/second
+};
 const hostQueue = new Map<string, Promise<void>>();
 
 function waitForHostSlot(url: string): Promise<void> {

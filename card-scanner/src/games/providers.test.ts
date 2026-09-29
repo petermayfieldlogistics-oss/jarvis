@@ -200,3 +200,127 @@ describe('auto mode fallbacks', () => {
     expect(res.candidates[0].name).toBe('Sanji');
   });
 });
+
+describe('Yu-Gi-Oh! (YGOPRODeck)', () => {
+  const blueEyes = {
+    id: 89631139,
+    name: 'Blue-Eyes White Dragon',
+    ygoprodeck_url: 'https://ygoprodeck.com/card/blue-eyes-white-dragon-7485',
+    card_sets: [
+      { set_name: 'Legend of Blue Eyes White Dragon', set_code: 'LOB-EN001', set_rarity: 'Ultra Rare', set_rarity_code: '(UR)', set_price: '98.50' },
+      { set_name: 'Legendary Collection', set_code: 'LC01-EN004', set_rarity: 'Ultra Rare', set_rarity_code: '(UR)', set_price: '4.10' },
+      { set_name: 'Legendary Collection', set_code: 'LC01-EN004', set_rarity: 'Secret Rare', set_rarity_code: '(ScR)', set_price: '0' },
+    ],
+    card_images: [{ id: 89631139, image_url: 'https://images.ygoprodeck.com/images/cards/89631139.jpg', image_url_small: 'https://images.ygoprodeck.com/images/cards_small/89631139.jpg' }],
+    card_prices: [{ tcgplayer_price: '1.99', cardmarket_price: '0.80' }],
+  };
+
+  it('identifies the exact printing from the set code', async () => {
+    mockFetch({
+      'https://db.ygoprodeck.com/api/v7/cardsetsinfo.php?setcode=LC01-EN004': { id: 89631139, name: 'Blue-Eyes White Dragon', set_code: 'LC01-EN004', set_rarity: 'Secret Rare' },
+      'https://db.ygoprodeck.com/api/v7/cardinfo.php?id=89631139': { data: [blueEyes] },
+    });
+    const { yugioh } = await import('./yugioh');
+    const results = await yugioh.identify(parseScan('', 'LC01-EN004 89631139 KONAMI'));
+    expect(results.slice(0, 2).map((c) => [c.setCode, c.rarity])).toEqual([
+      ['LC01-EN004', 'Secret Rare'],
+      ['LC01-EN004', 'Ultra Rare'],
+    ]);
+    // No price for that printing → falls back to the card's TCGplayer price.
+    expect(results[0].prices).toMatchObject({ usd: 1.99, eur: 0.8, source: 'TCGplayer' });
+    expect(results[1].prices).toMatchObject({ usd: 4.1 });
+    expect(results[0].key).toBe('yugioh:89631139:LC01-EN004:(ScR)');
+  });
+
+  it('identifies the card from its passcode and lists its printings', async () => {
+    mockFetch({ 'https://db.ygoprodeck.com/api/v7/cardinfo.php?id=89631139': { data: [blueEyes] } });
+    const { yugioh } = await import('./yugioh');
+    const results = await yugioh.identify(parseScan('', '89631139'));
+    expect(results[0]).toMatchObject({ name: 'Blue-Eyes White Dragon', setName: 'Any printing', prices: { usd: 1.99 } });
+    expect(results).toHaveLength(4);
+  });
+
+  it('treats "no card found" (HTTP 400) as no results', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"No card matching your query"}', { status: 400 })));
+    const { yugioh } = await import('./yugioh');
+    expect(await yugioh.search('zzzz')).toEqual([]);
+  });
+
+  it('refreshes prices for a batch of ids and keeps each printing', async () => {
+    const calls = mockFetch({
+      'https://db.ygoprodeck.com/api/v7/cardinfo.php?id=89631139': { data: [{ ...blueEyes, card_sets: [{ ...blueEyes.card_sets[0], set_price: '120.00' }] }] },
+    });
+    const { yugioh, toCardInfo } = await import('./yugioh');
+    const owned = toCardInfo(blueEyes, blueEyes.card_sets[0]);
+    const fresh = await yugioh.refresh([owned]);
+    expect(fresh.get(owned.key)?.prices?.usd).toBe(120);
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe('Lorcana (Lorcast)', () => {
+  const elsa = {
+    id: 'crd_elsa',
+    name: 'Elsa',
+    version: 'Spirit of Winter',
+    collector_number: '42',
+    rarity: 'Super_rare',
+    set: { id: 'set_1', code: '1', name: 'The First Chapter' },
+    image_uris: { digital: { small: 's.avif', normal: 'n.avif', large: 'l.avif' } },
+    prices: { usd: '35.84', usd_foil: '56.27' },
+    tcgplayer_id: 508965,
+  };
+
+  it('identifies a card from the collector line', async () => {
+    mockFetch({ 'https://api.lorcast.com/v0/cards/1/42': elsa });
+    const { lorcana } = await import('./lorcana');
+    const [best] = await lorcana.identify(parseScan('', '42/204 • EN • 1 ©Disney'));
+    expect(best).toMatchObject({
+      name: 'Elsa - Spirit of Winter',
+      setName: 'The First Chapter',
+      number: '42',
+      rarity: 'Super rare',
+      prices: { usd: 35.84, usdFoil: 56.27 },
+      url: 'https://www.tcgplayer.com/product/508965',
+    });
+  });
+
+  it('falls back to a name search', async () => {
+    mockFetch({ 'https://api.lorcast.com/v0/cards/search?q=Elsa%20Spirit%20of%20Winter': { results: [elsa, { ...elsa, id: 'crd_other', name: 'Anna', version: 'Heir to Arendelle' }] } });
+    const { lorcana } = await import('./lorcana');
+    const results = await lorcana.identify({ ...parseScan('', ''), names: ['Elsa Spirit of Winter'] });
+    expect(results.map((c) => c.id)).toEqual(['crd_elsa']);
+  });
+});
+
+describe('name-only scans in "Any game" mode', () => {
+  it('keeps the game whose answer matches the name best, not the first to answer', async () => {
+    mockFetch({
+      'https://raw.githubusercontent.com/buhbbl/punk-records/main/english/index/cards_by_id.json': cardsFixture,
+      'https://raw.githubusercontent.com/buhbbl/punk-records/main/english/packs.json': packsFixture,
+      'https://api.lorcast.com/v0/cards/search?q=ELSA%20Spirit%20of%20Winter': {
+        results: [{ id: 'crd_elsa', name: 'Elsa', version: 'Spirit of Winter', collector_number: '42', set: { code: '1', name: 'The First Chapter' } }],
+      },
+    });
+    const { identifyCard } = await import('./index');
+    // "Nami Queen" is a loose One Piece match; the Lorcana name is exact.
+    const hints = { ...parseScan('', ''), names: ['ELSA Spirit of Winter', 'Nami Queen'] };
+    const res = await identifyCard('auto', hints);
+    expect(res.game).toBe('lorcana');
+    expect(res.candidates[0].name).toBe('Elsa - Spirit of Winter');
+    expect(res.confident).toBe(true);
+    // Other games' looser matches are still offered further down.
+    expect(res.candidates.some((c) => c.game === 'onepiece')).toBe(true);
+  });
+
+  it('flags a fuzzy name-only match as a guess', async () => {
+    mockFetch({
+      'https://raw.githubusercontent.com/buhbbl/punk-records/main/english/index/cards_by_id.json': cardsFixture,
+      'https://raw.githubusercontent.com/buhbbl/punk-records/main/english/packs.json': packsFixture,
+    });
+    const { identifyCard } = await import('./index');
+    const res = await identifyCard('auto', { ...parseScan('', ''), names: ['Sanjii'] });
+    expect(res.candidates[0].name).toBe('Sanji');
+    expect(res.confident).toBe(false);
+  });
+});

@@ -22,6 +22,8 @@ const GAME_TABS: { id: GameTab; label: string }[] = [
   { id: 'onepiece', label: 'One Piece' },
   { id: 'magic', label: 'Magic' },
   { id: 'marvel', label: 'Marvel' },
+  { id: 'yugioh', label: 'Yu-Gi-Oh!' },
+  { id: 'lorcana', label: 'Lorcana' },
 ];
 
 interface Props {

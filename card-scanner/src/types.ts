@@ -1,4 +1,4 @@
-export type GameId = 'pokemon' | 'onepiece' | 'magic';
+export type GameId = 'pokemon' | 'onepiece' | 'magic' | 'yugioh' | 'lorcana';
 
 /** What the scanner/search is restricted to. "marvel" is Magic's Marvel sets. */
 export type GameFilter = 'auto' | GameId | 'marvel';
@@ -18,7 +18,7 @@ export interface CardInfo {
   /** Globally unique key: `${game}:${id}`. */
   key: string;
   game: GameId;
-  /** The data provider's own id (TCGdex id, Scryfall id, One Piece card id). */
+  /** The data provider's own id (TCGdex id, Scryfall id, One Piece card id, Yu-Gi-Oh! passcode, Lorcast id). */
   id: string;
   name: string;
   setName?: string;
@@ -57,6 +57,12 @@ export interface ScanHints {
   pokemonNumbers: { number: string; total?: string }[];
   /** Magic set code + collector number, e.g. { set: "mom", number: "123" }. */
   magicPrints: { set?: string; number?: string }[];
+  /** Yu-Gi-Oh! set codes, e.g. "LOB-EN001" (identifies the printing). */
+  yugiohSetCodes: string[];
+  /** Yu-Gi-Oh! 8-digit passcodes, e.g. "89631139" (identifies the card). */
+  yugiohPasscodes: string[];
+  /** Lorcana collector line, e.g. { number: "12", total: "204", set: "3" }. */
+  lorcanaPrints: { number: string; total: string; set: string }[];
   /** Likely card names, best first. */
   names: string[];
   /** Which game the text looks like, best first (only games with some evidence). */

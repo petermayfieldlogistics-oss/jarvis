@@ -1,8 +1,15 @@
 // Service worker: lets the app open offline and be installed to the home screen.
-// Only this site's own files are cached; card data and images come from the card
-// databases and are fetched fresh.
-const CACHE = 'card-scanner-v1';
+// This site's own files are cached. Card data comes from the card databases and
+// is fetched fresh; card images are too, except for sites that ask apps to keep
+// their own copy (see SAVED_IMAGE_HOSTS).
+const CACHE = 'card-scanner-v2';
+// Kept across app updates so saved images aren't downloaded again.
+const IMAGE_CACHE = 'card-images-v1';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
+
+// YGOPRODeck asks apps not to hotlink card images over and over, so each image
+// is downloaded once and then served from this device.
+const SAVED_IMAGE_HOSTS = ['images.ygoprodeck.com'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -12,15 +19,32 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== IMAGE_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
 
+async function savedImage(url) {
+  const cache = await caches.open(IMAGE_CACHE);
+  const hit = await cache.match(url);
+  if (hit) return hit;
+  // A CORS copy is stored compactly; if the host doesn't allow that, keep an opaque one.
+  let res = await fetch(url, { mode: 'cors', credentials: 'omit' }).catch(() => null);
+  if (!res || !res.ok) res = await fetch(url, { mode: 'no-cors', credentials: 'omit' });
+  if (res.ok || res.type === 'opaque') cache.put(url, res.clone());
+  return res;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (req.method !== 'GET') return;
+
+  if (SAVED_IMAGE_HOSTS.includes(url.hostname)) {
+    event.respondWith(savedImage(req.url));
+    return;
+  }
+  if (url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
     // Network first so updates show up; fall back to the cached app offline.

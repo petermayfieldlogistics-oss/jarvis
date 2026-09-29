@@ -3,7 +3,7 @@ import { CollectionView } from './components/CollectionView';
 import { Scanner } from './components/Scanner';
 import { SearchPanel } from './components/SearchPanel';
 import type { AddOptions } from './components/common';
-import { GAME_LABELS, providers } from './games';
+import { GAME_FILTERS, GAME_LABELS, providers } from './games';
 import { addCard, formatMoney, mergeCollections, totals } from './lib/collection';
 import { loadCollection, saveCollection } from './lib/storage';
 import type { CardInfo, CollectionItem, GameFilter, GameId } from './types';
@@ -15,7 +15,7 @@ const FILTER_KEY = 'game-filter';
 function readFilter(): GameFilter {
   try {
     const v = localStorage.getItem(FILTER_KEY);
-    if (v === 'auto' || v === 'pokemon' || v === 'onepiece' || v === 'magic' || v === 'marvel') return v;
+    if (GAME_FILTERS.some((g) => g.id === v)) return v as GameFilter;
   } catch {
     // Storage blocked; fall through to the default.
   }

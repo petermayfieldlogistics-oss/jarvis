@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseMagicPrints, parseNames, parseOnePieceIds, parseScan, parseSlashNumbers } from './parse';
+import {
+  parseLorcanaPrints,
+  parseMagicPrints,
+  parseNames,
+  parseOnePieceIds,
+  parseScan,
+  parseSlashNumbers,
+  parseYugiohPasscodes,
+  parseYugiohSetCodes,
+} from './parse';
 
 describe('parseOnePieceIds', () => {
   it('reads standard set, starter deck, extra booster and promo ids', () => {
@@ -123,5 +132,70 @@ describe('parseNames ranking', () => {
 
   it('offers the name without a misread leading label', () => {
     expect(parseNames('Pree Pikachu')).toEqual(['Pree Pikachu', 'Pikachu']);
+  });
+});
+
+describe('Yu-Gi-Oh! codes', () => {
+  it('reads set codes with and without a region', () => {
+    expect(parseYugiohSetCodes('LOB-EN001')).toEqual(['LOB-EN001']);
+    expect(parseYugiohSetCodes('RA01 - EN054 1st Edition')).toEqual(['RA01-EN054']);
+    expect(parseYugiohSetCodes('SDK-00l')).toEqual(['SDK-001']);
+    expect(parseYugiohSetCodes('LOB-E001')).toEqual(['LOB-E001']);
+  });
+
+  it('does not treat One Piece ids as set codes', () => {
+    expect(parseYugiohSetCodes('OP01-001 ST10-002')).toEqual([]);
+  });
+
+  it('reads passcodes and repairs OCR slips', () => {
+    expect(parseYugiohPasscodes('89631139 1st Edition')).toEqual(['89631139']);
+    expect(parseYugiohPasscodes('8963ll39')).toEqual(['89631139']);
+    expect(parseYugiohPasscodes('©2020 Studio Dice/SHUEISHA, TV TOKYO, KONAMI')).toEqual([]);
+  });
+});
+
+describe('Lorcana codes', () => {
+  it('reads the collector line', () => {
+    expect(parseLorcanaPrints('12/204 • EN • 3')).toEqual([{ number: '12', total: '204', set: '3' }]);
+    expect(parseLorcanaPrints('207/204 · EN · 1 Enchanted')).toEqual([{ number: '207', total: '204', set: '1' }]);
+    expect(parseLorcanaPrints('5/P1 • EN • P1')).toEqual([{ number: '5', total: 'P1', set: 'P1' }]);
+    expect(parseLorcanaPrints('l2/204 EN 3')).toEqual([{ number: '12', total: '204', set: '3' }]);
+  });
+
+  it('ignores Pokémon numbers', () => {
+    expect(parseLorcanaPrints('SVI EN 025/198')).toEqual([]);
+  });
+});
+
+describe('game detection for the new games', () => {
+  it('spots Yu-Gi-Oh! cards', () => {
+    const h = parseScan('Blue-Eyes White Dragon', 'LOB-EN001\n89631139 ©1996 KAZUKI TAKAHASHI ©2020 Studio Dice/SHUEISHA, TV TOKYO, KONAMI');
+    expect(h.gameGuesses[0]).toBe('yugioh');
+    expect(h.yugiohSetCodes).toEqual(['LOB-EN001']);
+    expect(h.yugiohPasscodes).toEqual(['89631139']);
+  });
+
+  it('spots Lorcana cards even though the number looks like a Pokémon one', () => {
+    const h = parseScan('', '12/204 • EN • 3 ©Disney');
+    expect(h.gameGuesses[0]).toBe('lorcana');
+    expect(h.lorcanaPrints).toEqual([{ number: '12', total: '204', set: '3' }]);
+  });
+});
+
+describe('fixes from the Yu-Gi-Oh!/Lorcana browser runs', () => {
+  it('accepts letter-for-digit slips in set codes that have a region', () => {
+    expect(parseYugiohSetCodes('LOB-ENOO1')).toEqual(['LOB-EN001']);
+  });
+
+  it('rejects star rows read as a passcode', () => {
+    expect(parseYugiohPasscodes('00000000 89631139')).toEqual(['89631139']);
+  });
+
+  it('does not read a Yu-Gi-Oh! set code as a Magic set', () => {
+    expect(parseMagicPrints('LOB-EN001')).toEqual([]);
+  });
+
+  it('joins a Lorcana character name with its version', () => {
+    expect(parseNames('ELSA\nSpirit of Winter')).toContain('ELSA Spirit of Winter');
   });
 });

@@ -50,7 +50,17 @@ export function cardSubtitle(card: CardInfo): string {
   return [card.setName, card.number].filter(Boolean).join(' · ');
 }
 
-export function CardTile({ card, onSelect, badge }: { card: CardInfo; onSelect: () => void; badge?: ReactNode }) {
+export function CardTile({
+  card,
+  onSelect,
+  badge,
+  showGame,
+}: {
+  card: CardInfo;
+  onSelect: () => void;
+  badge?: ReactNode;
+  showGame?: boolean;
+}) {
   return (
     <button type="button" className="tile" onClick={onSelect}>
       <div className="tile-img">
@@ -59,6 +69,7 @@ export function CardTile({ card, onSelect, badge }: { card: CardInfo; onSelect: 
       </div>
       <div className="tile-body">
         <div className="tile-name">{card.name}</div>
+        {showGame && <div className="tile-sub tile-game">{GAME_LABELS[card.game]}</div>}
         <div className="tile-sub">{cardSubtitle(card)}</div>
         {card.variant && <div className="tile-sub">{card.variant}</div>}
         <div className="tile-price">{formatMoney(cardPrice(card))}</div>
@@ -68,10 +79,12 @@ export function CardTile({ card, onSelect, badge }: { card: CardInfo; onSelect: 
 }
 
 export function CardGrid({ cards, onSelect }: { cards: CardInfo[]; onSelect: (c: CardInfo) => void }) {
+  // Label each tile with its game when the list mixes games.
+  const mixed = new Set(cards.map((c) => c.game)).size > 1;
   return (
     <div className="grid">
       {cards.map((c) => (
-        <CardTile key={c.key} card={c} onSelect={() => onSelect(c)} />
+        <CardTile key={c.key} card={c} onSelect={() => onSelect(c)} showGame={mixed} />
       ))}
     </div>
   );

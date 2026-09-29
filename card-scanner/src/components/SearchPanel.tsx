@@ -11,11 +11,13 @@ interface Props {
 }
 
 const PLACEHOLDER: Record<GameFilter, string> = {
-  auto: 'Card name, e.g. Charizard or Luffy',
+  auto: 'Card name, e.g. Charizard, Luffy or Dark Magician',
   pokemon: 'Pokémon card name, e.g. Pikachu ex',
   onepiece: 'Name or id, e.g. Zoro or OP01-025',
   magic: 'Card name, e.g. Lightning Bolt',
   marvel: 'Card name, e.g. Spider-Man',
+  yugioh: 'Name, set code or passcode, e.g. Dark Magician',
+  lorcana: 'Card name, e.g. Elsa or Stitch',
 };
 
 export function SearchPanel({ filter, onFilterChange, initialQuery, onAdd }: Props) {

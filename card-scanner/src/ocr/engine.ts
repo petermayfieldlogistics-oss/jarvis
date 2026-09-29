@@ -81,7 +81,13 @@ export async function readText(image: HTMLCanvasElement, onProgress?: ProgressFn
     const lines = (data.blocks ?? [])
       .flatMap((b) => b.paragraphs)
       .flatMap((p) => p.lines)
-      .map((l) => ({ text: l.text.trim(), confidence: l.confidence, box: l.bbox, height: l.bbox.y1 - l.bbox.y0 }))
+      .map((l) => ({
+        text: l.text.trim(),
+        confidence: l.confidence,
+        box: l.bbox,
+        // Tesseract's text-row height ignores tilt; a tilted line's box grows with its length.
+        height: l.rowAttributes?.rowHeight > 0 ? l.rowAttributes.rowHeight : l.bbox.y1 - l.bbox.y0,
+      }))
       .filter((l) => l.text);
     return { text: data.text ?? '', lines };
   } finally {

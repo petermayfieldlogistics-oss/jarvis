@@ -8,6 +8,8 @@ import type { GameId, ScanHints } from '../types';
  *   - One Piece:  "OP01-001", "ST10-002", "EB01-012", "PRB01-001", "P-041"
  *   - Pokémon:    "025/198", "TG05/TG30", "SWSH050"
  *   - Magic:      "0123 R" + "MOM • EN" (2023+), or "123/280 R" (2014–2022)
+ *   - Yu-Gi-Oh!:  set code "LOB-EN001" under the art, 8-digit passcode "89631139"
+ *   - Lorcana:    "12/204 • EN • 3" (number / set size • language • set)
  */
 
 // Characters OCR commonly returns in place of digits.
@@ -104,7 +106,8 @@ export function parseMagicPrints(text: string): { set?: string; number?: string 
   const t = normalize(text);
   const out: { set?: string; number?: string }[] = [];
 
-  const setRe = new RegExp(`(?<![A-Z0-9])([A-Z0-9]{3,5})(?:\\s*[•.,:+\\-]\\s*|\\s+)(${MTG_LANGS})(?![A-Z])`, 'g');
+  // The language code ends the token ("MOM • EN"); "LOB-EN001" is a Yu-Gi-Oh! set code.
+  const setRe = new RegExp(`(?<![A-Z0-9])([A-Z0-9]{3,5})(?:\\s*[•.,:+\\-]\\s*|\\s+)(${MTG_LANGS})(?![A-Z0-9])`, 'g');
   const sets: { code: string; index: number }[] = [];
   for (const m of t.matchAll(setRe)) {
     const code = m[1];
@@ -131,6 +134,57 @@ export function parseMagicPrints(text: string): { set?: string; number?: string 
   return unique(out, (p) => `${p.set ?? ''}/${p.number ?? ''}`);
 }
 
+/** Yu-Gi-Oh! set codes: "LOB-EN001", "RA01-EN054", "MP24-EN123", early "SDK-001". */
+export function parseYugiohSetCodes(text: string): string[] {
+  const t = normalize(text);
+  const out: string[] = [];
+  const re = new RegExp(
+    `(?<![A-Z0-9])([A-Z0-9]{2,4})\\s?-\\s?(EN|E|DE|FR|IT|SP|PT|KR|AE|JP)?\\s?([${DIGITISH}]{3})(?![0-9A-Z])`,
+    'g',
+  );
+  for (const m of t.matchAll(re)) {
+    const [, prefix, region, digits] = m;
+    // With a region code ("-EN") the shape is distinctive enough to trust
+    // letter-for-digit slips like "LOB-ENOO1"; without one, want real digits.
+    if (!/[A-Z]/.test(prefix) || countRealDigits(digits) < (region ? 0 : 2)) continue;
+    // Without a region code, only the old three-letter sets ("SDK-001") count —
+    // otherwise One Piece ids like "OP01-001" would match too.
+    if (!region && !/^[A-Z]{3}$/.test(prefix)) continue;
+    out.push(`${prefix}-${region ?? ''}${fixDigits(digits)}`);
+  }
+  return unique(out, (s) => s);
+}
+
+/** Yu-Gi-Oh! passcodes: the 8-digit number in the bottom-left corner. */
+export function parseYugiohPasscodes(text: string): string[] {
+  const t = normalize(text);
+  const out: string[] = [];
+  for (const m of t.matchAll(new RegExp(`(?<![0-9A-Z])([${DIGITISH}]{8})(?![0-9A-Z])`, 'g'))) {
+    const code = fixDigits(m[1]);
+    // Rows of level stars can come back as "00000000"; real passcodes vary.
+    if (countRealDigits(m[1]) < 6 || new Set(code).size < 3) continue;
+    out.push(code);
+  }
+  return unique(out, (s) => s);
+}
+
+/** Lorcana collector line: "12/204 • EN • 3", promos "5/P1 • EN • P1". */
+export function parseLorcanaPrints(text: string): { number: string; total: string; set: string }[] {
+  const t = normalize(text);
+  const out: { number: string; total: string; set: string }[] = [];
+  const sep = '\\s*[•.,:+\\-]?\\s*';
+  const re = new RegExp(
+    `(?<![0-9])([${DIGITISH}]{1,3})\\s?\\/\\s?([${DIGITISH}]{2,3}|P[${DIGITISH}])${sep}(EN|DE|FR|IT|JA|JP|ZH)${sep}(P?[${DIGITISH}]{1,2}|D\\d{2,3})(?![0-9A-Z])`,
+    'g',
+  );
+  for (const m of t.matchAll(re)) {
+    if (countRealDigits(m[1]) < 1) continue;
+    const set = m[4].startsWith('P') || m[4].startsWith('D') ? m[4][0] + fixDigits(m[4].slice(1)) : fixDigits(m[4]);
+    out.push({ number: String(parseInt(fixDigits(m[1]), 10)), total: m[2].startsWith('P') ? `P${fixDigits(m[2].slice(1))}` : fixDigits(m[2]), set });
+  }
+  return unique(out, (p) => `${p.set}/${p.number}`);
+}
+
 // Words on the top line of a Pokémon card that aren't part of its name.
 const POKEMON_NOISE =
   /\b(BASIC|STAGE\s*[12I]?|STAGE|RESTORED|TRAINER|ITEM|SUPPORTER|STADIUM|POK[EÉ]MON\s+TOOL|TOOL|ENERGY|SPECIAL|ACE\s+SPEC|TERA|MEGA\s+EVOLUTION)\b/gi;
@@ -145,7 +199,8 @@ const TYPE_LINE =
  */
 export function parseNames(text: string): string[] {
   const candidates: { name: string; score: number }[] = [];
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  const cleaned: string[] = [];
   lines.forEach((raw, lineIdx) => {
     let line = raw
       .replace(/evolves\s+from.*$/i, '')
@@ -178,6 +233,13 @@ export function parseNames(text: string): string[] {
     let score = quality * Math.min(letters, 16) * (0.5 + capitalised) - lineIdx;
     if (words.length > 5) score *= 0.3;
     candidates.push({ name, score });
+    cleaned[lineIdx] = name;
+    // Lorcana prints a character name over its version ("ELSA" / "Spirit of
+    // Winter"), so a short line joined with the one below is a candidate too.
+    const above = cleaned[lineIdx - 1];
+    if (above && words.length <= 4 && above.split(' ').length <= 3) {
+      candidates.push({ name: `${above} ${name}`, score: score * 0.8 });
+    }
     // OCR often glues a misread label onto the front ("Pree Pikachu" for
     // "BASIC Pikachu"), so also offer the name without its first word.
     if (words.length >= 2 && words.length <= 4) {
@@ -204,59 +266,85 @@ const GAME_MARKERS: Record<GameId, RegExp[]> = {
     /\bODA\b/, /SHUEISHA/, /BANDAI/, /\bTOEI\b/, /\bDON\b/, /\bCOUNTER\b/, /\bLEADER\b/, /\bBLOCKER\b/,
     /\bRUSH\b/, /\[TRIGGER\]/, /ON\s+PLAY/, /WHEN\s+ATTACKING/, /\bLIFE\b/, /ACTIVATE/,
   ],
+  yugioh: [
+    /KONAMI/, /STUDIO\s?DICE/, /\bATK\s?\/?\s?\d/, /\bDEF\s?\/?\s?\d/, /\[[A-Z-]+\s?\/\s?[A-Z /]+\]/,
+    /SPELL\s+CARD/, /TRAP\s+CARD/, /1ST\s+EDITION/, /LIMITED\s+EDITION/, /\bLINK\s?-\s?\d/, /SPECIAL\s+SUMMON/,
+  ],
+  lorcana: [
+    /DISNEY/, /RAVENSBURGER/, /STORYBORN/, /DREAMBORN/, /FLOODBORN/, /\bLORE\b/, /\bEXERT/, /\bQUEST/,
+    /\bINKWELL\b/, /\bSONG\b/, /\bCHALLENGER\b/, /\bEVASIVE\b/, /\bBODYGUARD\b/, /\bSINGER\b/,
+  ],
 };
 
-export function guessGames(text: string, hints: Omit<ScanHints, 'gameGuesses' | 'rawText' | 'names'>): GameId[] {
+type CodeHints = Omit<ScanHints, 'gameGuesses' | 'rawText' | 'names'>;
+
+export function guessGames(text: string, hints: CodeHints): GameId[] {
   const t = normalize(text);
-  const score: Record<GameId, number> = { pokemon: 0, magic: 0, onepiece: 0 };
+  const score = Object.fromEntries(Object.keys(GAME_MARKERS).map((g) => [g, 0])) as Record<GameId, number>;
   for (const game of Object.keys(GAME_MARKERS) as GameId[]) {
     for (const re of GAME_MARKERS[game]) if (re.test(t)) score[game] += 1;
   }
   if (hints.onePieceIds.length) score.onepiece += 4;
+  if (hints.lorcanaPrints.length) score.lorcana += 4;
+  if (hints.yugiohSetCodes.length) score.yugioh += 3;
+  if (hints.yugiohPasscodes.length) score.yugioh += 2;
   if (hints.magicPrints.some((p) => p.set)) score.magic += 3;
   if (hints.pokemonNumbers.length) {
-    // "123/280" is shared by Pokémon and 2014–2022 Magic cards.
+    // "123/280" is shared by Pokémon, Lorcana and 2014–2022 Magic cards.
     score.pokemon += 2;
     score.magic += 0.5;
   }
   return (Object.keys(score) as GameId[]).filter((g) => score[g] > 0).sort((a, b) => score[b] - score[a]);
 }
 
+/** For each kind of printed code, what makes two reads of it the same. */
+const CODE_KEYS: { [K in keyof CodeHints]: (v: CodeHints[K][number]) => string } = {
+  onePieceIds: (s) => s,
+  pokemonNumbers: (p) => `${p.number}/${p.total ?? ''}`,
+  magicPrints: (p) => `${p.set ?? ''}/${p.number ?? ''}`,
+  yugiohSetCodes: (s) => s,
+  yugiohPasscodes: (s) => s,
+  lorcanaPrints: (p) => `${p.set}/${p.number}`,
+};
+
 /**
  * @param top      OCR text from the top of the card (name area).
  * @param bottom   OCR text from the bottom of the card (codes, copyright line).
- * @param extra    OCR text from a whole-card or whole-photo read, if any.
+ * @param extra    OCR text from any other read (whole card, whole photo, a middle band).
  * @param nameText Text to look for names in besides `top` (defaults to `extra`).
  */
 export function parseScan(top: string, bottom: string, extra = '', nameText = extra): ScanHints {
   const all = [top, bottom, extra].filter(Boolean).join('\n');
-  const partial = {
+  // Codes live below the name area; the top band only adds noise (e.g. HP 60/…).
+  const codeText = [bottom, extra].filter(Boolean).join('\n');
+  const codes = {
     onePieceIds: parseOnePieceIds(all),
-    pokemonNumbers: parseSlashNumbers(bottom + '\n' + extra),
-    magicPrints: parseMagicPrints(bottom + '\n' + extra),
+    pokemonNumbers: parseSlashNumbers(codeText),
+    magicPrints: parseMagicPrints(codeText),
+    yugiohSetCodes: parseYugiohSetCodes(codeText),
+    yugiohPasscodes: parseYugiohPasscodes(codeText),
+    lorcanaPrints: parseLorcanaPrints(codeText),
   };
-  // One Piece names sit near the bottom of the card, everyone else's at the top.
+  // One Piece names sit near the bottom of the card, most others at the top.
   const names = [...parseNames(top), ...parseNames(nameText)];
   return {
-    ...partial,
+    ...codes,
     names: unique(names, (n) => n.toLowerCase()),
-    gameGuesses: guessGames(all, partial),
+    gameGuesses: guessGames(all, codes),
     rawText: all,
   };
 }
 
 /** Combine hints from two reads of the same card (first one wins ties). */
 export function mergeHints(a: ScanHints, b: ScanHints): ScanHints {
-  const partial = {
-    onePieceIds: unique([...a.onePieceIds, ...b.onePieceIds], (s) => s),
-    pokemonNumbers: unique([...a.pokemonNumbers, ...b.pokemonNumbers], (p) => `${p.number}/${p.total ?? ''}`),
-    magicPrints: unique([...a.magicPrints, ...b.magicPrints], (p) => `${p.set ?? ''}/${p.number ?? ''}`),
-  };
+  const merge = <K extends keyof CodeHints>(k: K): CodeHints[K] =>
+    unique([...a[k], ...b[k]] as CodeHints[K][number][], CODE_KEYS[k] as (v: CodeHints[K][number]) => string) as CodeHints[K];
+  const codes = Object.fromEntries((Object.keys(CODE_KEYS) as (keyof CodeHints)[]).map((k) => [k, merge(k)])) as CodeHints;
   const rawText = [a.rawText, b.rawText].filter(Boolean).join('\n');
   return {
-    ...partial,
+    ...codes,
     names: unique([...a.names, ...b.names], (n) => n.toLowerCase()),
-    gameGuesses: guessGames(rawText, partial),
+    gameGuesses: guessGames(rawText, codes),
     rawText,
   };
 }

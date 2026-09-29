@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GAME_LABELS, identifyCard } from '../games';
 import { cardPrice, formatMoney } from '../lib/collection';
 import { cropCard, guideToVideoRect, loadImageFile } from '../ocr/image';
+import { parseScan } from '../ocr/parse';
 import { scanCardImage, scanPhoto, type ScanOutput } from '../ocr/scan';
 import type { CardInfo, GameFilter, GameId, ScanHints } from '../types';
 import { AddCardSheet, CardGrid, CardImage, cardSubtitle, GameChips, type AddOptions } from './common';
@@ -14,6 +15,7 @@ interface ScanResult {
   game: GameId | null;
   candidates: CardInfo[];
   errors: string[];
+  confident: boolean;
 }
 
 interface Props {
@@ -142,15 +144,16 @@ export function Scanner({ filter, onFilterChange, onAdd, onSearchInstead }: Prop
     try {
       const { hints, preview } = await read();
       setStatus('Looking up card…');
-      const { game, candidates, errors } = await identifyCard(filter, hints);
-      setResult({ preview, hints, game, candidates, errors });
+      const { game, candidates, errors, confident } = await identifyCard(filter, hints);
+      setResult({ preview, hints, game, candidates, errors, confident });
     } catch (err) {
       setResult({
         preview: '',
-        hints: { onePieceIds: [], pokemonNumbers: [], magicPrints: [], names: [], gameGuesses: [], rawText: '' },
+        hints: parseScan('', ''),
         game: null,
         candidates: [],
         errors: [err instanceof Error ? err.message : String(err)],
+        confident: false,
       });
     } finally {
       setBusy(false);
@@ -252,7 +255,13 @@ export function Scanner({ filter, onFilterChange, onAdd, onSearchInstead }: Prop
         <div className="results">
           {best ? (
             <>
-              <h2>{result.candidates.length > 1 ? 'Best match' : 'Found it'}</h2>
+              <h2>{!result.confident ? 'Possible match' : result.candidates.length > 1 ? 'Best match' : 'Found it'}</h2>
+              {!result.confident && (
+                <p className="muted small">
+                  The card number couldn’t be read, so this is a best guess from the name. Check it — or retake the
+                  photo closer with the bottom edge in focus, or pick the game above.
+                </p>
+              )}
               <div className="best">
                 <button type="button" className="best-img" onClick={() => setSelected(best)}>
                   <CardImage card={best} />
@@ -260,6 +269,7 @@ export function Scanner({ filter, onFilterChange, onAdd, onSearchInstead }: Prop
                 <div className="best-body">
                   <div className="best-name">{best.name}</div>
                   <div className="muted">{cardSubtitle(best)}</div>
+                  {!result.confident && <div className="muted">{GAME_LABELS[best.game]}</div>}
                   {best.variant && <div className="muted">{best.variant}</div>}
                   <div className="best-price">{formatMoney(cardPrice(best))}</div>
                   <div className="best-actions">
@@ -309,6 +319,13 @@ export function Scanner({ filter, onFilterChange, onAdd, onSearchInstead }: Prop
                 <li>
                   Set / number:{' '}
                   {result.hints.magicPrints.map((p) => [p.set?.toUpperCase(), p.number].filter(Boolean).join(' ')).join(', ')}
+                </li>
+              )}
+              {result.hints.yugiohSetCodes.length > 0 && <li>Yu-Gi-Oh! set code: {result.hints.yugiohSetCodes.join(', ')}</li>}
+              {result.hints.yugiohPasscodes.length > 0 && <li>Passcode: {result.hints.yugiohPasscodes.join(', ')}</li>}
+              {result.hints.lorcanaPrints.length > 0 && (
+                <li>
+                  Lorcana: {result.hints.lorcanaPrints.map((p) => `set ${p.set} #${p.number}/${p.total}`).join(', ')}
                 </li>
               )}
               {result.hints.names.length > 0 && <li>Names: {result.hints.names.slice(0, 3).join(' | ')}</li>}

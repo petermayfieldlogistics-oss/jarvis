@@ -2,7 +2,7 @@
   "name": "card-scanner",
   "private": true,
   "version": "0.1.0",
-  "description": "Free trading card scanner and collection tracker (Pokémon, One Piece, Magic: The Gathering, Marvel).",
+  "description": "Free trading card scanner and collection tracker (Pokémon, One Piece, Magic: The Gathering, Marvel, Yu-Gi-Oh!, Lorcana).",
   "type": "module",
   "scripts": {
     "dev": "npm run ocr-assets && vite",

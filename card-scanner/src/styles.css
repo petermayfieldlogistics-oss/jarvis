@@ -606,6 +606,11 @@ textarea {
   white-space: nowrap;
 }
 
+.tile-game {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .tile-price {
   font-weight: 700;
   margin-top: 4px;

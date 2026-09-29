@@ -34,5 +34,8 @@ export function nameSimilarity(a: string, b: string): number {
   // score how well the shorter string matches the start of the longer one.
   const [short, long] = x.length <= y.length ? [x, y] : [y, x];
   const prefix = short.length >= 4 ? 1 - levenshtein(short, long.slice(0, short.length)) / short.length : 0;
-  return Math.max(whole, prefix * 0.9);
+  // …but a short name matching the start of a much longer line ("Queen" in
+  // "Queen Sorcerer") is weaker evidence than a match of similar length.
+  const coverage = short.length / long.length;
+  return Math.max(whole, prefix * (0.6 + 0.3 * coverage));
 }
