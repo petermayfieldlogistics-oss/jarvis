@@ -88,9 +88,65 @@ link can use it, and each person's collection is stored in their own browser.
 
 The first scan downloads the text-recognition engine (about 7 MB); after that it's cached.
 
+## Desktop and iPhone apps
+
+GitHub builds installable apps on every change (`.github/workflows/build-apps.yml`) and
+puts the newest ones on the
+[**apps-latest** release page](https://github.com/petermayfieldlogistics-oss/jarvis/releases/tag/apps-latest).
+The apps run entirely on your device, and your collection is saved there too.
+
+### Windows
+
+1. Download `Card-Scanner-win-x64.exe` and run it.
+2. If Windows says "Windows protected your PC", click **More info → Run anyway**.
+   The app isn't code-signed, because a signing certificate costs money.
+
+### Mac
+
+1. Download `Card-Scanner-mac-arm64.dmg` for an Apple-silicon Mac (M1 or later), or
+   `Card-Scanner-mac-x64.dmg` for an Intel Mac.
+2. Open it and drag **Card Scanner** into **Applications**.
+3. The first time you open it, macOS says it can't check the app. Go to **System Settings →
+   Privacy & Security**, scroll down, and click **Open Anyway**. (Apple charges $99 a year
+   to remove that step.)
+4. Allow camera access when asked. You can also scan photos or use the webcam.
+
+### Linux
+
+Download `Card-Scanner-linux-x86_64.AppImage`, run `chmod +x` on it, then open it.
+
+### iPhone
+
+Apple only lets you install apps from outside the App Store if they're signed with your
+Apple ID. The free way to do that needs a Windows PC or a Mac:
+
+1. On the computer, download `Card-Scanner-iOS-unsigned.ipa` and install
+   [Sideloadly](https://sideloadly.io). On Windows, also install iTunes and iCloud from
+   Apple's website (not the Microsoft Store versions).
+2. Plug in the iPhone, drag the `.ipa` into Sideloadly, enter your Apple ID and click **Start**.
+3. On the iPhone, turn on **Settings → Privacy & Security → Developer Mode** (the phone
+   restarts). Then trust your Apple ID under **Settings → General → VPN & Device Management**.
+4. With a free Apple ID, the app stops opening after **7 days** and must be installed
+   again. Your collection is normally kept, but save a backup first.
+   [AltStore](https://altstore.io) can renew it automatically while your computer is on
+   the same Wi-Fi. A paid Apple Developer account ($99 a year) makes it last a year.
+
+If that's too much hassle, the home-screen version (see "Installing it on a phone"
+above) does the same job with no computer and no renewals.
+
+### Building them yourself
+
+```bash
+npm run desktop        # run the desktop app
+npm run dist:desktop   # build installers for the current OS into release/
+npm run ios            # build and copy into ios/, then open ios/App/App.xcodeproj in Xcode (Mac only)
+```
+
 ## Project layout
 
 ```
+desktop/main.js   Electron wrapper for the desktop app
+ios/              Capacitor iPhone project (open ios/App/App.xcodeproj in Xcode)
 src/
   ocr/          camera/photo → cropped card → text → parsed hints
   games/        one provider per game: identify(hints), search(text), refresh(prices)
