@@ -1,0 +1,699 @@
+{
+"OP01-001": {
+"card_id": "OP01-001",
+"name": "Roronoa Zoro",
+"pack_id": "569101",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-001.png?260828"
+},
+"OP01-001_p1": {
+"card_id": "OP01-001_p1",
+"name": "Roronoa Zoro",
+"pack_id": "569101",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-001_p1.png?260828"
+},
+"OP01-001_p2": {
+"card_id": "OP01-001_p2",
+"name": "Roronoa Zoro",
+"pack_id": "569801",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-001_p2.png?260828"
+},
+"OP01-002": {
+"card_id": "OP01-002",
+"name": "Trafalgar Law",
+"pack_id": "569101",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red",
+"Green"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-002.png?260828"
+},
+"OP01-002_p1": {
+"card_id": "OP01-002_p1",
+"name": "Trafalgar Law",
+"pack_id": "569101",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red",
+"Green"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-002_p1.png?260828"
+},
+"OP01-003": {
+"card_id": "OP01-003",
+"name": "Monkey.D.Luffy",
+"pack_id": "569101",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red",
+"Green"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-003.png?260828"
+},
+"OP01-003_p1": {
+"card_id": "OP01-003_p1",
+"name": "Monkey.D.Luffy",
+"pack_id": "569101",
+"rarity": "Leader",
+"category": "Leader",
+"colors": [
+"Red",
+"Green"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-003_p1.png?260828"
+},
+"OP01-010": {
+"card_id": "OP01-010",
+"name": "Komachiyo",
+"pack_id": "569101",
+"rarity": "Common",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-010.png?260828"
+},
+"OP01-011": {
+"card_id": "OP01-011",
+"name": "Gordon",
+"pack_id": "569101",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-011.png?260828"
+},
+"OP01-012": {
+"card_id": "OP01-012",
+"name": "Sai",
+"pack_id": "569101",
+"rarity": "Common",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-012.png?260828"
+},
+"OP01-013": {
+"card_id": "OP01-013",
+"name": "Sanji",
+"pack_id": "569101",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-013.png?260828"
+},
+"OP01-013_p1": {
+"card_id": "OP01-013_p1",
+"name": "Sanji",
+"pack_id": "569101",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-013_p1.png?260828"
+},
+"OP01-013_p2": {
+"card_id": "OP01-013_p2",
+"name": "Sanji",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-013_p2.png?260828"
+},
+"OP01-013_p3": {
+"card_id": "OP01-013_p3",
+"name": "Sanji",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-013_p3.png?260828"
+},
+"OP01-013_p4": {
+"card_id": "OP01-013_p4",
+"name": "Sanji",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-013_p4.png?260828"
+},
+"OP01-014": {
+"card_id": "OP01-014",
+"name": "Jinbe",
+"pack_id": "569101",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-014.png?260828"
+},
+"OP01-014_p1": {
+"card_id": "OP01-014_p1",
+"name": "Jinbe",
+"pack_id": "569801",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-014_p1.png?260828"
+},
+"OP01-015": {
+"card_id": "OP01-015",
+"name": "Tony Tony.Chopper",
+"pack_id": "569101",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-015.png?260828"
+},
+"OP01-015_p1": {
+"card_id": "OP01-015_p1",
+"name": "Tony Tony.Chopper",
+"pack_id": "569901",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-015_p1.png?260828"
+},
+"OP01-016": {
+"card_id": "OP01-016",
+"name": "Nami",
+"pack_id": "569101",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016.png?260828"
+},
+"OP01-016_p1": {
+"card_id": "OP01-016_p1",
+"name": "Nami",
+"pack_id": "569101",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p1.png?260828"
+},
+"OP01-016_p2": {
+"card_id": "OP01-016_p2",
+"name": "Nami",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p2.png?260828"
+},
+"OP01-016_p3": {
+"card_id": "OP01-016_p3",
+"name": "Nami",
+"pack_id": "569010",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p3.png?260828"
+},
+"OP01-016_p4": {
+"card_id": "OP01-016_p4",
+"name": "Nami",
+"pack_id": "569105",
+"rarity": "Special",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p4.png?260828"
+},
+"OP01-016_p5": {
+"card_id": "OP01-016_p5",
+"name": "Nami",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p5.png?260828"
+},
+"OP01-016_p7": {
+"card_id": "OP01-016_p7",
+"name": "Nami",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p7.png?260828"
+},
+"OP01-016_p8": {
+"card_id": "OP01-016_p8",
+"name": "Nami",
+"pack_id": "569301",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p8.png?260828"
+},
+"OP01-016_p9": {
+"card_id": "OP01-016_p9",
+"name": "Nami",
+"pack_id": "569031",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-016_p9.png?260828"
+},
+"OP01-017": {
+"card_id": "OP01-017",
+"name": "Nico Robin",
+"pack_id": "569101",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-017.png?260828"
+},
+"OP01-017_p1": {
+"card_id": "OP01-017_p1",
+"name": "Nico Robin",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-017_p1.png?260828"
+},
+"OP01-017_p2": {
+"card_id": "OP01-017_p2",
+"name": "Nico Robin",
+"pack_id": "569801",
+"rarity": "Rare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-017_p2.png?260828"
+},
+"OP01-018": {
+"card_id": "OP01-018",
+"name": "Hajrudin",
+"pack_id": "569101",
+"rarity": "Common",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-018.png?260828"
+},
+"OP01-019": {
+"card_id": "OP01-019",
+"name": "Bartolomeo",
+"pack_id": "569101",
+"rarity": "Common",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-019.png?260828"
+},
+"OP01-020": {
+"card_id": "OP01-020",
+"name": "Hyogoro",
+"pack_id": "569101",
+"rarity": "Common",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-020.png?260828"
+},
+"OP01-021": {
+"card_id": "OP01-021",
+"name": "Franky",
+"pack_id": "569101",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-021.png?260828"
+},
+"OP01-021_p1": {
+"card_id": "OP01-021_p1",
+"name": "Franky",
+"pack_id": "569801",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-021_p1.png?260828"
+},
+"OP01-021_p2": {
+"card_id": "OP01-021_p2",
+"name": "Franky",
+"pack_id": "569901",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-021_p2.png?260828"
+},
+"OP01-021_p3": {
+"card_id": "OP01-021_p3",
+"name": "Franky",
+"pack_id": "569801",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-021_p3.png?260828"
+},
+"OP01-022": {
+"card_id": "OP01-022",
+"name": "Brook",
+"pack_id": "569101",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-022.png?260828"
+},
+"OP01-022_p1": {
+"card_id": "OP01-022_p1",
+"name": "Brook",
+"pack_id": "569801",
+"rarity": "Uncommon",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-022_p1.png?260828"
+},
+"OP01-023": {
+"card_id": "OP01-023",
+"name": "Marco",
+"pack_id": "569101",
+"rarity": "Common",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-023.png?260828"
+},
+"OP01-024": {
+"card_id": "OP01-024",
+"name": "Monkey.D.Luffy",
+"pack_id": "569101",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-024.png?260828"
+},
+"OP01-024_p1": {
+"card_id": "OP01-024_p1",
+"name": "Monkey.D.Luffy",
+"pack_id": "569101",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-024_p1.png?260828"
+},
+"OP01-024_p3": {
+"card_id": "OP01-024_p3",
+"name": "Monkey.D.Luffy",
+"pack_id": "569301",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-024_p3.png?260828"
+},
+"OP01-024_r1": {
+"card_id": "OP01-024_r1",
+"name": "Monkey.D.Luffy",
+"pack_id": "569301",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-024_r1.png?260828"
+},
+"OP01-025": {
+"card_id": "OP01-025",
+"name": "Roronoa Zoro",
+"pack_id": "569101",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-025.png?260828"
+},
+"OP01-025_p1": {
+"card_id": "OP01-025_p1",
+"name": "Roronoa Zoro",
+"pack_id": "569101",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-025_p1.png?260828"
+},
+"OP01-025_p2": {
+"card_id": "OP01-025_p2",
+"name": "Roronoa Zoro",
+"pack_id": "569010",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-025_p2.png?260828"
+},
+"OP01-025_p3": {
+"card_id": "OP01-025_p3",
+"name": "Roronoa Zoro",
+"pack_id": "569801",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/OP01-025_p3.png?260828"
+},
+"P-001": {
+"card_id": "P-001",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001.png?260828"
+},
+"P-001_p1": {
+"card_id": "P-001_p1",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001_p1.png?260828"
+},
+"P-001_p2": {
+"card_id": "P-001_p2",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001_p2.png?260828"
+},
+"P-001_p3": {
+"card_id": "P-001_p3",
+"name": "Monkey.D.Luffy",
+"pack_id": "569801",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001_p3.png?260828"
+},
+"P-001_p4": {
+"card_id": "P-001_p4",
+"name": "Monkey.D.Luffy",
+"pack_id": "569801",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001_p4.png?260828"
+},
+"P-001_p5": {
+"card_id": "P-001_p5",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001_p5.png?260828"
+},
+"P-001_p6": {
+"card_id": "P-001_p6",
+"name": "Monkey.D.Luffy",
+"pack_id": "569801",
+"rarity": "Promo",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/P-001_p6.png?260828"
+},
+"ST01-012": {
+"card_id": "ST01-012",
+"name": "Monkey.D.Luffy",
+"pack_id": "569001",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012.png?260828"
+},
+"ST01-012_p1": {
+"card_id": "ST01-012_p1",
+"name": "Monkey.D.Luffy",
+"pack_id": "569103",
+"rarity": "Special",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012_p1.png?260828"
+},
+"ST01-012_p2": {
+"card_id": "ST01-012_p2",
+"name": "Monkey.D.Luffy",
+"pack_id": "569105",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012_p2.png?260828"
+},
+"ST01-012_p3": {
+"card_id": "ST01-012_p3",
+"name": "Monkey.D.Luffy",
+"pack_id": "569105",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012_p3.png?260828"
+},
+"ST01-012_p4": {
+"card_id": "ST01-012_p4",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012_p4.png?260828"
+},
+"ST01-012_p5": {
+"card_id": "ST01-012_p5",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012_p5.png?260828"
+},
+"ST01-012_p6": {
+"card_id": "ST01-012_p6",
+"name": "Monkey.D.Luffy",
+"pack_id": "569901",
+"rarity": "SuperRare",
+"category": "Character",
+"colors": [
+"Red"
+],
+"img_url": "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-012_p6.png?260828"
+}
+}

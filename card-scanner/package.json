@@ -1,0 +1,31 @@
+{
+  "name": "card-scanner",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Free trading card scanner and collection tracker (Pokémon, One Piece, Magic: The Gathering, Marvel).",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run ocr-assets && vite",
+    "build": "npm run ocr-assets && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "ocr-assets": "node scripts/copy-ocr-assets.mjs"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "idb-keyval": "^6.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,0 +1,47 @@
+{
+"569001": {
+"id": "569001",
+"raw_title": "STARTER DECK -Straw Hat Crew- [ST-01]",
+"title_parts": {
+"label": "ST-01",
+"prefix": "STARTER DECK",
+"title": "Straw Hat Crew"
+}
+},
+"569101": {
+"id": "569101",
+"raw_title": "BOOSTER PACK -ROMANCE DAWN- [OP-01]",
+"title_parts": {
+"label": "OP-01",
+"prefix": "BOOSTER PACK",
+"title": "ROMANCE DAWN"
+}
+},
+"569102": {
+"id": "569102",
+"raw_title": "BOOSTER PACK -PARAMOUNT WAR- [OP-02]",
+"title_parts": {
+"label": "OP-02",
+"prefix": "BOOSTER PACK",
+"title": "PARAMOUNT WAR"
+}
+},
+"569201": {
+"id": "569201",
+"raw_title": "EXTRA BOOSTER -MEMORIAL COLLECTION- [EB-01]",
+"title_parts": {
+"label": "EB-01",
+"prefix": "EXTRA BOOSTER",
+"title": "MEMORIAL COLLECTION"
+}
+},
+"569901": {
+"id": "569901",
+"raw_title": "Promotion card",
+"title_parts": {
+"label": null,
+"prefix": null,
+"title": "Promotion card"
+}
+}
+}
