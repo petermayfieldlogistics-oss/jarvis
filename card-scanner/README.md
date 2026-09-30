@@ -88,6 +88,15 @@ link can use it, and each person's collection is stored in their own browser.
 
 The first scan downloads the text-recognition engine (about 7 MB); after that it's cached.
 
+## Single-file version (no install, no hosting)
+
+`npm run build:single` makes `dist-single/Card-Scanner.html`: the whole app, with its
+text-recognition engine, in one ~8 MB file. Save it on a computer and double-click it to
+open it in the browser. It needs internet only to look up cards and prices. Your
+collection is saved in that browser. On a Mac, if the camera won't start in Safari, open the
+file in Chrome or use **Scan a photo**. Phones and iPads can't run a downloaded file like
+this; use the hosted version or the apps below.
+
 ## Desktop and iPhone apps
 
 GitHub builds installable apps on every change (`.github/workflows/build-apps.yml`) and

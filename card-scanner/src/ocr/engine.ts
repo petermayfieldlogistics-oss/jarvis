@@ -9,14 +9,22 @@ function assetUrl(path: string): string {
   return new URL(path, document.baseURI).href;
 }
 
+/** Where the engine's files come from: this site, or (single-file build) the page itself. */
+async function engineFiles() {
+  if (import.meta.env.VITE_SINGLE_FILE) {
+    const { embeddedWorkerUrl, EMBEDDED_LANG_PATH } = await import('./embedded');
+    // The worker already contains the core, and nothing is cached separately.
+    return { workerPath: embeddedWorkerUrl(), workerBlobURL: false, langPath: EMBEDDED_LANG_PATH, cacheMethod: 'none' };
+  }
+  // Served from our own site (see scripts/copy-ocr-assets.mjs), not a CDN.
+  return { workerPath: assetUrl('ocr/worker.min.js'), corePath: assetUrl('ocr/core/'), langPath: assetUrl('ocr/lang') };
+}
+
 /** Start (or reuse) the OCR engine. First call downloads ~4 MB, then it's cached. */
 export function getOcrWorker(): Promise<Worker> {
   workerPromise ??= (async () => {
     const worker = await createWorker('eng', OEM.LSTM_ONLY, {
-      // Served from our own site (see scripts/copy-ocr-assets.mjs), not a CDN.
-      workerPath: assetUrl('ocr/worker.min.js'),
-      corePath: assetUrl('ocr/core/'),
-      langPath: assetUrl('ocr/lang'),
+      ...(await engineFiles()),
       gzip: true,
       logger: (m) => listener?.(m.status, m.progress),
     });

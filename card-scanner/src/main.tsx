@@ -10,7 +10,7 @@ createRoot(document.getElementById('root')!).render(
 );
 
 // Offline support + "Add to Home Screen" install. Skipped in dev so edits show up immediately.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if (import.meta.env.PROD && !import.meta.env.VITE_SINGLE_FILE && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   });

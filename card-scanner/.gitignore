@@ -4,3 +4,4 @@ dist
 public/ocr
 *.log
 release
+dist-single
