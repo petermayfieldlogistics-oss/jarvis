@@ -53,7 +53,12 @@ export class Input {
     canvas.addEventListener('mousedown', (e) => {
       if (!this.enabled) return;
       if (!this.pointerLocked && !this.touch) {
-        canvas.requestPointerLock?.();
+        // Some browsers and embedded views refuse pointer lock; dragging still works then.
+        try {
+          (canvas.requestPointerLock?.() as Promise<void> | undefined)?.catch?.(() => {});
+        } catch {
+          /* ignore */
+        }
       }
       if (e.button === 0) this.down('attack');
       if (e.button === 2) this.down('block');
@@ -67,7 +72,7 @@ export class Input {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => (this.pointerLocked = document.pointerLockElement === canvas));
     window.addEventListener('mousemove', (e) => {
-      if (this.pointerLocked && this.enabled) {
+      if ((this.pointerLocked || (e.buttons & 1 && !this.touch)) && this.enabled) {
         this.look.dx += e.movementX * 0.0025 * this.sensitivity;
         this.look.dy += e.movementY * 0.0025 * this.sensitivity * (this.invertY ? -1 : 1);
       }

@@ -168,9 +168,19 @@ export function showTitle(root: HTMLElement, hasSave: boolean, onContinue: () =>
     el.remove();
     onContinue();
   });
-  el.querySelector('.new')!.addEventListener('click', () => {
-    if (hasSave && !confirm('Start a new hero? Your current save will be replaced when you begin.')) return;
+  const begin = () => {
     el.remove();
     onNew();
+  };
+  el.querySelector('.new')!.addEventListener('click', () => {
+    if (!hasSave) return begin();
+    // Ask in the page itself: browser confirm() dialogs are not always allowed.
+    const btns = el.querySelector('.tbtns')!;
+    btns.innerHTML = '<p class="warn">Start a new hero? Your saved hero is replaced when you begin.</p><button class="primary yes">Start a new hero</button><button class="no">Keep my hero</button>';
+    btns.querySelector('.yes')!.addEventListener('click', begin);
+    btns.querySelector('.no')!.addEventListener('click', () => {
+      el.remove();
+      showTitle(root, hasSave, onContinue, onNew);
+    });
   });
 }
