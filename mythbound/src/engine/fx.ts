@@ -268,6 +268,39 @@ export class Fx {
     this.emit(at, { color, count: 40, speed: 5, life: 0.8, size: 0.7, up: 4 });
   }
 
+  // ------------------------------------------------------------- hooks --
+  // Gameplay code calls these; they are the contract for combat effects.
+
+  /**
+   * Weapon trail: call every frame while a blade is swinging, with the
+   * blade's base and tip in world space. `key` identifies the trail (use the
+   * weapon object). The ribbon fades once points stop arriving.
+   */
+  trailPoint(key: object, base: THREE.Vector3, tip: THREE.Vector3, color: number, width = 1): void {
+    void key; void base; void tip; void color; void width;
+  }
+
+  /** A flickering aura (flames, sparks) that follows `target` for `seconds`. Returns a handle to stop it early. */
+  aura(target: THREE.Object3D, color: number, seconds: number): { stop(): void } {
+    void target; void color; void seconds;
+    return { stop() {} };
+  }
+
+  /** A glowing rune circle on the ground, for spell casting and boss summons. */
+  magicCircle(at: THREE.Vector3, color: number, radius: number, seconds: number): void {
+    void at; void color; void radius; void seconds;
+  }
+
+  /** A hit landing: sparks or blood, a small flash. `strength` 0..1. */
+  impact(at: THREE.Vector3, color: number, strength: number): void {
+    this.emit(at, { color, count: 6 + Math.round(strength * 10), speed: 4 + strength * 4, life: 0.4, gravity: 10, size: 0.35 });
+  }
+
+  /** A puff of ground dust (rolls, landings, charges, slams). */
+  dust(at: THREE.Vector3, count: number, color = 0xa89878): void {
+    this.emit(at, { color, count, speed: 2, life: 0.8, size: 1.2, gravity: -0.5 });
+  }
+
   damageNumber(at: THREE.Vector3, text: string, cls = '') {
     const el = document.createElement('div');
     el.className = `dmg ${cls}`;

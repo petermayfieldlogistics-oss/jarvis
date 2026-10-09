@@ -9,7 +9,9 @@ import {
   hasBloodsteal, immuneToBleed, mainWeapon, newFury, onMeleeLanded, onMeleeMissed, powerShot, retribution, spellCost, spellPowerMultiplier, strikeDevilDeal,
   type FuryState,
 } from '../rules/combat';
-import { animateHumanoid, buildHumanoid, buildShield, buildWeapon, compact, disposeObject, newAnim, type Rig } from './models';
+import { buildShield, buildWeapon, compact, disposeObject } from './models';
+import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
+import { newAnim } from './anim';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { Ally, Boss, Enemy } from './entities';
 import type { Game } from './game';

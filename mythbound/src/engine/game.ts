@@ -1,17 +1,18 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ANCIENT_GLYPH, WEAPONS, type DamageElement } from '../data/defs';
-import { BOSSES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, SPAWNS, TRIALS, ZONES, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
+import { BOSSES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, maxHp, type Character } from '../rules/character';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { Audio } from './audio';
+import { CameraRig } from './camera';
+import { createPost, type Post } from './post';
+import { Spawner } from './spawner';
 import { Ally, Boss, Enemy, type Actor } from './entities';
 import { Fx } from './fx';
 import { Input } from './input';
-import { buildHumanoid, buildWeapon, compact, disposeObject, glowSprite, mat, newAnim, animateHumanoid, type Rig } from './models';
+import { buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
+import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
+import { newAnim } from './anim';
 import { Player } from './player';
 import { loadUnlocks, saveUnlocks, writeSave, type Settings, type WorldState } from './state';
 import { heightAt, zoneAt, WATER_LEVEL } from './terrain';
@@ -71,7 +72,9 @@ export class Game {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
-  composer: EffectComposer | null = null;
+  post: Post;
+  cam: CameraRig;
+  spawner: Spawner;
   fog = new THREE.FogExp2(0xb8a27a, 0.006);
   world: World;
   fx: Fx;
@@ -89,16 +92,14 @@ export class Game {
   tornados: Tornado[] = [];
   state: WorldState;
   mode: Mode = 'play';
-  camYaw = Math.PI;
-  camPitch = 0.28;
-  camDist = 6.5;
   zone: ZoneId = 'town';
   activeTrial: TrialDef | null = null;
   boss: Boss | null = null;
   isNight = false;
   nearest: Interactable | null = null;
   eyeStare = 0;
-  private shakeAmt = 0;
+  /** Hit-stop: seconds of near-frozen action left after a heavy blow. */
+  private freeze = 0;
   private last = 0;
   private elapsed = 0;
   private running = false;
@@ -106,7 +107,6 @@ export class Game {
   private corpses: { e: Enemy; t: number }[] = [];
   private loot = new Map<string, THREE.Object3D>();
   private embersObj: THREE.Object3D | null = null;
-  private nightSpawnTimer = 30;
   private autosave = 60;
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
@@ -134,12 +134,8 @@ export class Game {
     this.scene.fog = this.fog;
     this.scene.background = new THREE.Color(0x000000);
 
-    if (q === 'high') {
-      this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
-      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.5, 0.82));
-      this.composer.addPass(new OutputPass());
-    }
+    this.post = createPost(this.renderer, this.scene, this.camera, q);
+    this.cam = new CameraRig(this.camera);
 
     const ui = document.createElement('div');
     ui.className = 'ui';
@@ -161,6 +157,7 @@ export class Game {
     this.world = new World(this.scene, q);
     this.fx = new Fx(this.scene, this.camera, this.hud.numberLayer, q === 'low');
     this.story = new Story(this);
+    this.spawner = new Spawner(this);
 
     this.buildNpcs();
     this.setPlayer(character);
@@ -181,7 +178,7 @@ export class Game {
     const shrine = SHRINES.find((s) => s.id === this.state.lastShrine) ?? SHRINES[0];
     if (p) this.player.pos.set(p[0], p[1], p[2]);
     else this.player.pos.set(shrine.x + 2, heightAt(shrine.x + 2, shrine.z + 3), shrine.z + 3);
-    this.camYaw = Math.PI;
+    this.cam.yaw = Math.PI;
     this.summonLizardKin();
     this.updateTouchButtons();
   }
@@ -251,17 +248,7 @@ export class Game {
   }
 
   spawnAll() {
-    for (const e of [...this.enemies]) if (!(e instanceof Boss)) this.removeEnemy(e);
-    SPAWNS.forEach((s, gi) => {
-      for (const [id, count] of s.enemies) {
-        for (let i = 0; i < count; i++) {
-          const a = Math.random() * Math.PI * 2;
-          const r = Math.random() * s.radius;
-          const e = this.spawnEnemy(id, s.x + Math.cos(a) * r, s.z + Math.sin(a) * r);
-          e.spawnGroup = gi;
-        }
-      }
-    });
+    this.spawner.spawnAll();
   }
 
   addAlly(a: Ally) {
@@ -346,7 +333,23 @@ export class Game {
   }
 
   shake(a: number) {
-    this.shakeAmt = Math.max(this.shakeAmt, a);
+    this.cam.shake(a);
+  }
+
+  /** Briefly freezes the action so a heavy blow lands with weight. */
+  hitStop(seconds: number) {
+    this.freeze = Math.max(this.freeze, seconds);
+  }
+
+  /** Camera yaw; the hero moves relative to it. */
+  get camYaw() {
+    return this.cam.yaw;
+  }
+  set camYaw(v: number) {
+    this.cam.yaw = v;
+  }
+  get camDist() {
+    return this.cam.dist;
   }
 
   /** Damage from the hero's weapon: applies class, race, role and stealth rules. */
@@ -376,13 +379,14 @@ export class Game {
     if (element === 'lightning' && e.status.wet > 0 && o.source !== 'spell') dmg *= 1.5;
     e.hp -= dmg;
     e.hitFlash = 0.15;
+    if (!o.dot) e.anim.hurt = 1;
     // Bloodsteal: every point of damage a bleeding foe takes heals the hero.
     if (e.status.bleed > 0 && this.player.hasBloodsteal()) this.player.heal(dmg);
     if (!o.dot) {
       const tags = o.tags?.filter((t) => t !== 'sneak') ?? [];
       const text = `${Math.round(dmg)}${tags.includes('backstab') ? ' BACKSTAB' : ''}`;
       this.fx.damageNumber(e.center().add(new THREE.Vector3(0, e.height * 0.5, 0)), text, tags.includes('backstab') || tags.includes('power') ? 'crit' : weak === element ? 'weak' : '');
-      this.fx.emit(e.center(), { color: e.bleeds ? 0x8a0a0a : 0xd8d0c0, count: 8, speed: 4, life: 0.4, gravity: 10, size: 0.35 });
+      this.fx.impact(e.center(), e.bleeds ? 0x8a0a0a : 0xd8d0c0, Math.min(1, dmg / 40));
     }
     if (!e.aware && !o.quiet && o.source !== 'devil') e.becomeAware(this);
     if (e.hp <= 0) this.killEnemy(e);
@@ -474,6 +478,7 @@ export class Game {
     }
     p.hp = Math.min(p.hp, maxHp(p.c)) - dmg;
     if (dmg >= 1) {
+      p.anim.hurt = 1;
       this.hud.hurt(Math.min(1, dmg / 30));
       this.audio.play('hurt');
       this.shake(Math.min(0.5, dmg / 40));
@@ -703,7 +708,7 @@ export class Game {
       this.last = now;
       this.elapsed += dt;
       this.update(dt);
-      this.render();
+      this.render(dt);
     };
     requestAnimationFrame(loop);
   }
@@ -734,6 +739,9 @@ export class Game {
     input.poll();
     const t = this.elapsed;
     const playing = this.mode === 'play' || this.mode === 'dead';
+    // Hit-stop slows the action (not the camera or HUD) for a moment.
+    const gdt = this.freeze > 0 ? dt * 0.06 : dt;
+    this.freeze = Math.max(0, this.freeze - dt);
 
     if (this.mode === 'play') {
       if (input.pressed.has('menu')) this.menu.open();
@@ -747,12 +755,9 @@ export class Game {
       this.state.playTime += dt;
       this.isNight = this.world.isNight(this.dayMinutes);
 
-      // Camera look.
-      this.camYaw -= input.look.dx;
-      this.camPitch = Math.max(-0.35, Math.min(1.1, this.camPitch + input.look.dy));
-      if (!this.input.touch && input.wheel && this.mode === 'play' && !this.player.c.spellSlots.some(Boolean)) this.camDist = Math.max(3, Math.min(12, this.camDist + input.wheel));
+      this.cam.look(this);
 
-      this.player.update(dt, this);
+      this.player.update(gdt, this);
       if (this.bleedTimer > 0) {
         this.bleedTimer -= dt;
         if (this.player.immuneToBleed()) this.bleedTimer = 0;
@@ -769,23 +774,23 @@ export class Game {
           e.aware = false;
           e.awareness = 0;
         }
-        if (active) e.update(dt, this);
+        if (active) e.update(gdt, this);
       }
       for (const a of [...this.allies]) {
-        a.update(dt, this);
+        a.update(gdt, this);
         if (!a.alive) {
           this.fx.emit(a.center(), { color: 0xff6020, count: 20, speed: 3, life: 0.5 });
           this.removeAlly(a);
         }
       }
-      this.updateProjectiles(dt);
-      this.updateTornados(dt);
-      this.updateCorpses(dt);
+      this.updateProjectiles(gdt);
+      this.updateTornados(gdt);
+      this.updateCorpses(gdt);
       this.updateNpcs(dt);
       this.updateTrial();
       this.updateZone();
       this.updateEyes(dt);
-      this.updateNightSpawns(dt);
+      this.spawner.update(dt);
       this.updateOre();
       if (this.mode === 'play') this.updateInteraction();
       else this.hud.prompt(null);
@@ -797,41 +802,11 @@ export class Game {
       }
     }
 
-    this.updateCamera(dt);
+    this.cam.update(dt, this);
     this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer', this.fog);
-    this.fx.update(dt);
+    this.fx.update(gdt);
     this.hud.update(dt);
     input.endFrame();
-  }
-
-  private updateCamera(dt: number) {
-    const p = this.player;
-    const target = p.lockTarget;
-    if (target) {
-      const want = Math.atan2(target.pos.x - p.pos.x, target.pos.z - p.pos.z);
-      let d = want - this.camYaw;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      this.camYaw += d * Math.min(1, dt * 6);
-      this.camPitch += (0.22 - this.camPitch) * Math.min(1, dt * 3);
-    }
-    const dist = this.camDist * (p.sailing ? 1.6 : 1) * (p.drawing > 0 ? 0.7 : 1);
-    const focus = this.v.copy(p.pos).add(new THREE.Vector3(0, p.swimming ? 0.6 : 1.55, 0));
-    const right = new THREE.Vector3(-Math.cos(this.camYaw), 0, Math.sin(this.camYaw));
-    focus.addScaledVector(right, p.drawing > 0 ? -0.8 : -0.35);
-    const cam = this.camera.position;
-    cam.set(
-      focus.x - Math.sin(this.camYaw) * Math.cos(this.camPitch) * dist,
-      focus.y + Math.sin(this.camPitch) * dist,
-      focus.z - Math.cos(this.camYaw) * Math.cos(this.camPitch) * dist,
-    );
-    const ground = heightAt(cam.x, cam.z) + 0.5;
-    if (cam.y < ground) cam.y = ground;
-    if (this.shakeAmt > 0) {
-      cam.x += (Math.random() - 0.5) * this.shakeAmt;
-      cam.y += (Math.random() - 0.5) * this.shakeAmt;
-      this.shakeAmt = Math.max(0, this.shakeAmt - dt * 2);
-    }
-    this.camera.lookAt(focus.x, focus.y + 0.1, focus.z);
   }
 
   private updateProjectiles(dt: number) {
@@ -1025,20 +1000,6 @@ export class Game {
     }
   }
 
-  private updateNightSpawns(dt: number) {
-    if (!this.isNight || this.activeTrial) return;
-    this.nightSpawnTimer -= dt;
-    if (this.nightSpawnTimer > 0) return;
-    this.nightSpawnTimer = 45;
-    if (!['swamp', 'crossroads', 'badlands', 'volcano'].includes(this.zone)) return;
-    if (this.enemies.filter((e) => e.def.id === 'eye-watcher' && e.alive).length > 6) return;
-    const a = Math.random() * Math.PI * 2;
-    const x = this.player.pos.x + Math.cos(a) * 40;
-    const z = this.player.pos.z + Math.sin(a) * 40;
-    if (heightAt(x, z) < 0) return;
-    this.spawnEnemy('eye-watcher', x, z);
-  }
-
   private updateOre() {
     for (const [id, at] of Object.entries(this.state.oreRegrow)) {
       if (this.gameMinutes >= at) {
@@ -1053,16 +1014,15 @@ export class Game {
     void ORE_NODES;
   }
 
-  private render() {
-    if (this.composer) this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+  private render(dt: number) {
+    this.post.render(dt);
   }
 
   private onResize = () => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.composer?.setSize(window.innerWidth, window.innerHeight);
+    this.post.setSize(window.innerWidth, window.innerHeight);
   };
 
   private onVisibility = () => {

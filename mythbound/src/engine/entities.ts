@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { ENEMIES, type Affinity, type BossAttack, type BossDef, type EnemyDef, type EnemyId } from '../data/world';
 import type { CreatureKind, DamageElement } from '../data/defs';
-import {
-  animateCreature, animateHumanoid, buildBossHumanoid, compact, buildCrab, buildFloater, buildHumanoid, buildImp, buildInsect, buildQuad, buildShield, buildWeapon,
-  newAnim, type AnimState, type CreatureRig, type Rig,
-} from './models';
+import { buildShield, buildWeapon, compact } from './models';
+import { animateHumanoid, buildBossHumanoid, buildHumanoid, type Rig } from './humanoid';
+import { animateCreature, buildCrab, buildFloater, buildImp, buildInsect, buildQuad, type CreatureRig } from './creatures';
+import { newAnim, type AnimState } from './anim';
 import { heightAt, WATER_LEVEL } from './terrain';
 import type { Game } from './game';
 
