@@ -2,9 +2,13 @@
 
 export type Action =
   | 'attack' | 'heavy' | 'block' | 'roll' | 'jump' | 'sprint' | 'interact' | 'cast' | 'ability' | 'lock'
-  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell'
+  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4';
 
+/** Releasing Shift sooner than this toggles shift lock; holding it longer sprints. */
+const SHIFT_TAP_MS = 220;
+
+// Ctrl is deliberately unbound: Ctrl+W closes the browser tab.
 const KEYS: Record<string, Action> = {
   KeyE: 'heavy',
   Space: 'jump',
@@ -19,8 +23,8 @@ const KEYS: Record<string, Action> = {
   KeyM: 'map',
   Escape: 'menu',
   KeyI: 'menu',
-  KeyC: 'crouch',
-  ControlLeft: 'crouch',
+  KeyC: 'roll',
+  KeyZ: 'crouch',
   KeyV: 'fly',
   Digit1: 'slot1',
   Digit2: 'slot2',
@@ -41,9 +45,13 @@ export class Input {
   invertY = false;
   private keys = new Set<string>();
   private shiftDownAt = -1;
+  /** Another key or button was pressed while Shift was down (Shift+W is a sprint, not a tap). */
+  private shiftChorded = false;
   private stick = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   private lookTouch = { id: -1, x: 0, y: 0 };
   private touchRoot: HTMLElement | null = null;
+  /** Mirrors the camera's shift lock (set by the player), so the mouse steers even where pointer lock is refused. */
+  private shiftLock = false;
   pointerLocked = false;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -52,14 +60,8 @@ export class Input {
     window.addEventListener('blur', () => this.reset());
     canvas.addEventListener('mousedown', (e) => {
       if (!this.enabled) return;
-      if (!this.pointerLocked && !this.touch) {
-        // Some browsers and embedded views refuse pointer lock; dragging still works then.
-        try {
-          (canvas.requestPointerLock?.() as Promise<void> | undefined)?.catch?.(() => {});
-        } catch {
-          /* ignore */
-        }
-      }
+      this.shiftChorded = true;
+      this.requestLock();
       if (e.button === 0) this.down('attack');
       if (e.button === 2) this.down('block');
       if (e.button === 1) this.down('lock');
@@ -72,7 +74,7 @@ export class Input {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => (this.pointerLocked = document.pointerLockElement === canvas));
     window.addEventListener('mousemove', (e) => {
-      if ((this.pointerLocked || (e.buttons & 1 && !this.touch)) && this.enabled) {
+      if ((this.pointerLocked || ((e.buttons & 1 || this.shiftLock) && !this.touch)) && this.enabled) {
         this.look.dx += e.movementX * 0.0025 * this.sensitivity;
         this.look.dy += e.movementY * 0.0025 * this.sensitivity * (this.invertY ? -1 : 1);
       }
@@ -81,22 +83,41 @@ export class Input {
     this.touch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches;
   }
 
+  /** Captures the mouse so it turns the camera. Some browsers and embedded views refuse; dragging still works then. */
+  requestLock() {
+    if (this.pointerLocked || this.touch) return;
+    try {
+      (this.canvas.requestPointerLock?.() as Promise<void> | undefined)?.catch?.(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
   private onKey(e: KeyboardEvent, isDown: boolean) {
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
     if (e.code === 'Tab') e.preventDefault();
     if (isDown && e.repeat) return;
     if (isDown) this.keys.add(e.code);
     else this.keys.delete(e.code);
-    // Shift: tap to roll, hold to sprint.
+    // Shift: tap to toggle shift lock, hold to sprint.
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
       if (isDown) {
         this.shiftDownAt = performance.now();
+        this.shiftChorded = false;
         this.down('sprint');
       } else {
         this.up('sprint');
-        if (performance.now() - this.shiftDownAt < 220) this.tap('roll');
+        const tap = this.shiftDownAt >= 0 && performance.now() - this.shiftDownAt < SHIFT_TAP_MS && !this.shiftChorded;
+        this.shiftDownAt = -1;
+        if (tap && this.enabled) {
+          this.tap('shiftlock');
+          // Still inside the key gesture, so the browser lets us capture the mouse.
+          this.requestLock();
+        }
       }
+      return;
     }
+    if (isDown) this.shiftChorded = true;
     const action = KEYS[e.code];
     if (!action) return;
     if (isDown) this.down(action);
@@ -119,6 +140,7 @@ export class Input {
   reset() {
     this.keys.clear();
     this.held.clear();
+    this.shiftDownAt = -1;
     this.move.x = this.move.y = 0;
   }
 
@@ -166,6 +188,7 @@ export class Input {
         <button data-a="heal">⚗</button>
       </div>
       <div class="tbar">
+        <button data-a="shiftlock">🔒</button>
         <button data-a="lock">◎</button>
         <button data-a="swap">⇄</button>
         <button data-a="crouch">▼</button>
@@ -244,6 +267,12 @@ export class Input {
     };
     zone.addEventListener('touchend', endTouch);
     zone.addEventListener('touchcancel', endTouch);
+  }
+
+  /** Lights the touch shift-lock button while shift lock is on. */
+  setShiftLock(on: boolean) {
+    this.shiftLock = on;
+    this.touchRoot?.querySelector<HTMLElement>('button[data-a="shiftlock"]')?.classList.toggle('lit', on);
   }
 
   setTouchVisible(v: boolean) {

@@ -71,3 +71,41 @@ export const smoothstep = (a: number, b: number, x: number) => {
 
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Tileable fractal value noise on a size×size grid, stretched to [0, 1].
+ * `cells` is the lattice size of the first octave (it must divide `size`
+ * after doubling for every octave so the result wraps seamlessly).
+ */
+export function tileableNoise(size: number, cells: number, octaves: number, seed: number): Float32Array {
+  const out = new Float32Array(size * size);
+  let amp = 1;
+  for (let o = 0; o < octaves; o++) {
+    const n = cells << o;
+    const rand = mulberry32(seed * 7919 + o * 104729);
+    const lattice = new Float32Array(n * n);
+    for (let i = 0; i < lattice.length; i++) lattice[i] = rand();
+    for (let y = 0; y < size; y++) {
+      const fy = (y / size) * n;
+      const y0 = Math.floor(fy);
+      const ty = fade(fy - y0);
+      const r0 = (y0 % n) * n;
+      const r1 = ((y0 + 1) % n) * n;
+      for (let x = 0; x < size; x++) {
+        const fx = (x / size) * n;
+        const x0 = Math.floor(fx);
+        const tx = fade(fx - x0);
+        const x1 = (x0 + 1) % n;
+        const a = lattice[r0 + (x0 % n)] + (lattice[r0 + x1] - lattice[r0 + (x0 % n)]) * tx;
+        const b = lattice[r1 + (x0 % n)] + (lattice[r1 + x1] - lattice[r1 + (x0 % n)]) * tx;
+        out[y * size + x] += (a + (b - a) * ty) * amp;
+      }
+    }
+    amp *= 0.5;
+  }
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of out) (lo = Math.min(lo, v)), (hi = Math.max(hi, v));
+  for (let i = 0; i < out.length; i++) out[i] = (out[i] - lo) / (hi - lo || 1);
+  return out;
+}

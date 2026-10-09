@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SPELLS, WEAPONS, type DamageElement, type SpellId, type WeaponKind } from '../data/defs';
+import { SPELLS, WEAPONS, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
   dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, manaRegen, maxHp, maxMana, maxStamina, maxTamed, moveSpeed, rank,
   tameableKinds, weaponDamage, type Character,
@@ -11,24 +11,89 @@ import {
 } from '../rules/combat';
 import { buildShield, buildWeapon, compact, disposeObject } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
-import { newAnim } from './anim';
+import { newAnim, type AttackStyle } from './anim';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { Ally, Boss, Enemy } from './entities';
 import type { Game } from './game';
 
-type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow';
+type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar';
 
 interface Attack {
   kind: AttackKind;
+  style: AttackStyle;
   t: number;
   duration: number;
+  /** Seconds into the move: the blow lands. */
   hitAt: number;
+  /** The blade's active window (trails), seconds. */
+  from: number;
+  to: number;
+  /** From here the next move may follow (buffered presses fire). */
+  chainAt: number;
+  /** From here a roll may cut the recovery short. */
+  cancelAt: number;
+  /** Forward step (root motion) in metres, spread from stepFrom to hitAt. */
+  step: number;
+  stepFrom: number;
   done: boolean;
   landed: boolean;
   combo: number;
+  finisher: boolean;
+  /** Facing chosen at the start of the swing. */
+  aim: number;
+  /** Where the animation starts (a bow loose begins at the release). */
+  anim0: number;
 }
 
+/**
+ * When each move lands, its active window and its forward step, as fractions
+ * of the move's duration. They follow the hit keys of the humanoid animator.
+ */
+const TIMING: Partial<Record<AttackStyle, { hit: number; from: number; to: number; step: number }>> = {
+  slash: { hit: 0.46, from: 0.35, to: 0.64, step: 0.45 },
+  slash2: { hit: 0.44, from: 0.33, to: 0.62, step: 0.4 },
+  slash3: { hit: 0.5, from: 0.41, to: 0.72, step: 0.75 },
+  overhead: { hit: 0.56, from: 0.46, to: 0.76, step: 0.6 },
+  heavy: { hit: 0.56, from: 0.45, to: 0.8, step: 0.9 },
+  thrust: { hit: 0.46, from: 0.34, to: 0.62, step: 0.65 },
+  spin: { hit: 0.5, from: 0.24, to: 0.84, step: 0.3 },
+  throw: { hit: 0.45, from: 0.32, to: 0.45, step: 0.2 },
+  cast: { hit: 0.4, from: 0, to: 0.7, step: 0 },
+  bow: { hit: 0, from: 0, to: 0, step: 0 },
+  roar: { hit: 0.36, from: 0, to: 1, step: 0 },
+};
+
+/** The next light swing may follow this long after the last one ended. */
+const COMBO_WINDOW = 0.6;
+/** Presses are remembered this long while a move finishes. */
+const BUFFER = 0.4;
+const ROLL = { time: 0.6, dist: 3.9, iFrom: 0.08, iTo: 0.4 };
+const BACKSTEP = { time: 0.42, dist: 2.3, iFrom: 0.05, iTo: 0.26 };
+
+/** The part of the weapon that leaves a trail, along its local +Y from the grip: [start, tip]. */
+const BLADE: Record<WeaponKind, [number, number]> = {
+  sword: [0.55, 1.2], axe: [0.6, 1.0], hammer: [0.8, 1.2], dagger: [0.2, 0.5], trident: [1.35, 2.0], staff: [1.1, 1.6], bolt: [0.4, 1.0], bow: [0, 0],
+};
+
+const ELEMENT_COLOR: Record<DamageElement, number> = {
+  physical: 0xdfe8ff, fire: 0xff7a1a, light: 0xffd25a, lightning: 0xa8d0ff, dark: 0x9a4dff, water: 0x3ee0ff, wind: 0xc8ffe4, earth: 0xc8a070, true: 0xffffff,
+};
+
+const SCHOOL_COLOR: Record<SpellSchool, number> = {
+  devil: 0xb8121a, fire: 0xff6a1a, sky: 0xa8ccff, water: 0x2ad8ff, light: 0xffd25a, arcane: 0xa060ff, earth: 0xa8743a,
+};
+
+const RAGE_RED = 0xff2a12;
 const UP = new THREE.Vector3(0, 1, 0);
+const smooth01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+
+/** The light combo for each weapon: three steps, the last a finisher. */
+function lightStyle(kind: WeaponKind, step: number): AttackStyle {
+  if (kind === 'dagger') return step === 1 ? 'slash2' : 'thrust';
+  if (kind === 'trident') return step === 2 ? 'slash3' : 'thrust';
+  if (step === 2) return kind === 'axe' || kind === 'hammer' ? 'overhead' : 'slash3';
+  return step === 1 ? 'slash2' : 'slash';
+}
 
 export class Player {
   c: Character;
@@ -52,6 +117,9 @@ export class Player {
   sailing = false;
   crouching = false;
   blocking = false;
+  /** Running flat out this frame (the camera widens its view). */
+  sprinting = false;
+  /** -1, or 0..1 through a roll or backstep. */
   rollT = -1;
   rollDir = new THREE.Vector3();
   iframes = 0;
@@ -81,6 +149,17 @@ export class Player {
   private weaponMesh: THREE.Object3D | null = null;
   private shieldMesh: THREE.Object3D | null = null;
   private now = 0;
+  private rollTime = 0;
+  private backstep = false;
+  private queued: 'light' | 'heavy' | null = null;
+  private queuedAt = -9;
+  private rollQueuedAt = -9;
+  private lastSwingEnd = -9;
+  private lastKind: AttackKind | null = null;
+  private rageAura: { stop(): void } | null = null;
+  private shotAura: { stop(): void } | null = null;
+  private tv = new THREE.Vector3();
+  private tv2 = new THREE.Vector3();
 
   constructor(c: Character) {
     this.c = c;
@@ -113,7 +192,7 @@ export class Player {
     return this.c.spellSlots[this.selected] ?? null;
   }
   center(out = new THREE.Vector3()) {
-    return out.copy(this.pos).add(new THREE.Vector3(0, this.crouching ? 0.8 : 1.15, 0));
+    return out.set(this.pos.x, this.pos.y + (this.crouching ? 0.8 : 1.15), this.pos.z);
   }
 
   /** How noticeable the hero is (0 = invisible). */
@@ -154,12 +233,15 @@ export class Player {
   }
 
   knockback(dir: THREE.Vector3, force: number) {
+    // A well-timed roll slips through charges as well as blows.
+    if (this.iframes > 0) return;
     this.vel.x += dir.x * force;
     this.vel.z += dir.z * force;
     this.vel.y = 4;
     this.grounded = false;
     this.stagger = 0.4;
     this.attack = null;
+    this.rollT = -1;
   }
 
   heal(amount: number) {
@@ -175,6 +257,10 @@ export class Player {
     if (!this.alive) {
       this.anim.dead += dt;
       this.anim.t += dt;
+      this.sprinting = false;
+      this.attack = null;
+      this.rollT = -1;
+      this.syncAuras(g);
       this.syncModel();
       return;
     }
@@ -192,11 +278,20 @@ export class Player {
       this.fury.stacks = 0;
       g.hud.toast('BloodRage fades.');
     }
+    this.syncAuras(g);
     if (this.healing > 0) {
       const step = Math.min(this.healing, this.maxHp * 0.6 * dt);
       this.healing -= step;
       this.heal(step);
     }
+
+    // Shift lock: the hero faces where the camera looks.
+    if (input.pressed.has('shiftlock')) {
+      g.cam.shiftLock = !g.cam.shiftLock;
+      input.setShiftLock(g.cam.shiftLock);
+      g.hud.toast(g.cam.shiftLock ? 'Shift lock on' : 'Shift lock off');
+    }
+    const shiftLock = g.cam.shiftLock;
 
     const busy = this.blackout > 0 || this.stagger > 0;
     const canAct = !busy && this.rollT < 0 && !this.sailing;
@@ -227,10 +322,16 @@ export class Player {
     let wantX = fx * my - fz * mx;
     let wantZ = fz * my + fx * mx;
     const wantLen = Math.hypot(wantX, wantZ);
-    const sprint = input.held.has('sprint') && wantLen > 0.1 && this.stamina > 1 && !this.crouching;
+    const sprint = input.held.has('sprint') && wantLen > 0.1 && this.stamina > 1 && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack;
     let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1);
     if (this.blocking || this.drawing > 0) speed *= 0.45;
-    if (this.attack && this.attack.kind !== 'cast') speed *= 0.25;
+    const atk = this.attack;
+    if (atk && atk.kind !== 'cast') speed *= atk.kind === 'roar' ? 0 : atk.t < atk.chainAt ? 0.2 : 0.45;
+    // Facing the camera or a foe, walking backward is slower.
+    if ((shiftLock || this.lockTarget) && wantLen > 0.1 && !this.sailing) {
+      const ahead = (wantX * Math.sin(this.yaw) + wantZ * Math.cos(this.yaw)) / wantLen;
+      if (ahead < 0) speed *= 1 + 0.28 * ahead;
+    }
     if (busy) speed = 0;
 
     // Water.
@@ -256,46 +357,59 @@ export class Player {
       speed = depth > 0.4 ? 16 : 0;
       if (input.pressed.has('interact') || input.pressed.has('jump')) this.disembark(g);
     }
+    this.sprinting = sprint && !this.swimming && !this.sailing && this.rollT < 0;
 
-    // Rolling.
-    if (input.pressed.has('roll') && canAct && !this.swimming && !this.flying && this.stamina >= 10) {
-      this.rollT = 0;
-      this.stamina -= 18;
-      this.attack = null;
-      this.drawing = 0;
-      this.crouching = false;
-      if (wantLen > 0.1) this.rollDir.set(wantX / wantLen, 0, wantZ / wantLen);
-      else this.rollDir.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-      this.iframes = 0.42;
-      g.audio.play('roll');
+    // Rolling: buffered, and allowed to cut a swing's recovery short.
+    if (input.pressed.has('roll')) this.rollQueuedAt = this.now;
+    if (this.now - this.rollQueuedAt < BUFFER && canAct && !this.swimming && !this.flying && this.grounded && this.stamina >= 10 && (!this.attack || this.attack.t >= this.attack.cancelAt)) {
+      this.rollQueuedAt = -9;
+      this.startRoll(g, wantX, wantZ, wantLen);
     }
     if (this.rollT >= 0) {
-      this.rollT += dt / 0.55;
+      const R = this.backstep ? BACKSTEP : ROLL;
+      this.rollTime += dt;
+      const u = Math.min(1, this.rollTime / R.time);
+      this.rollT = u;
+      if (this.rollTime >= R.iFrom && this.rollTime < R.iTo) this.iframes = Math.max(this.iframes, R.iTo - this.rollTime);
+      // Root motion: a burst that eases out (position follows 1 - (1 - u)^2).
       wantX = this.rollDir.x;
       wantZ = this.rollDir.z;
-      speed = 11 * (1 - this.rollT * 0.5);
-      if (this.rollT >= 1) this.rollT = -1;
+      speed = (R.dist * 2 * (1 - u)) / R.time;
+      if (u >= 1) this.endRoll(g);
     }
 
     // Facing.
     const target = this.lockTarget;
-    if (target && this.rollT < 0) {
+    const a = this.attack;
+    const swinging = !!a && a.kind !== 'cast' && a.kind !== 'bow';
+    if (this.rollT >= 0) {
+      if (!this.backstep) this.faceTowards(this.pos.x + this.rollDir.x, this.pos.z + this.rollDir.z, dt, 30);
+    } else if (swinging) {
+      // A swing commits to its direction once the blade starts moving.
+      if (a.t < a.from) this.yaw = rotateTowards(this.yaw, target ? Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z) : a.aim, dt * 24);
+    } else if (target) {
       this.faceTowards(target.pos.x, target.pos.z, dt, 12);
-    } else if (wantLen > 0.1 && (!this.attack || this.attack.t < 0.15)) {
-      this.faceTowards(this.pos.x + wantX, this.pos.z + wantZ, dt, this.rollT >= 0 ? 30 : 10);
-    } else if ((this.drawing > 0 || this.attack?.kind === 'cast') && !target) {
-      this.yaw = rotateTowards(this.yaw, camYaw, dt * 14);
+    } else if ((shiftLock && !this.sailing) || this.drawing > 0 || a) {
+      this.yaw = rotateTowards(this.yaw, camYaw, dt * (shiftLock ? 22 : 14));
+    } else if (wantLen > 0.1) {
+      this.faceTowards(this.pos.x + wantX, this.pos.z + wantZ, dt, 10);
     }
 
     // Integrate horizontal velocity (with knockback decay).
     const len = Math.hypot(wantX, wantZ);
     const tx = len > 0.01 ? (wantX / Math.max(1, len)) * speed : 0;
     const tz = len > 0.01 ? (wantZ / Math.max(1, len)) * speed : 0;
-    const accel = this.grounded || this.swimming || this.flying ? 14 : 3;
-    this.vel.x += (tx - this.vel.x) * Math.min(1, dt * accel);
-    this.vel.z += (tz - this.vel.z) * Math.min(1, dt * accel);
+    if (this.rollT >= 0) {
+      this.vel.x = tx;
+      this.vel.z = tz;
+    } else {
+      const accel = this.grounded || this.swimming || this.flying ? 14 : 3;
+      this.vel.x += (tx - this.vel.x) * Math.min(1, dt * accel);
+      this.vel.z += (tz - this.vel.z) * Math.min(1, dt * accel);
+    }
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
+    if (this.attack) this.rootMotion(dt, g);
     g.world.resolve(this.pos, this.radius);
     for (const e of g.enemies) {
       if (!e.alive) continue;
@@ -321,6 +435,7 @@ export class Player {
       this.crouching = false;
       g.hud.toast(`Flight: ${Math.ceil(this.flightLeft / 60)} game hour(s)`);
     }
+    const wasAirborne = !this.grounded;
     if (this.flying) {
       this.flightLeft -= dt;
       const up = (input.held.has('jump') ? 1 : 0) - (input.held.has('crouch') ? 1 : 0);
@@ -345,7 +460,9 @@ export class Player {
     }
     const floor = walksOnWater ? Math.max(ground, WATER_LEVEL) : ground;
     if (!this.swimming && !this.sailing && this.pos.y <= floor) {
+      const fall = -this.vel.y;
       if (!this.grounded && this.vel.y < -22) g.damagePlayer(Math.round((-this.vel.y - 22) * 4), 'true', null, true);
+      if (wasAirborne && fall > 3 && !this.flying) this.land(g, fall);
       this.pos.y = floor;
       this.vel.y = 0;
       this.grounded = true;
@@ -384,7 +501,12 @@ export class Player {
     this.blocking = input.held.has('block') && canAct && !this.attack && !this.swimming && !this.flying && this.weaponKind !== 'bow' && this.stamina > 0;
 
     // Attacks.
-    if (canAct && !this.swimming) this.handleAttack(dt, g);
+    if (canAct && !this.swimming) this.handleAttack(dt, g, wantX, wantZ, wantLen);
+    else if (input.pressed.has('attack') || input.pressed.has('heavy')) {
+      // Remember a press made mid-roll so the swing comes out as it ends.
+      this.queued = input.pressed.has('heavy') ? 'heavy' : 'light';
+      this.queuedAt = this.now;
+    }
     if (this.attack) this.updateAttack(dt, g);
 
     // Casting: tap for the main form, hold for the alternate.
@@ -402,25 +524,81 @@ export class Player {
     if (c.raceId === 'ancient') this.ancientPowers(dt, g);
 
     // Interaction is handled by Game (it owns the world state).
-    this.syncAnim(dt, sprint);
+    this.syncAnim(dt);
     this.syncModel();
+    this.weaponTrail(g);
   }
 
   private faceTowards(x: number, z: number, dt: number, rate: number) {
     this.yaw = rotateTowards(this.yaw, Math.atan2(x - this.pos.x, z - this.pos.z), dt * rate);
   }
 
+  /** Starts a roll toward the input direction, or a backstep hop without one. */
+  private startRoll(g: Game, wantX: number, wantZ: number, wantLen: number) {
+    this.backstep = wantLen <= 0.1;
+    this.rollT = 0;
+    this.rollTime = 0;
+    this.stamina -= this.backstep ? 12 : 18;
+    if (this.attack) this.finishAttack();
+    this.queued = null;
+    this.drawing = 0;
+    this.crouching = false;
+    this.blocking = false;
+    if (this.backstep) {
+      this.rollDir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+      this.vel.y = 3.2;
+      this.grounded = false;
+    } else {
+      this.rollDir.set(wantX / wantLen, 0, wantZ / wantLen);
+    }
+    g.fx.dust(this.pos, this.backstep ? 5 : 8);
+    g.audio.play('roll');
+  }
+
+  private endRoll(g: Game) {
+    this.rollT = -1;
+    if (!this.backstep) g.fx.dust(this.tv.copy(this.pos).addScaledVector(this.rollDir, 0.3), 10);
+    this.backstep = false;
+  }
+
+  /** Touching down: a knee bend scaled by the fall, and dust after a big one. */
+  private land(g: Game, fall: number) {
+    this.anim.landing = Math.max(this.anim.landing, Math.min(1, 0.2 + (fall - 3) / 13));
+    if (fall > 9) {
+      g.fx.dust(this.pos, Math.min(22, 4 + fall));
+      if (fall > 15) g.shake(Math.min(0.3, fall / 70));
+    }
+  }
+
+  /** Keeps the BloodRage and Power Shot auras in step with their states. */
+  private syncAuras(g: Game) {
+    const rage = this.alive && this.fury.bloodrageActive;
+    if (rage && !this.rageAura) this.rageAura = g.fx.aura(this.rig.root, RAGE_RED, Math.max(0.5, this.bloodrageUntil - this.now));
+    else if (!rage && this.rageAura) {
+      this.rageAura.stop();
+      this.rageAura = null;
+    }
+    const shot = this.alive && this.powerShotArmed;
+    if (shot && !this.shotAura) this.shotAura = g.fx.aura(this.rig.root, 0xffd060, Infinity);
+    else if (!shot && this.shotAura) {
+      this.shotAura.stop();
+      this.shotAura = null;
+    }
+  }
+
   // ---------------------------------------------------------------- combat --
 
-  private handleAttack(dt: number, g: Game) {
+  private handleAttack(dt: number, g: Game, wantX: number, wantZ: number, wantLen: number) {
     const input = g.input;
     const kind = this.weaponKind;
     if (kind === 'bow') {
-      if (input.held.has('attack') && !this.attack) {
+      const loosing = this.attack?.kind === 'bow';
+      if (input.held.has('attack') && (!this.attack || loosing)) {
         if (this.drawing === 0 && this.arrows() <= 0) {
           if (input.pressed.has('attack')) g.hud.toast('No arrows.');
           return;
         }
+        if (loosing) this.attack = null;
         const drawTime = 0.9 * drawTimeMultiplier(this.c);
         this.drawing = Math.min(1, this.drawing + dt / drawTime);
         this.stamina -= 4 * dt;
@@ -429,6 +607,8 @@ export class Player {
       if (input.released.has('attack') && this.drawing > 0) {
         this.fireArrow(g, Math.max(0.25, this.drawing));
         this.drawing = 0;
+        // The follow-through of the loose.
+        this.startAttack('bow', 'bow', 0.32);
       }
       if (input.pressed.has('heavy') && this.c.classId !== 'mage') {
         // Melee bash with a dagger, if carried.
@@ -441,34 +621,106 @@ export class Player {
       }
       return;
     }
-    if (kind === 'bolt') {
-      if (input.pressed.has('attack') || input.pressed.has('heavy')) this.startAttack('throw', 0.75, 0.45);
+
+    if (input.pressed.has('attack')) (this.queued = 'light'), (this.queuedAt = this.now);
+    if (input.pressed.has('heavy')) (this.queued = 'heavy'), (this.queuedAt = this.now);
+    if (!this.queued) return;
+    if (this.now - this.queuedAt > BUFFER) {
+      this.queued = null;
       return;
     }
-    const w = WEAPONS[mainWeapon(this.c).id];
-    const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
-    const dur = (1 / w.speed) * 0.9 * quick;
-    if (input.pressed.has('attack') && (!this.attack || this.attack.t > this.attack.duration * 0.7) && this.stamina > 0) {
-      this.stamina -= 12 * (1 - 0.2 * rank(this.c, 'blade-dancer'));
-      this.comboStep = this.attack ? this.comboStep + 1 : 0;
-      this.startAttack('light', dur, 0.45);
-    } else if (input.pressed.has('heavy') && !this.attack && this.stamina > 0) {
-      this.stamina -= 25 * (1 - 0.2 * rank(this.c, 'blade-dancer'));
-      if (this.c.subclassId === 'swordsman') {
-        this.startAttack('spin', dur * 1.5, 0.5);
-        g.hud.toast('Spinner Flourish!', 'skill');
-      } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
-        this.startAttack('throw', 0.7, 0.45);
+    const cur = this.attack;
+    // Wait for the current move to reach the point where the next may follow.
+    if (cur && cur.t < cur.chainAt) return;
+    const heavy = this.queued === 'heavy';
+    this.queued = null;
+    if (this.stamina <= 0) return;
+
+    if (kind === 'bolt') {
+      this.startAttack('throw', 'throw', 0.75);
+    } else {
+      const w = WEAPONS[mainWeapon(this.c).id];
+      const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
+      const dur = (1 / w.speed) * 0.9 * quick;
+      const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer');
+      if (!heavy) {
+        const chained = cur ? cur.kind === 'light' : this.lastKind === 'light' && this.now - this.lastSwingEnd < COMBO_WINDOW;
+        this.comboStep = chained ? (this.comboStep + 1) % 3 : 0;
+        this.stamina -= 12 * thrift;
+        const finisher = this.comboStep === 2;
+        this.startAttack('light', lightStyle(kind, this.comboStep), dur * (finisher ? 1.25 : 1), { finisher });
       } else {
-        this.startAttack('heavy', dur * 1.6, 0.55);
-        if (rank(this.c, 'lunge')) this.knockback(new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)), 9), (this.stagger = 0);
+        this.stamina -= 25 * thrift;
+        this.comboStep = 0;
+        if (this.c.subclassId === 'swordsman') {
+          this.startAttack('spin', 'spin', dur * 1.5);
+          g.hud.toast('Spinner Flourish!', 'skill');
+        } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
+          this.startAttack('throw', 'throw', 0.7);
+        } else {
+          // A lunge carries the heavy blow several steps forward.
+          this.startAttack('heavy', kind === 'axe' || kind === 'hammer' ? 'overhead' : 'heavy', dur * 1.6, { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
+        }
       }
     }
+    if (this.attack) this.attack.aim = this.pickAim(g, wantX, wantZ, wantLen);
   }
 
-  private startAttack(kind: AttackKind, duration: number, hitAt: number) {
-    this.attack = { kind, t: 0, duration, hitAt: duration * hitAt, done: false, landed: false, combo: this.comboStep };
+  /** Which way a new swing should face: the lock-on, the camera in shift lock, the stick, or a foe close in front. */
+  private pickAim(g: Game, wantX: number, wantZ: number, wantLen: number): number {
+    const t = this.lockTarget;
+    if (t) return Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
+    const shift = g.cam.shiftLock;
+    const yaw = shift ? g.camYaw : wantLen > 0.1 ? Math.atan2(wantX, wantZ) : this.yaw;
+    const reach = WEAPONS[mainWeapon(this.c).id].range + 1.5;
+    const cone = shift ? 0.8 : 0.35;
+    let best = yaw;
+    let bestD = Infinity;
+    for (const e of g.enemies) {
+      if (!e.alive || Math.abs(e.pos.y - this.pos.y) > 3) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      const d = Math.hypot(dx, dz) - e.radius;
+      if (d > reach || d >= bestD) continue;
+      const dir = Math.atan2(dx, dz);
+      if (Math.cos(dir - yaw) < cone) continue;
+      best = dir;
+      bestD = d;
+    }
+    return best;
+  }
+
+  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number } = {}) {
+    const tm = TIMING[style] ?? TIMING.slash!;
+    if (this.attack) this.finishAttack();
+    const fixed = kind === 'roar';
+    this.attack = {
+      kind,
+      style,
+      t: 0,
+      duration,
+      hitAt: tm.hit * duration,
+      from: tm.from * duration,
+      to: tm.to * duration,
+      chainAt: (fixed ? 1 : tm.to) * duration,
+      cancelAt: (fixed ? 1 : kind === 'cast' || kind === 'bow' ? 0 : Math.min(tm.to, tm.hit + 0.06)) * duration,
+      step: o.step ?? tm.step * (o.finisher ? 1.3 : 1),
+      stepFrom: Math.max(0, tm.from - 0.14) * duration,
+      done: false,
+      landed: false,
+      combo: this.comboStep,
+      finisher: !!o.finisher,
+      aim: this.yaw,
+      anim0: kind === 'bow' ? 0.62 : 0,
+    };
     this.crouching = this.crouching && this.c.roleId === 'assassin';
+  }
+
+  private finishAttack() {
+    const a = this.attack;
+    if (!a) return;
+    this.lastKind = a.kind;
+    this.lastSwingEnd = this.now;
+    this.attack = null;
   }
 
   private updateAttack(dt: number, g: Game) {
@@ -483,14 +735,36 @@ export class Player {
           else onMeleeMissed(this.fury);
         }
         g.audio.play(a.landed ? 'hit' : 'swing');
+        this.swingFx(g, a);
       } else if (a.kind === 'throw') {
         this.throwWeapon(g);
+      } else if (a.kind === 'roar') {
+        this.roarFx(g);
       }
       if (a.landed && this.c.subclassId === 'axeman' && a.kind === 'heavy' && !this.grounded && rank(this.c, 'earthsplitter')) {
         g.fx.ring(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 5, 0xc8a070);
       }
     }
-    if (a.t >= a.duration) this.attack = null;
+    if (this.attack === a && a.t >= a.duration) this.finishAttack();
+  }
+
+  /** The swing's forward step, stopping short of a foe in the way. */
+  private rootMotion(dt: number, g: Game) {
+    const a = this.attack!;
+    if (a.step <= 0 || a.t + dt <= a.stepFrom || a.t >= a.hitAt) return;
+    const span = Math.max(1e-3, a.hitAt - a.stepFrom);
+    let d = a.step * (smooth01((a.t + dt - a.stepFrom) / span) - smooth01((a.t - a.stepFrom) / span));
+    if (d <= 0) return;
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    for (const e of g.enemies) {
+      if (!e.alive || Math.abs(e.pos.y - this.pos.y) > 2.5) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      const ahead = dx * fx + dz * fz;
+      if (ahead <= 0 || Math.abs(dx * fz - dz * fx) > e.radius + this.radius) continue;
+      d = Math.min(d, Math.max(0, ahead - e.radius - this.radius - 0.3));
+    }
+    this.pos.x += fx * d;
+    this.pos.z += fz * d;
   }
 
   private meleeHit(g: Game, a: Attack): boolean {
@@ -499,7 +773,7 @@ export class Player {
     const reach = def.range + (a.kind === 'spin' ? 0.8 + 0.3 * rank(this.c, 'wide-flourish') * def.range : 0);
     const arc = a.kind === 'spin' ? -1.01 : rank(this.c, 'cleave') ? -0.2 : 0.25;
     let base = weaponDamage(w) * (a.kind === 'heavy' ? 1.8 : a.kind === 'spin' ? 1.3 * (1 + 0.2 * rank(this.c, 'wide-flourish')) : 1);
-    if (a.combo >= 2 && a.kind === 'light') base *= 1.15;
+    if (a.finisher && a.kind === 'light') base *= 1.35;
     let landed = false;
     const fwdYaw = this.yaw;
     for (const e of g.enemies) {
@@ -514,9 +788,73 @@ export class Player {
       landed = true;
       if (e.bleeds && Math.random() < bleedChance(this.c)) e.status.bleed = 4;
       if (def.legendary === 'hammer-of-hephaestus' || def.legendary === 'sword-of-mars') e.status.burn = 3;
+      if (def.element !== 'physical') g.fx.impact(e.center(this.tv), ELEMENT_COLOR[def.element], 0.7);
     }
-    if (landed) g.shake(a.kind === 'heavy' ? 0.25 : 0.12);
+    if (landed) {
+      // Hit-stop and shake scaled to the blow.
+      const big = a.kind === 'heavy' ? 1 : a.kind === 'spin' ? 0.7 : a.finisher ? 0.75 : 0;
+      g.hitStop(0.055 + 0.065 * big);
+      g.shake(0.12 + 0.2 * big);
+    }
     return landed;
+  }
+
+  /** Dust and sparks for the bigger moves as they land. */
+  private swingFx(g: Game, a: Attack) {
+    if (a.kind === 'spin') {
+      // A ring of dust thrown out by the turning feet, and a shock along the ground.
+      const reach = WEAPONS[mainWeapon(this.c).id].range;
+      for (let i = 0; i < 8; i++) {
+        const t = (i / 8) * Math.PI * 2;
+        g.fx.dust(this.tv.set(this.pos.x + Math.cos(t) * 1.1, this.pos.y, this.pos.z + Math.sin(t) * 1.1), 3);
+      }
+      g.fx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.12, this.pos.z), reach + 0.8, this.trailColor(), 0.32);
+      return;
+    }
+    if ((a.kind !== 'heavy' && !a.finisher) || !this.weaponMesh) return;
+    // A blade driven into the ground kicks up dirt.
+    this.weaponMesh.updateWorldMatrix(true, false);
+    const tip = this.weaponMesh.localToWorld(this.tv.set(0, BLADE[this.weaponKind][1], 0));
+    const gy = heightAt(tip.x, tip.z);
+    if (tip.y - gy < 0.7) {
+      tip.y = Math.max(gy, WATER_LEVEL);
+      g.fx.dust(tip, a.kind === 'heavy' ? 14 : 8);
+      g.fx.impact(tip.setY(tip.y + 0.15), 0xffd8a0, a.kind === 'heavy' ? 0.5 : 0.3);
+      if (a.kind === 'heavy') g.shake(0.18);
+    }
+  }
+
+  /** The BloodRage roar at its peak. */
+  private roarFx(g: Game) {
+    const at = this.center(this.tv);
+    g.fx.emit(at, { color: 0xff1a10, count: 36, speed: 4, life: 0.6, size: 0.45, up: 1.5, drag: 1.5 });
+    g.fx.flash(at, RAGE_RED, 20, 10);
+    g.fx.shockwave(at.set(this.pos.x, this.pos.y + 0.12, this.pos.z), 6, RAGE_RED, 0.45);
+    g.fx.shockwave(at, 3.5, 0xffa080, 0.3);
+    g.fx.dust(this.pos, 16, 0x8a6a5a);
+    g.shake(0.35);
+  }
+
+  private trailColor(): number {
+    if (this.fury.bloodrageActive) return RAGE_RED;
+    const def = WEAPONS[mainWeapon(this.c).id];
+    return def.element === 'physical' && def.legendary ? 0xffd27a : ELEMENT_COLOR[def.element];
+  }
+
+  /** Feeds the weapon trail while the blade is in its active window. */
+  private weaponTrail(g: Game) {
+    const a = this.attack;
+    const w = this.weaponMesh;
+    if (!a || !w || (a.kind !== 'light' && a.kind !== 'heavy' && a.kind !== 'spin' && a.kind !== 'throw')) return;
+    const kind = this.weaponKind;
+    if (kind === 'bow') return;
+    if (a.t < a.from - 0.04 * a.duration || a.t > (a.kind === 'throw' ? a.hitAt : a.to)) return;
+    const [b0, b1] = BLADE[kind];
+    w.updateWorldMatrix(true, false);
+    const base = w.localToWorld(this.tv.set(0, b0, 0));
+    const tip = w.localToWorld(this.tv2.set(0, b1, 0));
+    const life = a.kind === 'spin' ? 0.5 : a.kind === 'heavy' || a.finisher ? 0.26 : 0.2;
+    g.fx.trailPoint(w, base, tip, this.trailColor(), 1, life);
   }
 
   arrows() {
@@ -602,7 +940,9 @@ export class Player {
       this.bloodrageUntil = this.now + BLOODRAGE.duration;
       this.bloodrageReadyAt = this.now + BLOODRAGE.cooldown;
       g.hud.toast(c.level >= 4 ? 'BLOODRAGE! Bloodsteal awakens.' : 'BLOODRAGE!', 'rage');
-      g.fx.emit(this.center(), { color: 0xff1010, count: 50, speed: 5, life: 0.8, size: 0.8 });
+      // A planted roar; it can't be cut short by attacks or rolls.
+      this.startAttack('roar', 'roar', 0.8);
+      this.queued = null;
       g.audio.play('roar');
       return;
     }
@@ -627,6 +967,7 @@ export class Player {
       const old = g.allies.find((a) => a.ttl === Infinity && a.kind !== 'lizard');
       if (old) g.removeAlly(old);
     }
+    g.fx.magicCircle(target.pos, 0x50ff70, 2.2, 1.6);
     g.removeEnemy(target);
     g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond'), 1 + 0.2 * rank(this.c, 'feral-bite')));
     if (!this.c.tamed.includes(kind)) this.c.tamed.push(kind);
@@ -715,7 +1056,8 @@ export class Player {
       if (!this.ready(combo.id)) return g.hud.toast(`${combo.name} is not ready.`);
       this.mana -= cost;
       this.castCooldown(combo.id, 6);
-      this.startAttack('cast', 0.6, 0.4);
+      this.startAttack('cast', 'cast', 0.6);
+      g.fx.magicCircle(this.pos, ELEMENT_COLOR[combo.element], 2.6, 1.5);
       this.castCombo(g, combo.id, this.spellDamage(comboPower(combo), combo.element));
       g.hud.toast(combo.name + '!', 'skill');
       g.audio.play('spell');
@@ -734,6 +1076,7 @@ export class Player {
       case 'deal-with-the-devil': {
         // Locked on (or hold): the single foe. Otherwise a ring of level 1-5 foes.
         const single = this.lockTarget ?? (alt ? target : null);
+        g.fx.magicCircle(this.pos, SCHOOL_COLOR.devil, single ? 4 : 7.5, 4.2);
         let killed = 0;
         if (single) {
           g.damageEnemy(single, single.hp + 1, 'true', { source: 'devil' });
@@ -773,6 +1116,7 @@ export class Player {
         break;
       case 'wrath-of-thor': {
         const at = aim.clone();
+        g.fx.magicCircle(at, SCHOOL_COLOR.sky, 3.2, 0.9);
         g.fx.lightning(at.clone().add(new THREE.Vector3(0, 30, 0)), at);
         for (const e of g.enemies) if (e.alive && e.center().distanceTo(at) < 3.5) {
           g.damageEnemy(e, power * (e.status.wet > 0 ? 2 : 1), 'lightning', { source: 'spell' });
@@ -783,6 +1127,7 @@ export class Player {
       }
       case 'waterspike': {
         const at = target ? target.pos.clone() : aim;
+        g.fx.magicCircle(at, SCHOOL_COLOR.water, 2.6, 0.9);
         g.fx.spikes(at.x, at.z);
         for (const e of g.enemies) if (e.alive && Math.hypot(e.pos.x - at.x, e.pos.z - at.z) < 2.8) {
           g.damageEnemy(e, power, 'water', { source: 'spell' });
@@ -833,6 +1178,7 @@ export class Player {
         break;
       case 'holy-smite':
         if (!target) return g.hud.toast('No target.');
+        g.fx.magicCircle(target.pos, SCHOOL_COLOR.light, 1.8, 0.9);
         g.fx.pillar(target.pos.clone(), 0xfff0b0, 1.5);
         g.damageEnemy(target, power, 'light', { source: 'spell' });
         break;
@@ -856,7 +1202,12 @@ export class Player {
     }
     if (spell !== 'soul-or-power') this.mana -= check.cost;
     this.castCooldown(spell, def.cooldown);
-    if (spell !== 'deal-with-the-devil') this.startAttack('cast', 0.55, 0.4);
+    if (spell !== 'deal-with-the-devil') {
+      this.startAttack('cast', 'cast', 0.55);
+      // A rune circle at the caster's feet in the colour of the school.
+      const big = spell === 'power-of-the-light' || spell === 'soul-or-power';
+      g.fx.magicCircle(this.pos, SCHOOL_COLOR[def.school], big ? 3.2 : 1.7, big ? 2 : 1.3);
+    }
     if (def.school === 'light') g.audio.play('holy');
     else g.audio.play('spell');
   }
@@ -970,30 +1321,36 @@ export class Player {
 
   // ------------------------------------------------------------- animation --
 
-  private syncAnim(dt: number, sprint: boolean) {
+  private syncAnim(dt: number) {
     const a = this.anim;
     a.t += dt;
-    const speed = Math.hypot(this.vel.x, this.vel.z);
+    const vx = this.vel.x, vz = this.vel.z;
+    const speed = Math.hypot(vx, vz);
+    a.speed = this.sailing ? 0 : speed;
     a.moving = Math.min(1, speed / 4);
-    a.phase += speed * dt * (sprint ? 1.6 : 1.9);
+    a.phase += speed * dt * (this.sprinting ? 1.6 : 1.9);
+    // Travel in the rig's own frame: x along its local +X, z forward (the
+    // same frame entities.ts writes and humanoid.ts turns the hips toward).
+    if (speed > 0.05 && !this.sailing) {
+      const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
+      const k = Math.min(1, speed / 2.5) / speed;
+      a.moveX = (vx * cy - vz * sy) * k;
+      a.moveZ = (vx * sy + vz * cy) * k;
+    } else a.moveX = a.moveZ = 0;
     a.blocking = this.blocking;
     a.crouching = this.crouching && this.grounded;
     a.swimming = this.swimming;
     a.flying = this.flying;
     a.airborne = !this.grounded && !this.swimming && !this.sailing;
-    a.rolling = this.rollT;
+    a.rolling = this.backstep ? -1 : this.rollT;
     a.draw = this.drawing;
+    a.fury = this.fury.bloodrageActive ? 1 : 0;
+    a.windup = 0;
     a.dead = -1;
-    if (this.attack) {
-      a.attack = Math.min(1, this.attack.t / this.attack.duration);
-      const kind = this.weaponKind;
-      a.attackStyle =
-        this.attack.kind === 'cast' ? 'cast'
-        : this.attack.kind === 'spin' ? 'spin'
-        : this.attack.kind === 'throw' ? 'throw'
-        : this.attack.kind === 'heavy' || kind === 'axe' && this.attack.combo % 2 === 1 || kind === 'hammer' ? 'overhead'
-        : kind === 'dagger' || kind === 'trident' ? 'thrust'
-        : 'slash';
+    const at = this.attack;
+    if (at) {
+      a.attack = Math.min(1, at.anim0 + ((1 - at.anim0) * at.t) / at.duration);
+      a.attackStyle = at.style;
     } else a.attack = -1;
     if (this.rig.wings) this.rig.wings.userData.enabled = dracoFlightHours(this.c) > 0;
     if (this.sailing) {

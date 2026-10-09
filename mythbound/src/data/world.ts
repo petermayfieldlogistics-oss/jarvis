@@ -273,40 +273,106 @@ export interface SpawnDef {
   z: number;
   radius: number;
   enemies: [EnemyId, number][];
+  /** Extra levels (damage and health) for monsters out of their home region. */
+  bonus?: number;
 }
 
+/** Monster camps. A cleared camp returns a few minutes later, once the hero has moved on. */
 export const SPAWNS: SpawnDef[] = [
-  // The Golden Reach, around town.
+  // The Golden Reach, around town (levels 1-3).
   { x: -70, z: -50, radius: 18, enemies: [['wolf', 3]] },
   { x: 80, z: -40, radius: 18, enemies: [['bandit', 2], ['bandit-archer', 1]] },
-  { x: 70, z: 95, radius: 16, enemies: [['wolf', 2]] },
-  { x: -80, z: 100, radius: 16, enemies: [['bandit', 2]] },
+  { x: 70, z: 95, radius: 16, enemies: [['wolf', 3]] },
+  { x: -80, z: 100, radius: 16, enemies: [['bandit', 2], ['bandit-archer', 1]] },
+  { x: 110, z: -95, radius: 16, enemies: [['bandit', 2], ['bandit-archer', 1]] },
+  // Along the four roads, just outside the walls.
+  { x: 100, z: 26, radius: 10, enemies: [['bandit', 2]] },
+  { x: -100, z: 14, radius: 10, enemies: [['wolf', 2]] },
+  { x: 6, z: -84, radius: 10, enemies: [['bandit', 2]] },
+  { x: -10, z: 112, radius: 10, enemies: [['wolf', 2]] },
   // Whisperwood.
   { x: -170, z: -60, radius: 22, enemies: [['wolf', 4]] },
   { x: -240, z: 110, radius: 20, enemies: [['boar', 2], ['wolf', 1]] },
   { x: -260, z: -80, radius: 20, enemies: [['bandit', 3], ['bandit-archer', 2]] },
   { x: -350, z: 60, radius: 18, enemies: [['boar', 3]] },
+  { x: -150, z: 20, radius: 16, enemies: [['wolf', 3]] },
+  { x: -330, z: -60, radius: 18, enemies: [['wolf', 3]] },
+  { x: -135, z: -110, radius: 16, enemies: [['bandit', 2], ['bandit-archer', 1]] },
   // The Sunken Coast.
   { x: 135, z: 140, radius: 14, enemies: [['drowned', 3]] },
   { x: -60, z: 140, radius: 14, enemies: [['drowned', 2], ['bandit-archer', 1]] },
+  { x: 205, z: 150, radius: 14, enemies: [['drowned', 3]] },
+  { x: 300, z: 145, radius: 16, enemies: [['drowned', 2], ['scorpion', 1]] },
   // The Ashen Dunes.
   { x: 200, z: 80, radius: 24, enemies: [['scorpion', 3]] },
   { x: 350, z: -40, radius: 24, enemies: [['scorpion', 2], ['wraith', 1]] },
   { x: 260, z: 150, radius: 22, enemies: [['wraith', 2]] },
+  { x: 195, z: 42, radius: 16, enemies: [['scorpion', 2], ['bandit-archer', 1]] },
+  { x: 260, z: -60, radius: 20, enemies: [['scorpion', 3]] },
+  { x: 355, z: 110, radius: 18, enemies: [['scorpion', 2], ['wraith', 1]] },
+  { x: 210, z: -95, radius: 18, enemies: [['scorpion', 2]] },
   // Molten Peak.
   { x: -60, z: -230, radius: 22, enemies: [['fire-imp', 3]] },
   { x: 70, z: -240, radius: 22, enemies: [['magma-hound', 2]] },
   { x: 40, z: -360, radius: 18, enemies: [['fire-imp', 2], ['drake', 1]] },
+  { x: -80, z: -320, radius: 18, enemies: [['magma-hound', 2], ['fire-imp', 1]] },
+  { x: 90, z: -310, radius: 18, enemies: [['fire-imp', 3]] },
+  { x: -95, z: -360, radius: 18, enemies: [['drake', 1], ['fire-imp', 2]] },
+  { x: -25, z: -252, radius: 12, enemies: [['fire-imp', 2], ['magma-hound', 1]] },
   // The Weeping Mire.
   { x: -280, z: 230, radius: 24, enemies: [['drowned', 3], ['eye-watcher', 1]] },
   { x: -360, z: 180, radius: 20, enemies: [['eye-watcher', 2]] },
+  { x: -200, z: 250, radius: 20, enemies: [['drowned', 2], ['wraith', 1]] },
+  { x: -365, z: 245, radius: 16, enemies: [['wraith', 1], ['drowned', 1]] },
+  { x: -168, z: 162, radius: 14, enemies: [['drowned', 2]] },
   // Hecate's Crossroads.
   { x: -230, z: -280, radius: 22, enemies: [['skeleton', 4]] },
   { x: -360, z: -200, radius: 20, enemies: [['wraith', 2], ['skeleton', 2]] },
+  { x: -200, z: -330, radius: 18, enemies: [['wraith', 1], ['skeleton', 2]] },
+  { x: -280, z: -170, radius: 18, enemies: [['skeleton', 3]] },
+  { x: -350, z: -330, radius: 18, enemies: [['skeleton', 2], ['wraith', 1]] },
   // The Field of Mars.
   { x: 220, z: -300, radius: 24, enemies: [['skeleton', 3], ['mars-legionary', 1]] },
   { x: 360, z: -200, radius: 22, enemies: [['mars-legionary', 2]] },
+  { x: 300, z: -330, radius: 18, enemies: [['mars-legionary', 1], ['skeleton', 2]] },
+  { x: 190, z: -170, radius: 18, enemies: [['skeleton', 3]] },
+  { x: 290, z: -150, radius: 18, enemies: [['mars-legionary', 1], ['skeleton', 2]] },
 ];
+
+export interface PatrolDef {
+  /** Waypoints, walked there and back again. */
+  route: [number, number][];
+  enemies: [EnemyId, number][];
+  bonus?: number;
+}
+
+/** Bands that walk between waypoints and fight wherever they meet the hero. */
+export const PATROLS: PatrolDef[] = [
+  { route: [[95, -12], [62, -78], [-10, -92], [-62, -72]], enemies: [['bandit', 2], ['bandit-archer', 1]] },
+  { route: [[-96, 48], [-104, 108], [-50, 128]], enemies: [['wolf', 3]] },
+  { route: [[-160, -20], [-230, -42], [-255, 45]], enemies: [['bandit', 2], ['bandit-archer', 1]] },
+  { route: [[240, 25], [300, -85], [215, -55]], enemies: [['scorpion', 2], ['wraith', 1]] },
+  { route: [[-105, -282], [-62, -205], [62, -205], [105, -282]], enemies: [['magma-hound', 3]] },
+  { route: [[112, 150], [200, 158], [282, 148]], enemies: [['drowned', 3]] },
+  { route: [[-255, 282], [-330, 215], [-262, 166]], enemies: [['wraith', 1], ['drowned', 2]] },
+  { route: [[-190, -228], [-240, -335], [-345, -345]], enemies: [['skeleton', 3]] },
+  { route: [[215, -262], [255, -335], [330, -322]], enemies: [['mars-legionary', 1], ['skeleton', 2]] },
+];
+
+/**
+ * Wandering monsters that keep the wild from feeling empty: picked by the
+ * region the spawn point lies in. `night` entries only appear after dark.
+ */
+export const AMBIENT: Partial<Record<ZoneId, { day: EnemyId[]; night: EnemyId[]; pack: [number, number] }>> = {
+  plains: { day: ['wolf', 'wolf', 'bandit', 'boar'], night: ['wolf', 'bandit-archer'], pack: [1, 3] },
+  forest: { day: ['wolf', 'boar', 'bandit', 'bandit-archer'], night: ['wolf', 'skeleton'], pack: [2, 3] },
+  desert: { day: ['scorpion', 'scorpion', 'bandit-archer'], night: ['wraith', 'skeleton'], pack: [1, 3] },
+  coast: { day: ['drowned', 'bandit-archer'], night: ['drowned', 'wraith'], pack: [1, 3] },
+  volcano: { day: ['fire-imp', 'magma-hound'], night: ['fire-imp', 'eye-watcher'], pack: [1, 3] },
+  swamp: { day: ['drowned', 'wraith'], night: ['eye-watcher', 'wraith'], pack: [1, 3] },
+  crossroads: { day: ['skeleton', 'wraith'], night: ['skeleton', 'eye-watcher'], pack: [2, 3] },
+  badlands: { day: ['skeleton', 'mars-legionary'], night: ['skeleton', 'eye-watcher'], pack: [1, 3] },
+};
 
 /** Ember ore veins in the volcano. */
 export const ORE_NODES = [
