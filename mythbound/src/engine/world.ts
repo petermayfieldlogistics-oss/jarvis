@@ -104,13 +104,16 @@ class Batcher {
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const CYL = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
 const CYL6 = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
-const TAPER = new THREE.CylinderGeometry(0.32, 0.5, 1, 7);
+// Plant parts are open-ended: their caps are hidden in canopies or the ground.
+const TAPER = new THREE.CylinderGeometry(0.32, 0.5, 1, 7, 1, true);
+const STEM = new THREE.CylinderGeometry(0.5, 0.5, 1, 6, 1, true);
+const THIN = new THREE.CylinderGeometry(0.5, 0.5, 1, 3, 1, true);
 const CONE4 = new THREE.ConeGeometry(0.75, 1, 4);
 const CONE8 = new THREE.ConeGeometry(0.5, 1, 8);
 const ROCK = new THREE.DodecahedronGeometry(1, 0);
 const ICO = new THREE.IcosahedronGeometry(1, 0);
 const OCTA = new THREE.OctahedronGeometry(1, 0);
-const BLADE = new THREE.ConeGeometry(0.07, 1, 3);
+const BLADE = new THREE.ConeGeometry(0.07, 1, 3, 1, true);
 const TORUS = new THREE.TorusGeometry(1, 0.08, 6, 24);
 const BOWL = new THREE.CylinderGeometry(0.62, 0.3, 0.42, 9);
 /** A gable roof: base 2 wide at y = 0, ridge at y = 1, 1 long along z, flat shaded. */
@@ -164,10 +167,14 @@ void main() {
   col += sunColor * golden * (pow(az, 3.0) * 0.6 + 0.12) * pow(1.0 - hp, 5.0) * 0.8;
   col += sunColor * sunVis * (pow(s, 6.0) * 0.16 + pow(s, 48.0) * 0.4 + pow(s, 700.0) * 1.6);
   // Stars that twinkle, and a cratered moon.
-  vec3 cell = floor(d * 240.0);
+  vec3 sp = d * 200.0;
+  vec3 cell = floor(sp);
   float st = hash(cell);
   float tw = 0.55 + 0.45 * sin(time * (1.5 + st * 4.0) + st * 50.0);
-  col += vec3(0.9, 0.94, 1.0) * smoothstep(0.9968, 1.0, st) * tw * night * smoothstep(0.04, 0.3, h) * 1.6;
+  // A round point somewhere in each lucky cell (cut by the sphere, so sizes vary).
+  vec3 so = vec3(hash(cell + 1.7), hash(cell + 3.1), hash(cell + 5.3)) * 0.5 + 0.25;
+  float sdot = smoothstep(0.42, 0.06, length(fract(sp) - so));
+  col += mix(vec3(1.0, 0.86, 0.7), vec3(0.8, 0.9, 1.0), hash(cell + 7.9)) * smoothstep(0.996, 1.0, st) * sdot * tw * night * smoothstep(0.04, 0.3, h) * 2.2;
   float m = dot(d, moonDir);
   vec3 mr = normalize(cross(moonDir, vec3(0.0, 1.0, 0.0)));
   vec3 mu = cross(mr, moonDir);
@@ -247,18 +254,19 @@ void main() {
   vec3 V = cameraPosition - vWPos;
   float dist = length(V);
   V /= dist;
+  // The mire's pools are still and brown; the sea is clear and choppy.
+  float murk = smoothstep(-115.0, -160.0, p.x) * smoothstep(100.0, 140.0, p.y);
   // Two scrolling slope fields make the ripples; calm them far away.
-  vec2 g = (texture2D(uDetail, p * 0.029 + uTime * vec2(0.010, 0.006)).rg - 0.5) * 1.3;
+  vec2 g = (texture2D(uDetail, p * 0.029 + uTime * vec2(0.010, 0.006)).rg - 0.5) * 1.1;
   #ifndef WATER_LQ
-  g += (texture2D(uDetail, p * 0.087 + uTime * vec2(-0.016, 0.019)).rg - 0.5) * 1.0;
+  g += (texture2D(uDetail, p * 0.087 + uTime * vec2(-0.016, 0.019)).rg - 0.5) * 0.8;
   #endif
-  g /= 1.0 + dist * 0.01;
+  g *= (1.0 - murk * 0.65) / (1.0 + dist * 0.012);
   vec3 N = normalize(vec3(-g.x, 1.0, -g.y));
   // Depth below the surface, baked from the terrain; open sea outside the map.
   vec2 suv = p * uShoreXf.x + uShoreXf.y;
   float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
   float depth = mix(8.0, texture2D(uShore, suv).r * 8.0, inside);
-  float murk = smoothstep(-115.0, -160.0, p.x) * smoothstep(100.0, 140.0, p.y);
   vec3 shallow = mix(vec3(0.07, 0.30, 0.30), vec3(0.13, 0.15, 0.06), murk);
   vec3 deep = mix(vec3(0.008, 0.045, 0.075), vec3(0.025, 0.035, 0.015), murk);
   vec3 body = mix(shallow, deep, smoothstep(0.2, 6.0, depth)) * uLight;
@@ -267,12 +275,14 @@ void main() {
   vec3 sky = mix(uHorizon, uSky, pow(clamp(R.y, 0.0, 1.0), 0.5));
   vec3 col = mix(body, sky, fres * 0.9);
   float sd = max(dot(R, uSunDir), 0.0);
-  col += uSunColor * (pow(sd, 380.0) * 6.0 + pow(sd, 36.0) * 0.15);
+  // Sharp glints up close soften into a broad sheen with distance (no sparkle noise).
+  float sharp = mix(380.0, 90.0, smoothstep(20.0, 160.0, dist));
+  col += uSunColor * (pow(sd, sharp) * mix(4.5, 1.6, smoothstep(20.0, 160.0, dist)) + pow(sd, 36.0) * 0.15);
   // Foam: a frothy edge at the shoreline and lines of surf rolling in.
   float fn = texture2D(uDetail, p * 0.19 + uTime * vec2(0.011, -0.008)).b;
   float edge = 1.0 - smoothstep(0.0, 0.3 + fn * 0.35, depth);
   float surf = smoothstep(0.6, 0.95, sin(depth * 4.5 - uTime * 1.6 + fn * 5.0)) * (1.0 - smoothstep(0.2, 1.7, depth)) * smoothstep(0.3, 0.6, fn);
-  float foam = max(edge, surf) * (1.0 - murk * 0.7);
+  float foam = max(edge, surf) * (1.0 - murk * 0.92);
   col = mix(col, vec3(0.85, 0.89, 0.9) * (uLight * 0.9 + 0.08), foam * 0.85);
   float alpha = max(max(mix(0.4, 0.94, smoothstep(0.0, 3.5, depth)), fres), foam * 0.9);
   gl_FragColor = vec4(col, alpha);
@@ -378,12 +388,46 @@ function plant(parts: VPart[], sway: number, from = 0): THREE.BufferGeometry {
   return merged;
 }
 
-type PlantKind = 'pine' | 'oak' | 'birch' | 'bush' | 'grass' | 'flowers' | 'reeds' | 'mushroom' | 'crystal' | 'dead' | 'ashtree' | 'cactus' | 'rock';
-const SMALL: PlantKind[] = ['grass', 'flowers', 'reeds', 'mushroom'];
+/** Grass tints: golden on the plains, lush in the wood, sickly in the mire. */
+const GRASS: Partial<Record<ZoneId, number>> = {
+  town: 0x8e8a42, plains: 0xb09a48, forest: 0x4e6a30, coast: 0x9a9a5c, swamp: 0x4e5430, crossroads: 0x4e4a5a,
+};
+
+type PlantKind = 'pine' | 'oak' | 'birch' | 'bush' | 'grass' | 'flowers' | 'reeds' | 'toadstool' | 'mushroom' | 'crystal' | 'dead' | 'ashtree' | 'cactus' | 'rock';
+const SMALL: PlantKind[] = ['grass', 'flowers', 'reeds', 'toadstool', 'mushroom'];
 const TREES: PlantKind[] = ['pine', 'oak', 'birch', 'dead', 'ashtree', 'cactus'];
 
-function plantGeometries(): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry> {
-  const canopy = (at: V3, scale: V3): VPart => ({ geo: ICO, color: 0x9a9a9a, top: 0xffffff, tint: 1, at, scale });
+/**
+ * A lumpy ball of leaves: a jittered icosahedron with round normals, so the
+ * light wraps softly around it instead of picking out every facet.
+ */
+function leafBlob(detail: number): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  const nrm = g.attributes.normal as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    nrm.setXYZ(i, v.x, v.y, v.z);
+    // Same jitter for the copies of a corner shared by several faces.
+    const j = 0.84 + 0.3 * hash(Math.round(v.x * 97) * 3.1 + Math.round(v.y * 97) * 7.7 + Math.round(v.z * 97) * 13.3);
+    pos.setXYZ(i, v.x * j, v.y * j, v.z * j);
+  }
+  return g;
+}
+
+function plantGeometries(leafDetail: number): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry> {
+  const leaves = leafBlob(leafDetail);
+  const mushrooms = (glow: number) =>
+    plant([
+      { geo: STEM, color: 0xb8b0a0, top: 0xe0d8c8, at: [0, 0.25, 0], scale: [0.12, 0.5, 0.12] },
+      { geo: STEM, color: 0xb8b0a0, top: 0xe0d8c8, at: [0.32, 0.17, 0.15], scale: [0.09, 0.34, 0.09] },
+      { geo: STEM, color: 0xb8b0a0, top: 0xe0d8c8, at: [-0.22, 0.13, -0.26], scale: [0.08, 0.26, 0.08] },
+      { geo: CONE8, color: 0xcccccc, top: 0xffffff, tint: 1, glow, at: [0, 0.56, 0], scale: [0.62, 0.26, 0.62] },
+      { geo: CONE8, color: 0xcccccc, top: 0xffffff, tint: 1, glow, at: [0.32, 0.38, 0.15], scale: [0.44, 0.2, 0.44] },
+      { geo: CONE8, color: 0xcccccc, top: 0xffffff, tint: 1, glow, at: [-0.22, 0.3, -0.26], scale: [0.36, 0.17, 0.36] },
+    ], 0);
+  const canopy = (at: V3, scale: V3): VPart => ({ geo: leaves, color: 0x9a9a9a, top: 0xffffff, tint: 1, at, scale });
   const blades = (n: number, h: number, w: number, color: number, top: number, tint: number, seed: number): VPart[] =>
     Array.from({ length: n }, (_, i) => {
       const a = hash(seed + i) * TAU;
@@ -393,13 +437,13 @@ function plantGeometries(): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeome
     });
   return {
     pine: plant([
-      { geo: TAPER, color: 0x2e2218, top: 0x4a3626, at: [0, 1.6, 0], scale: [0.55, 3.2, 0.55] },
-      ...[0, 1, 2, 3, 4].map((k): VPart => ({ geo: CONE8, color: 0x1c2a16, top: 0x3e5432, tint: 1, at: [0, 2.7 + k * 1.4, 0], scale: [4.6 - k * 0.8, 2.6 - k * 0.22, 4.6 - k * 0.8] })),
+      { geo: TAPER, color: 0x3a2a1c, top: 0x56402c, at: [0, 1.6, 0], scale: [0.55, 3.2, 0.55] },
+      ...[0, 1, 2, 3, 4].map((k): VPart => ({ geo: CONE8, color: 0x24361e, top: 0x587a44, tint: 1, at: [0, 2.7 + k * 1.4, 0], scale: [4.6 - k * 0.8, 2.6 - k * 0.22, 4.6 - k * 0.8] })),
     ], 0.9, 1.5),
     oak: plant([
       { geo: TAPER, color: 0x34261a, top: 0x4e3a26, at: [0, 1.6, 0], scale: [0.85, 3.2, 0.85] },
-      { geo: CYL6, color: 0x4a3624, at: [0.75, 3.4, 0], scale: [0.26, 1.9, 0.26], rot: [0, 0, -0.75] },
-      { geo: CYL6, color: 0x4a3624, at: [-0.6, 3.2, 0.3], scale: [0.24, 1.7, 0.24], rot: [0.3, 0, 0.8] },
+      { geo: STEM, color: 0x4a3624, at: [0.75, 3.4, 0], scale: [0.26, 1.9, 0.26], rot: [0, 0, -0.75] },
+      { geo: STEM, color: 0x4a3624, at: [-0.6, 3.2, 0.3], scale: [0.24, 1.7, 0.24], rot: [0.3, 0, 0.8] },
       canopy([0, 5.1, 0], [2.8, 2.1, 2.8]),
       canopy([1.9, 4.5, 0.6], [1.9, 1.5, 1.9]),
       canopy([-1.7, 4.6, -0.5], [2.0, 1.6, 2.0]),
@@ -408,9 +452,9 @@ function plantGeometries(): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeome
       canopy([0.2, 6.4, 0.2], [1.6, 1.2, 1.6]),
     ], 0.75, 2),
     birch: plant([
-      { geo: CYL6, color: 0xbab4a6, top: 0xe4e0d4, at: [0, 3, 0], scale: [0.3, 6, 0.3] },
+      { geo: STEM, color: 0xbab4a6, top: 0xe4e0d4, at: [0, 3, 0], scale: [0.3, 6, 0.3] },
       ...[1.1, 2.3, 3.4, 4.5, 5.3].map((y, i): VPart => ({ geo: BOX, color: 0x24201c, at: [0, y, 0], scale: [0.32, 0.07, 0.1], rot: [0, i * 1.3, 0] })),
-      { geo: CYL6, color: 0xc8c2b4, at: [0.35, 4.6, 0], scale: [0.1, 1.2, 0.1], rot: [0, 0, -0.6] },
+      { geo: STEM, color: 0xc8c2b4, at: [0.35, 4.6, 0], scale: [0.1, 1.2, 0.1], rot: [0, 0, -0.6] },
       canopy([0, 6.3, 0], [1.5, 2.2, 1.5]),
       canopy([0.7, 5.3, 0.3], [1.1, 1.5, 1.1]),
       canopy([-0.5, 5.5, -0.35], [1.0, 1.6, 1.0]),
@@ -423,28 +467,23 @@ function plantGeometries(): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeome
         const a = i * 2.4;
         const r = i === 0 ? 0 : 0.2;
         const h = 0.45 + hash(i + 40) * 0.3;
-        return { geo: CYL6, color: 0x3e5a24, at: [Math.cos(a) * r, h / 2, Math.sin(a) * r], scale: [0.025, h, 0.025] };
+        return { geo: THIN, color: 0x3e5a24, at: [Math.cos(a) * r, h / 2, Math.sin(a) * r], scale: [0.03, h, 0.03] };
       }),
       ...[0, 1, 2, 3, 4].map((i): VPart => {
         const a = i * 2.4;
         const r = i === 0 ? 0 : 0.2;
         const h = 0.45 + hash(i + 40) * 0.3;
-        return { geo: ICO, color: 0xffffff, tint: 1, glow: 0.15, at: [Math.cos(a) * r, h + 0.03, Math.sin(a) * r], scale: [0.09, 0.06, 0.09] };
+        return { geo: OCTA, color: 0xffffff, tint: 1, glow: 0.15, at: [Math.cos(a) * r, h + 0.03, Math.sin(a) * r], scale: [0.1, 0.06, 0.1] };
       }),
     ], 0.35),
     reeds: plant([
       ...blades(7, 2.0, 1.3, 0x3e4a26, 0x9a9858, 0.6, 60),
-      { geo: CYL6, color: 0x3a2414, at: [0.08, 1.75, 0.05], scale: [0.08, 0.35, 0.08] },
-      { geo: CYL6, color: 0x3a2414, at: [-0.1, 1.5, -0.08], scale: [0.08, 0.3, 0.08] },
+      { geo: STEM, color: 0x3a2414, at: [0.08, 1.75, 0.05], scale: [0.08, 0.35, 0.08] },
+      { geo: STEM, color: 0x3a2414, at: [-0.1, 1.5, -0.08], scale: [0.08, 0.3, 0.08] },
     ], 0.5),
-    mushroom: plant([
-      { geo: CYL6, color: 0xb8b0a0, top: 0xe0d8c8, at: [0, 0.25, 0], scale: [0.12, 0.5, 0.12] },
-      { geo: CYL6, color: 0xb8b0a0, top: 0xe0d8c8, at: [0.32, 0.17, 0.15], scale: [0.09, 0.34, 0.09] },
-      { geo: CYL6, color: 0xb8b0a0, top: 0xe0d8c8, at: [-0.22, 0.13, -0.26], scale: [0.08, 0.26, 0.08] },
-      { geo: CONE8, color: 0xcccccc, top: 0xffffff, tint: 1, glow: 0.9, at: [0, 0.56, 0], scale: [0.62, 0.26, 0.62] },
-      { geo: CONE8, color: 0xcccccc, top: 0xffffff, tint: 1, glow: 0.9, at: [0.32, 0.38, 0.15], scale: [0.44, 0.2, 0.44] },
-      { geo: CONE8, color: 0xcccccc, top: 0xffffff, tint: 1, glow: 0.9, at: [-0.22, 0.3, -0.26], scale: [0.36, 0.17, 0.36] },
-    ], 0),
+    // Toadstools in the wood; the mire's caps glow.
+    toadstool: mushrooms(0),
+    mushroom: mushrooms(0.9),
     crystal: plant([
       { geo: ICO, color: 0x2e2c36, at: [0, 0.1, 0], scale: [0.75, 0.35, 0.7] },
       { geo: OCTA, color: 0x9a9aa8, top: 0xffffff, tint: 1, glow: 1, at: [0, 1.15, 0], scale: [0.34, 1.35, 0.34] },
@@ -454,18 +493,18 @@ function plantGeometries(): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeome
     ], 0),
     dead: plant([
       { geo: TAPER, color: 0x221d1a, top: 0x3a332c, at: [0, 2.5, 0], scale: [0.5, 5, 0.5] },
-      { geo: CYL6, color: 0x2e2824, at: [0.8, 4.2, 0], scale: [0.2, 2.4, 0.2], rot: [0, 0, -0.8] },
-      { geo: CYL6, color: 0x2e2824, at: [-0.7, 3.6, 0], scale: [0.18, 2, 0.18], rot: [0, 0, 0.9] },
-      { geo: CYL6, color: 0x2e2824, at: [0.2, 5.6, 0.2], scale: [0.14, 1.6, 0.14], rot: [0.3, 0, 0.3] },
+      { geo: STEM, color: 0x2e2824, at: [0.8, 4.2, 0], scale: [0.2, 2.4, 0.2], rot: [0, 0, -0.8] },
+      { geo: STEM, color: 0x2e2824, at: [-0.7, 3.6, 0], scale: [0.18, 2, 0.18], rot: [0, 0, 0.9] },
+      { geo: STEM, color: 0x2e2824, at: [0.2, 5.6, 0.2], scale: [0.14, 1.6, 0.14], rot: [0.3, 0, 0.3] },
       { geo: BOX, color: 0x3e4a2a, top: 0x56603a, at: [1.35, 3.9, 0], scale: [0.08, 1.3, 0.25] },
       { geo: BOX, color: 0x3e4a2a, top: 0x56603a, at: [-1.15, 3.6, 0.05], scale: [0.08, 1.0, 0.22] },
     ], 0.12, 2),
     ashtree: plant([
       { geo: TAPER, color: 0x161210, top: 0x7a746c, at: [0, 2.5, 0], scale: [0.55, 5, 0.55] },
-      { geo: CYL6, color: 0x6a645c, top: 0x8e8880, at: [0.8, 4.2, 0], scale: [0.18, 2.4, 0.18], rot: [0, 0, -0.8] },
-      { geo: CYL6, color: 0x6a645c, top: 0x8e8880, at: [-0.7, 3.6, 0], scale: [0.16, 2, 0.16], rot: [0, 0, 0.9] },
-      { geo: CYL6, color: 0x6a645c, top: 0x8e8880, at: [0.25, 5.6, 0.3], scale: [0.12, 1.6, 0.12], rot: [0.35, 0, 0.3] },
-      { geo: CYL6, color: 0x6a645c, top: 0x8e8880, at: [-0.3, 4.9, -0.5], scale: [0.11, 1.4, 0.11], rot: [-0.7, 0, 0] },
+      { geo: STEM, color: 0x6a645c, top: 0x8e8880, at: [0.8, 4.2, 0], scale: [0.18, 2.4, 0.18], rot: [0, 0, -0.8] },
+      { geo: STEM, color: 0x6a645c, top: 0x8e8880, at: [-0.7, 3.6, 0], scale: [0.16, 2, 0.16], rot: [0, 0, 0.9] },
+      { geo: STEM, color: 0x6a645c, top: 0x8e8880, at: [0.25, 5.6, 0.3], scale: [0.12, 1.6, 0.12], rot: [0.35, 0, 0.3] },
+      { geo: STEM, color: 0x6a645c, top: 0x8e8880, at: [-0.3, 4.9, -0.5], scale: [0.11, 1.4, 0.11], rot: [-0.7, 0, 0] },
       { geo: BOX, color: 0xff5a18, glow: 2.5, at: [0.2, 1.1, 0.18], scale: [0.14, 0.34, 0.08], rot: [0, 0.7, 0] },
       { geo: BOX, color: 0xff7a28, glow: 2.5, at: [-0.16, 2.3, -0.14], scale: [0.1, 0.24, 0.08], rot: [0, -0.8, 0] },
     ], 0.05, 2),
@@ -488,25 +527,30 @@ attribute vec2 aSize;
 uniform float uScale;
 varying vec4 vCol;
 varying float vAdd;
+varying float vSoft;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
   float sz = aSize.x * uScale / max(-mv.z, 0.1);
-  gl_PointSize = min(sz, 180.0);
+  // Specks stay specks even right in front of the lens; big puffs may grow.
+  gl_PointSize = min(sz, aSize.x < 1.0 ? uScale * 0.022 : 220.0);
   vCol = aCol;
-  vCol.a *= smoothstep(0.6, 2.0, sz);
+  // Fade what drifts into the lens (big puffs from further away).
+  vCol.a *= smoothstep(0.6, 2.0, sz) * smoothstep(0.4, 1.6, -mv.z) * smoothstep(aSize.x * 0.5, aSize.x * 1.6, -mv.z);
   vAdd = aSize.y;
+  vSoft = step(1.0, aSize.x);
   if (aCol.a < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 // Premultiplied output: aSize.y = 1 is purely additive (glows), 0 is normal blending.
 const MOTE_FRAG = /* glsl */ `
 varying vec4 vCol;
 varying float vAdd;
+varying float vSoft;
 void main() {
   vec2 q = gl_PointCoord - 0.5;
   float d = 1.0 - dot(q, q) * 4.0;
   if (d <= 0.0) discard;
-  float a = vCol.a * d * d;
+  float a = vCol.a * d * d * mix(1.0, d, vSoft);
   gl_FragColor = vec4(vCol.rgb * a, a * (1.0 - vAdd));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -562,6 +606,8 @@ interface MoteKind {
   alpha: number;
   /** 1 glows (additive), 0 is dusty. */
   add: number;
+  /** Brightness of glowing kinds (dusty ones follow the daylight). */
+  bright?: number;
   vel: V3;
   wander: number;
   life: [number, number];
@@ -575,18 +621,18 @@ interface MoteKind {
 }
 // dust, firefly, ember, ash, sand, mist, spore
 const MOTES: MoteKind[] = [
-  { color: 0xffe0a0, size: [0.05, 0.1], alpha: 0.8, add: 0.8, vel: [0.1, 0.03, 0.06], wander: 0.2, life: [6, 11], y: [0.3, 5], radius: 16, share: 1, sunlit: true },
-  { color: 0xc8ff5a, size: [0.1, 0.16], alpha: 1, add: 1, vel: [0, 0.04, 0], wander: 0.8, life: [5, 9], y: [0.3, 2.8], radius: 22, share: 1, blink: true },
-  { color: 0xff6418, size: [0.06, 0.12], alpha: 1, add: 1, vel: [0.2, 1.3, 0.15], wander: 0.6, life: [2.5, 5], y: [-0.5, 3], radius: 20, share: 1, windy: 1 },
+  { color: 0xffe2b0, size: [0.03, 0.06], alpha: 0.5, add: 1, bright: 0.9, vel: [0.1, 0.03, 0.06], wander: 0.2, life: [6, 11], y: [0.3, 5], radius: 16, share: 1, sunlit: true },
+  { color: 0xc8ff5a, size: [0.1, 0.16], alpha: 1, add: 1, bright: 1.8, vel: [0, 0.04, 0], wander: 0.8, life: [5, 9], y: [0.3, 2.8], radius: 22, share: 1, blink: true },
+  { color: 0xff6418, size: [0.06, 0.12], alpha: 1, add: 1, bright: 2.2, vel: [0.2, 1.3, 0.15], wander: 0.6, life: [2.5, 5], y: [-0.5, 3], radius: 20, share: 1, windy: 1 },
   { color: 0x5e5854, size: [0.05, 0.1], alpha: 0.85, add: 0, vel: [0, -0.45, 0], wander: 0.35, life: [6, 10], y: [1, 10], radius: 20, share: 1, windy: 2 },
   { color: 0xc8a676, size: [0.035, 0.07], alpha: 0.75, add: 0, vel: [0, 0.05, 0], wander: 0.6, life: [1.5, 3], y: [0.05, 2], radius: 15, share: 1, windy: 14 },
   { color: 0xc4ccc4, size: [3.5, 7], alpha: 0.13, add: 0, vel: [0, 0.02, 0], wander: 0.12, life: [10, 16], y: [0.2, 2.2], radius: 30, share: 0.22, windy: 1.2 },
-  { color: 0xb48cff, size: [0.06, 0.1], alpha: 0.9, add: 1, vel: [0, 0.12, 0], wander: 0.35, life: [6, 10], y: [0.3, 4], radius: 20, share: 1 },
+  { color: 0xb48cff, size: [0.06, 0.1], alpha: 0.9, add: 1, bright: 1.4, vel: [0, 0.12, 0], wander: 0.35, life: [6, 10], y: [0.3, 4], radius: 20, share: 1 },
 ];
 /** What floats in the air of each region, by day and by night. */
 const MOTE_MIX: Record<ZoneId, [number[], number[]]> = {
-  town: [[0.5, 0, 0, 0, 0, 0, 0], [0, 0.12, 0, 0, 0, 0.3, 0]],
-  plains: [[0.75, 0, 0, 0, 0, 0, 0], [0, 0.4, 0, 0, 0, 0.3, 0]],
+  town: [[0.3, 0, 0, 0, 0, 0, 0], [0, 0.12, 0, 0, 0, 0.3, 0]],
+  plains: [[0.45, 0, 0, 0, 0, 0, 0], [0, 0.4, 0, 0, 0, 0.3, 0]],
   forest: [[0.5, 0, 0, 0, 0, 0.5, 0], [0, 0.8, 0, 0, 0, 0.8, 0]],
   desert: [[0.12, 0, 0, 0, 0.85, 0, 0], [0, 0, 0, 0, 0.45, 0, 0]],
   volcano: [[0, 0, 0.55, 0.45, 0, 0, 0], [0, 0, 0.6, 0.4, 0, 0, 0]],
@@ -609,13 +655,15 @@ varying vec2 vUv;
 varying float vA;
 void main() {
   vec2 rel = mod(aBase.xy - uFocus.xz + uR, 2.0 * uR) - uR;
-  vec3 base = vec3(uFocus.x + rel.x, uFocus.y - 4.0, uFocus.z + rel.y);
-  vec3 axis = normalize(vec3(uSun.x, max(uSun.y, 0.45), uSun.z));
+  vec3 base = vec3(uFocus.x + rel.x, uFocus.y - 1.5, uFocus.z + rel.y);
+  // Steeper than the real sun so low light still reads as shafts, not sheets on the ground.
+  vec3 axis = normalize(vec3(uSun.x, max(uSun.y, 0.75), uSun.z));
   vec3 toCam = normalize(cameraPosition - base);
   vec3 side = normalize(cross(axis, toCam));
   vec3 p = base + axis * position.y * aBase.w + side * position.x * aBase.z * (0.55 + 0.45 * position.y);
   vUv = position.xy;
-  vA = (1.0 - smoothstep(uR * 0.5, uR, length(rel))) * (0.55 + 0.45 * sin(uTime * 0.35 + aPhase * 6.283)) * sqrt(1.0 - abs(dot(axis, toCam)));
+  // Fade at the edge of the patch and when seen end-on (the quad turns to a sliver).
+  vA = (1.0 - smoothstep(uR * 0.6, uR, length(rel))) * (0.55 + 0.45 * sin(uTime * 0.35 + aPhase * 6.283)) * smoothstep(0.98, 0.7, abs(dot(axis, toCam)));
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 const RAY_FRAG = /* glsl */ `
@@ -624,7 +672,8 @@ varying vec2 vUv;
 varying float vA;
 void main() {
   float across = 1.0 - abs(vUv.x);
-  float along = smoothstep(0.0, 0.25, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
+  // Brightest just above the ground, fading up toward the sun.
+  float along = smoothstep(0.03, 0.22, vUv.y) * (1.0 - smoothstep(0.3, 0.95, vUv.y));
   gl_FragColor = vec4(uColor * across * across * along * vA, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -972,7 +1021,7 @@ export class World {
   }
 
   private buildVegetation() {
-    const geos = plantGeometries();
+    const geos = plantGeometries(this.quality === 'high' ? 1 : 0);
     const plantMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86 });
     const { time, wind, glow } = this;
     plantMat.onBeforeCompile = (shader) => {
@@ -1015,7 +1064,7 @@ export class World {
 
     const density: Partial<Record<ZoneId, Partial<Record<PlantKind, number>>>> = {
       plains: { oak: 0.032, birch: 0.006, bush: 0.02, rock: 0.02, grass: 0.5, flowers: 0.16 },
-      forest: { pine: 0.27, oak: 0.05, birch: 0.035, bush: 0.045, rock: 0.03, grass: 0.35, mushroom: 0.02 },
+      forest: { pine: 0.27, oak: 0.05, birch: 0.035, bush: 0.045, rock: 0.03, grass: 0.35, toadstool: 0.02 },
       desert: { cactus: 0.025, rock: 0.03, dead: 0.008 },
       volcano: { ashtree: 0.024, rock: 0.06 },
       coast: { oak: 0.012, bush: 0.02, rock: 0.04, grass: 0.12, reeds: 0.04 },
@@ -1031,7 +1080,8 @@ export class World {
       pine: { forest: [0xffffff, 0xd8e8d0, 0xc0d0c8, 0xe8e0c0] },
       bush: { plains: [0x8a8a38, 0xa08a34], forest: [0x4a5a2c, 0x5a6232], coast: [0x6a7a40] },
       flowers: { plains: [0xffd040, 0xffc020, 0xfff0d0, 0xe04030], town: [0xffd040, 0xfff0d0] },
-      mushroom: { forest: [0xc04030, 0xc8a070], swamp: [0x40e0c0, 0x60c0ff, 0xb070ff] },
+      toadstool: { forest: [0xb83a2a, 0xa8402a, 0x9a7a50] },
+      mushroom: { swamp: [0x40e0c0, 0x60c0ff, 0xb070ff] },
       crystal: { crossroads: [0xa070ff, 0x7060ff, 0xc080ff] },
     };
     const grassScale = this.quality === 'low' ? 0.3 : this.quality === 'medium' ? 0.6 : 1;
@@ -1060,7 +1110,7 @@ export class World {
           const color = pal ? new THREE.Color(pal[Math.floor(this.rand() * pal.length)]) : new THREE.Color(1, 1, 1);
           color.multiplyScalar(0.9 + this.rand() * 0.2);
           if (kind === 'grass') {
-            put('grass', x, z, 0.8 + this.rand() * 0.8, color.setHex(zone === 'plains' ? 0xb09a48 : ZONES[zone].ground).multiplyScalar(1.2 + this.rand() * 0.4), 0);
+            put('grass', x, z, 0.8 + this.rand() * 0.8, color.setHex(GRASS[zone] ?? ZONES[zone].ground).multiplyScalar(1.1 + this.rand() * 0.4), 0);
           } else if (kind === 'rock') {
             const s = 0.6 + this.rand() * this.rand() * 4;
             put('rock', x, z, s, color.setHex(ZONES[zone].rock).multiplyScalar(1.15 + this.rand() * 0.3), 0.35);
@@ -1656,7 +1706,7 @@ export class World {
 
   /** Shafts of sunlight slanting down around the player. */
   private buildRays() {
-    const n = this.quality === 'low' ? 4 : 7;
+    const n = this.quality === 'low' ? 5 : 10;
     const pos: number[] = [];
     const base: number[] = [];
     const phase: number[] = [];
@@ -1699,7 +1749,8 @@ export class World {
   private updateMotes(dt: number, t: number, focus: THREE.Vector3, zone: ZoneId, day: number, sun: number) {
     const st = this.moteState;
     const { pos, col, size } = this.motes;
-    const [dayMix, nightMix] = MOTE_MIX[zone];
+    const dayMix = MOTE_MIX[zone][0];
+    const nightMix = MOTE_MIX[zone][1];
     let total = 0;
     for (let k = 0; k < MOTES.length; k++) total += (dayMix[k] * day + nightMix[k] * (1 - day)) * MOTES[k].share;
     const norm = total > 1 ? 1 / total : 1;
@@ -1758,7 +1809,7 @@ export class World {
       let alpha = mk.alpha * Math.max(0, env);
       if (mk.sunlit) alpha *= sun;
       if (mk.blink) alpha *= 0.15 + 0.85 * Math.pow(Math.max(0, Math.sin(t * 2.2 + s)), 2);
-      const lit = mk.add ? 1.6 : light;
+      const lit = mk.add ? mk.bright ?? 1 : light;
       const c = mk.color;
       col[i * 4] = ((c >> 16) / 255) * ((c >> 16) / 255) * lit;
       col[i * 4 + 1] = (((c >> 8) & 255) / 255) * (((c >> 8) & 255) / 255) * lit;
@@ -1878,11 +1929,14 @@ export class World {
     this.sun.position.copy(focus).addScaledVector(sunUp > -0.05 ? this.sunDir : u.moonDir.value, 160);
     this.sun.target.position.copy(focus);
     this.sun.color.setHex(0xfff0d8).lerp(this.tmp.setHex(0xff9050), golden);
-    this.sun.intensity = sunUp > -0.05 ? 2.7 * smoothstep(-0.05, 0.2, sunUp) : 0.7;
-    if (sunUp <= -0.05) this.sun.color.setHex(0x8090c0);
-    this.hemi.intensity = 0.55 + 0.55 * day + (nightVision ? 0.9 * night : 0);
-    this.hemi.color.setHex(0xd8c8a0).lerp(this.tmp.setHex(0xe0a070), golden * 0.5).lerp(this.tmp.setHex(0x5a6a96), night);
-    this.ambient.intensity = 0.2 + (nightVision ? 0.6 * night : 0);
+    // The moon takes over from the sun after dusk (fading in, so there is no pop).
+    this.sun.intensity = sunUp > -0.05 ? 2.7 * smoothstep(-0.05, 0.2, sunUp) : 1.2 * smoothstep(-0.05, -0.25, sunUp);
+    if (sunUp <= -0.05) this.sun.color.setHex(0x8494c8);
+    // Moonlit nights stay dark but readable.
+    this.hemi.intensity = 1.1 + 0.15 * night + (nightVision ? 0.9 * night : 0);
+    this.hemi.color.setHex(0xd8c8a0).lerp(this.tmp.setHex(0xe0a070), golden * 0.5).lerp(this.tmp.setHex(0x7a8cc0), night);
+    this.hemi.groundColor.setHex(0x3a3020).lerp(this.tmp.setHex(0x222a3a), night);
+    this.ambient.intensity = 0.2 + 0.12 * night + (nightVision ? 0.6 * night : 0);
 
     // Water mirrors the sky; the glint follows the sun, or the moon at night.
     const w = this.waterU;
@@ -1895,7 +1949,7 @@ export class World {
       w.uSunColor.value.copy(u.sunColor.value).multiplyScalar(smoothstep(-0.05, 0.1, sunUp));
     } else {
       w.uSunDir.value.copy(u.moonDir.value);
-      w.uSunColor.value.setHex(0x8a9ac0).multiplyScalar(0.5);
+      w.uSunColor.value.setHex(0x8a9ac0).multiplyScalar(0.28);
     }
 
     this.time.value = t;
@@ -1927,7 +1981,7 @@ export class World {
     if (this.rays) {
       const ru = (this.rays.material as THREE.ShaderMaterial).uniforms;
       const zoneRays = zone === 'forest' ? 1 : zone === 'plains' || zone === 'town' ? 0.65 : zone === 'swamp' || zone === 'crossroads' ? 0.55 : zone === 'volcano' ? 0.25 : 0.45;
-      const strength = smoothstep(0.0, 0.15, sunUp) * zoneRays * (0.55 + golden * 0.8) * 0.085;
+      const strength = smoothstep(0.0, 0.15, sunUp) * zoneRays * (0.55 + golden * 0.8) * 0.32;
       ru.uSun.value.copy(this.sunDir);
       ru.uFocus.value.copy(focus);
       ru.uColor.value.copy(u.sunColor.value).multiplyScalar(strength);
@@ -1943,13 +1997,12 @@ export class World {
       let bestD = 70 * 70;
       for (const e of this.emitters) {
         const d = e.pos.distanceToSquared(focus);
-        if (d < bestD && !this.lightPick.includes(e, 0) === true && this.lightPick.indexOf(e) >= i) {
-          bestD = d;
-          best = e;
-        } else if (d < bestD && this.lightPick.indexOf(e) < 0) {
-          bestD = d;
-          best = e;
-        }
+        if (d >= bestD) continue;
+        let taken = false;
+        for (let j = 0; j < i; j++) if (this.lightPick[j] === e) taken = true;
+        if (taken) continue;
+        bestD = d;
+        best = e;
       }
       this.lightPick[i] = best;
       const l = this.lights[i];

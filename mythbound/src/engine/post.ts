@@ -50,12 +50,12 @@ void main() {
   // Grade in display-linear space: cool shadows, warm highlights.
   vec3 col = clamp(c.rgb, 0.0, 1.0);
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col *= mix(vec3(0.93, 0.98, 1.09), vec3(1.07, 1.0, 0.9), smoothstep(0.02, 0.5, l));
+  col *= mix(vec3(0.95, 0.99, 1.07), vec3(1.05, 1.0, 0.93), smoothstep(0.02, 0.5, l));
   l = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = max(mix(vec3(l), col, 1.1), 0.0);
   // A gentle S-curve in perceptual space.
   vec3 g = sqrt(col);
-  g = g + (g - 0.5) * 0.1 * (1.0 - abs(g - 0.5) * 2.0);
+  g = g + (g - 0.5) * 0.14 * (1.0 - abs(g - 0.5) * 2.0);
   col = g * g;
   // Vignette.
   vec2 q = vUv - 0.5;

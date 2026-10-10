@@ -143,7 +143,7 @@ export function detailTexture(): THREE.DataTexture {
 
 /** Secondary ground tones, blended in large patches so zones are not one flat colour. */
 const PATCH: Record<ZoneId, number> = {
-  town: 0x5e5a3c, plains: 0x5f6a2c, forest: 0x403a24, desert: 0xc4a070, volcano: 0x2a2421,
+  town: 0x5a5e32, plains: 0x5f6a2c, forest: 0x403a24, desert: 0xc4a070, volcano: 0x2a2421,
   coast: 0x9a9070, swamp: 0x3a3a20, crossroads: 0x2e2c3a, badlands: 0x7e5434,
 };
 
@@ -171,11 +171,16 @@ vec3 tN = normalize(vWNrm);
 float tRock = smoothstep(0.14, 0.42, 1.0 - tN.y);
 vec4 tD1 = texture2D(uDetail, vWPos.xz * 0.09);
 vec4 tD2 = texture2D(uDetail, vWPos.xz * 0.017 + 0.37);
+// Cliffs sample the noise side-on (squashed vertically) so it does not smear down the face.
 #ifdef TERRAIN_HQ
 vec4 tD0 = texture2D(uDetail, vWPos.xz * 0.43 + 0.11);
+float tSide = smoothstep(0.3, 0.7, abs(tN.x) / (abs(tN.x) + abs(tN.z) + 1e-4));
+vec4 tR = mix(texture2D(uDetail, vWPos.xy * vec2(0.09, 0.2)), texture2D(uDetail, vWPos.zy * vec2(0.09, 0.2)), tSide);
 #else
 vec4 tD0 = vec4(0.5);
+vec4 tR = texture2D(uDetail, (abs(tN.x) > abs(tN.z) ? vWPos.zy : vWPos.xy) * vec2(0.09, 0.2));
 #endif
+tD1 = mix(tD1, tR, tRock);
 float tVar = (tD1.b - 0.5) * 0.42 + (tD2.b - 0.5) * 0.34 + (tD0.b - 0.5) * 0.22;
 vec3 tCol = diffuseColor.rgb * (1.0 + tVar);
 // Dry and lush tufts on open ground.

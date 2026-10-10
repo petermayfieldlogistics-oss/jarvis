@@ -32,7 +32,7 @@ export class Menu {
     this.tab = tab;
     this.isOpen = true;
     this.g.setMode('menu');
-    this.render();
+    this.render(true);
   }
 
   close() {
@@ -41,14 +41,18 @@ export class Menu {
     this.g.setMode('play');
   }
 
-  private render() {
+  /** Rebuilds the panel; only opening it plays the entrance, and re-rendering the same tab keeps its scroll. */
+  private render(entering = false) {
+    const prev = this.el.querySelector<HTMLElement>('.mbody');
+    const keep = !entering && prev?.dataset.tab === this.tab ? prev.scrollTop : 0;
     this.el.className = 'menu';
     this.el.innerHTML = `
-      <div class="mpanel">
+      <div class="mpanel${entering ? ' in' : ''}">
         <div class="mtabs">${TABS.map(([id, name]) => `<button data-tab="${id}" class="${id === this.tab ? 'on' : ''}">${name}</button>`).join('')}
           <button data-act="resume" class="resume">Resume</button></div>
-        <div class="mbody">${this.body()}</div>
+        <div class="mbody" data-tab="${this.tab}">${this.body()}</div>
       </div>`;
+    if (keep) this.el.querySelector<HTMLElement>('.mbody')!.scrollTop = keep;
     this.el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => ((this.tab = b.dataset.tab as Tab), this.render())));
     this.el.querySelector('[data-act="resume"]')!.addEventListener('click', () => this.close());
     this.bind();
@@ -79,7 +83,7 @@ export class Menu {
     if (c.devilDeals) lines.push(`Deals with the Devil: ${c.devilDeals}/4.${isLightSealed(c, this.g.gameMinutes) ? ' Light sealed.' : ''}`);
     if (c.hpLost) lines.push(`Max HP lost to Soul or Power: ${Math.round(c.hpLost)}.`);
     if (c.tamed.length) lines.push(`Tamed: ${c.tamed.join(', ')}.`);
-    const traits = (title: string, list: string[]) => `<h4>${esc(title)}</h4><ul>${list.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+    const traits = (title: string, list: string[]) => `<div class="trait"><h4>${esc(title)}</h4><ul>${list.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
     return `
       <h2>${esc(c.name)}</h2>
       <p class="sub">Level ${c.level} ${esc(RACES[c.raceId].name)} ${esc(CLASSES[c.classId].name)}${c.subclassId ? ` · ${esc(SUBCLASSES[c.subclassId].name)}` : ''} · ${esc(ROLES[c.roleId].name)}${c.expansion ? ' · Expansion' : ''}</p>
@@ -92,7 +96,7 @@ export class Menu {
         <div>Trials <b>${this.g.state.trialsDone.length} / 6</b></div>
       </div>
       ${lines.length ? `<ul class="notes">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
-      <div class="cols">
+      <div class="cols traits">
         ${traits(CLASSES[c.classId].name, CLASSES[c.classId].traits)}
         ${c.subclassId ? traits(SUBCLASSES[c.subclassId].name, SUBCLASSES[c.subclassId].traits) : ''}
         ${traits(RACES[c.raceId].name, RACES[c.raceId].traits)}

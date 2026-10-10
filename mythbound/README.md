@@ -97,4 +97,5 @@ won't strike first, the ruins appear on the map, but dark damage hurts 20% more.
 - `src/data/` – classes, races, roles, spells, weapons, monsters, bosses, places, quests, lore
 - `src/rules/` – character creation, stats, combat and spell rules (unit tested)
 - `src/engine/` – terrain, world building, models, player, monsters and bosses, effects, game loop, story
-- `src/ui/` – title, character creator, HUD, menus, dialogs
+- `src/ui/` – title, character creator, HUD (framed stat and boss bars, spell cooldown sweeps, compass minimap), menus,
+  dialogs; the gold ornaments are inline SVGs in `src/styles.css`
