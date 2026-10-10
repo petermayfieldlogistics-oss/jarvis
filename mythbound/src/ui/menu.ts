@@ -186,25 +186,27 @@ export class Menu {
   }
 
   private controls(): string {
-    return `<div class="cols"><div><h4>Keyboard &amp; mouse</h4><ul>
-      <li>WASD: move · Mouse: look (click to capture)</li>
+    const k = (...keys: string[]) => keys.map((x) => `<kbd>${x}</kbd>`).join('');
+    return `<div class="cols keys"><div><h4>Keyboard &amp; mouse</h4><ul>
+      <li>${k('W', 'A', 'S', 'D')} move · mouse: look (click to capture)</li>
+      <li>${k('Shift')} tap: <b>shift lock</b> (face where the camera looks, over-the-shoulder view, crosshair) · hold: sprint</li>
+      <li>${k('C')} roll / dodge · ${k('Space')} jump · ${k('Z')} sneak</li>
       <li>Left click: attack · hold with a bow to draw, release to shoot</li>
-      <li>E: heavy attack (Swordsman: Spinner Flourish)</li>
+      <li>${k('E')} heavy attack (Swordsman: Spinner Flourish)</li>
       <li>Right click: block / raise shield</li>
-      <li>Shift: tap to roll, hold to sprint · Space: jump</li>
-      <li>C / Ctrl: sneak · Tab or middle click: lock on</li>
-      <li>Q: cast (hold for alternate form) · 1-4 / wheel: choose spell</li>
-      <li>R: class ability (BloodRage, Power Shot, Tame, Combine, Volley)</li>
-      <li>G: combine spells (Mage Lv 3+) · V: fly (Draco Lv 6+)</li>
-      <li>H: drink flask · X: eat fish · T: switch weapon</li>
-      <li>F: interact · M: map · Esc / I: menu</li></ul></div>
+      <li>${k('Tab')} or middle click: lock on</li>
+      <li>${k('Q')} cast (hold for alternate form) · ${k('1')}–${k('4')} / wheel: choose spell</li>
+      <li>${k('R')} class ability (BloodRage, Power Shot, Tame, Combine, Volley)</li>
+      <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+)</li>
+      <li>${k('H')} drink flask · ${k('X')} eat fish · ${k('T')} switch weapon</li>
+      <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li></ul></div>
       <div><h4>Touch</h4><ul>
       <li>Left side: virtual joystick (push far to sprint)</li>
       <li>Right side: drag to look</li>
       <li>⚔ attack (hold with a bow) · 💥 heavy · ⤿ roll · ⤒ jump</li>
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
       <li>Tap a spell slot to choose it; tap ❂ there to use your ability</li>
-      <li>Top row: ◎ lock · ⇄ weapon · ▼ sneak · 🪽 fly · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>
+      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>
       <li>✋ appears when you can interact</li></ul></div></div>`;
   }
 

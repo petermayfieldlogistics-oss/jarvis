@@ -156,6 +156,7 @@ export function showTitle(root: HTMLElement, hasSave: boolean, onContinue: () =>
   el.innerHTML = `
     <div class="tinner">
       <div class="logo">MYTHBOUND</div>
+      <div class="orn-rule"></div>
       <div class="tag">Six trials. Six weapons of the old gods. ${unlocks.ancient ? `<span class="glyph">${ANCIENT_GLYPH}</span>` : 'Do not look at the eyes.'}</div>
       <div class="tbtns">
         ${hasSave ? '<button class="primary cont">Continue</button>' : ''}

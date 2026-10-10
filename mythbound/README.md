@@ -21,20 +21,26 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | Keyboard & mouse | Touch | Action |
 | --- | --- | --- |
 | WASD, mouse (click to capture) | left thumb, right thumb drag | move, look |
+| Shift tap | 🔒 | toggle shift lock |
+| Shift hold | push stick far | sprint |
+| C | ⤿ | roll / dodge (rolls through attacks) |
 | Left click (hold with a bow) | ⚔ | attack / draw and shoot |
 | E | 💥 | heavy attack (Swordsman: Spinner Flourish) |
 | Right click | 🛡 | block / raise shield |
-| Shift tap / hold | ⤿ / push stick far | roll (dodges through attacks) / sprint |
 | Space | ⤒ | jump (Draco: fly up) |
+| Z | ▼ | sneak |
 | Q (hold for alternate form) | ✦ | cast the selected spell |
 | 1-4, mouse wheel | tap a spell slot | choose spell |
 | R | ❂ | class ability: BloodRage, Power Shot, Tame, Combine, Volley |
 | G / V | ⊕ / 🪽 | combine spells (Mage Lv 3+) / fly (Draco Lv 6+) |
 | Tab, middle click | ◎ | lock on |
-| C, Ctrl | ▼ | sneak |
 | H / X / T | ⚗ / 🐟 / ⇄ | flask / eat fish / switch weapon |
 | F | ✋ | interact |
 | M, Esc | 🗺, ☰ | map (fast travel between shrines), menu |
+
+**Shift lock** (a quick tap of Shift, or 🔒 on touch) turns the hero to face wherever the camera looks, pulls the camera
+over the shoulder and shows a crosshair, so you can strafe, back-pedal and aim spells and arrows precisely. Tap again to
+release it. Holding Shift still sprints.
 
 ## The world
 
