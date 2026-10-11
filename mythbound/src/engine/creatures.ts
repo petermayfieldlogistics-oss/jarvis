@@ -1614,7 +1614,14 @@ export function animateCreature(rig: CreatureRig, a: AnimState): void {
   a.landing = Math.max(0, a.landing - dt * 3);
   const j = rig.j ?? {};
   const style = a.attack >= 0 || a.windup > 0 ? styleFor(rig.kind, a.attackStyle) : 'bite';
-  const c: Ctx = { rig, j, a, st, dt, style, k: (rate) => 1 - Math.exp(-rate * dt) };
+  // One context object is reused for every creature every frame (no garbage in the hot loop).
+  const c = CTX;
+  c.rig = rig;
+  c.j = j;
+  c.a = a;
+  c.st = st;
+  c.dt = kdt = dt;
+  c.style = style;
   switch (rig.kind) {
     case 'insect':
       return animInsect(c);
@@ -1643,21 +1650,42 @@ interface Ctx {
   k: (rate: number) => number;
 }
 
+/** Frame step for the shared damping function below. */
+let kdt = 0;
+const CTX = { k: (rate: number) => 1 - Math.exp(-rate * kdt) } as Ctx;
+/** Shared stand-in for missing joint lists, so `?? NONE` allocates nothing. */
+const NONE: never[] = [];
+
 /** Attack curves: wind-up (anticipation), strike (the lunge into the hit) and the follow-through. */
+const ATK = { on: 0, antic: 0, strike: 0, after: 0 };
+/** Fills and returns a shared object: read it before the next call. */
 function attackCurves(a: AnimState, hit: number) {
   const x = a.attack;
-  if (x < 0) return { on: 0, antic: Math.max(0, a.windup) * 0.8, strike: 0, after: 0 };
-  const antic = Math.max(env(x, 0, hit * 0.7, hit * 0.72, hit * 0.95), a.windup);
-  const strike = env(x, hit * 0.7, hit * 0.98, hit + 0.04, Math.min(1, hit + 0.35));
-  const after = env(x, hit, hit + 0.08, hit + 0.15, 1);
-  return { on: 1 - sstep(0.85, 1, x) * 0.5, antic, strike, after };
+  if (x < 0) {
+    ATK.on = 0;
+    ATK.antic = Math.max(0, a.windup) * 0.8;
+    ATK.strike = ATK.after = 0;
+    return ATK;
+  }
+  ATK.antic = Math.max(env(x, 0, hit * 0.7, hit * 0.72, hit * 0.95), a.windup);
+  ATK.strike = env(x, hit * 0.7, hit * 0.98, hit + 0.04, Math.min(1, hit + 0.35));
+  ATK.after = env(x, hit, hit + 0.08, hit + 0.15, 1);
+  ATK.on = 1 - sstep(0.85, 1, x) * 0.5;
+  return ATK;
 }
 
 /** Gait leg cycle: stance pushes the foot back, swing lifts and carries it forward. */
+const STRIDE: [number, number] = [0, 0];
 function stride(u: number, duty: number): [number, number] {
-  if (u < duty) return [1 - 2 * (u / duty), 0];
+  if (u < duty) {
+    STRIDE[0] = 1 - 2 * (u / duty);
+    STRIDE[1] = 0;
+    return STRIDE;
+  }
   const s = (u - duty) / (1 - duty);
-  return [-1 + 2 * s * s * (3 - 2 * s), Math.sin(Math.PI * s)];
+  STRIDE[0] = -1 + 2 * s * s * (3 - 2 * s);
+  STRIDE[1] = Math.sin(Math.PI * s);
+  return STRIDE;
 }
 
 const OFF_WALK = [0.25, 0.75, 0.0, 0.5];
@@ -1818,17 +1846,17 @@ function animQuad(c: Ctx) {
   P(rig.body, 0, bodyY, bodyZ, kb);
   if (j.chest) R(j.chest, flex, 0, 0, kb);
   if (j.hips) R(j.hips, -flex - rx * 0.15, 0, 0, kb);
-  const neck = j.neck ?? [];
+  const neck = j.neck ?? NONE;
   const nn = neck.length + 1;
   for (const n of neck) R(n, neckX / nn, neckY / nn, headZ * 0.3, kh);
   R(rig.head, neckX / nn + headX, neckY / nn + headY, headZ, kh);
   if (j.jaw) R(j.jaw, Math.max(0, jaw), 0, 0, k(jaw > j.jaw.rotation.x ? 18 : 30));
-  for (const e of j.ears ?? []) {
+  for (const e of j.ears ?? NONE) {
     const s = (e.userData.bp as V3).x > 0 ? 1 : -1;
     const twitch = idle * (Math.sin(t * 1.7 + s) > 0.97 ? 0.3 : 0);
     R(e, -earX * 0.9 - twitch, 0, -s * earX * 0.5, k(12));
   }
-  const tail = j.tail ?? [];
+  const tail = j.tail ?? NONE;
   const wagRate = idle > 0.5 ? 3 : 8;
   tail.forEach((seg, i) => {
     const y = wagAmp * Math.sin(t * wagRate - i * 0.6) * (0.6 + i * 0.3) - st.turn * 0.15;
@@ -1837,7 +1865,7 @@ function animQuad(c: Ctx) {
 
   // Legs: feet planted by IK through the stance, carried forward in an arc
   // through the swing; rearing, flight and death fall back to set poses.
-  const limbs = j.limbs ?? [];
+  const limbs = j.limbs ?? NONE;
   const kl = k(dead ? 8 : 40);
   const S = strideLen / sc;
   const liftH = (0.1 * gW + 0.16 * gT + 0.22 * gG) * legLen * mv;
@@ -1888,7 +1916,7 @@ function animQuad(c: Ctx) {
   });
 
   // Wings (drake).
-  for (const w of j.wings ?? []) animWing(c, w, flying ? 1 : 0, (atk.on > 0 ? 0.6 : 0) + 0.25 * sstep(5, 9, vr) + (dead ? 0.6 : 0), flying ? 7 : 0);
+  for (const w of j.wings ?? NONE) animWing(c, w, flying ? 1 : 0, (atk.on > 0 ? 0.6 : 0) + 0.25 * sstep(5, 9, vr) + (dead ? 0.6 : 0), flying ? 7 : 0);
   if (j.wisps && j.glow) animWisps(c, j.wisps, j.glow, style === 'summon' || style === 'volley' ? atk.on : 0, dead);
 }
 
@@ -1949,7 +1977,7 @@ function animInsect(c: Ctx) {
   P(rig.body, 0, Math.abs(Math.sin(st.cyc * TAU * 2)) * 0.015 * mv - 0.3 * dead + Math.sin(t * 2) * 0.004, 0.12 * atk.strike - 0.06 * atk.antic - 0.06 * h, kb);
   R(rig.head, 0.05 * atk.strike * clawing, 0, 0, kb);
   // Tail curls up in a threat, coils back in the wind-up and whips over to sting.
-  const tail = j.tail ?? [];
+  const tail = j.tail ?? NONE;
   const sway = Math.sin(t * 1.4) * 0.06;
   tail.forEach((seg, i) => {
     const w = i / (tail.length - 1);
@@ -1960,7 +1988,7 @@ function animInsect(c: Ctx) {
     R(seg, x, sway * (1 - w) + Math.sin(t * 1.1 + i) * 0.02, sway * w, k(dead ? 6 : 16));
   });
   // Pincers: held forward and twitching; spread wide when threatening; snap shut on the strike.
-  for (const p of j.pincers ?? []) {
+  for (const p of j.pincers ?? NONE) {
     const s = p.side;
     const idleSnap = Math.max(0, Math.sin(t * 1.6 + s)) ** 8;
     const spread = 0.35 * atk.antic + 0.1 * sting * atk.strike;
@@ -1971,7 +1999,7 @@ function animInsect(c: Ctx) {
     R(p.finger, 0, s * Math.max(0, open), 0, k(open > 0.3 ? 14 : 30));
   }
   // Legs ripple in an alternating tetrapod gait.
-  animSpiderLegs(c, j.limbs ?? [], 0.32, 0.45, mv, dead);
+  animSpiderLegs(c, j.limbs ?? NONE, 0.32, 0.45, mv, dead);
 }
 
 /** Many-legged walk: alternating sets with a ripple along each side; legs curl in on death. */
@@ -2078,7 +2106,7 @@ function animCrab(c: Ctx) {
   const kb = k(8);
   R(rig.body, bodyX, 0, bodyRoll, kb);
   P(rig.body, 0, bodyY, bodyZ, kb);
-  (j.pincers ?? []).forEach((p, i) => {
+  (j.pincers ?? NONE).forEach((p, i) => {
     const cl = claw[i];
     const s = p.side;
     const kc = k(atk.strike > 0.3 ? 22 : 9);
@@ -2088,10 +2116,10 @@ function animCrab(c: Ctx) {
     R(p.finger, -Math.max(0, cl.open), 0, 0, k(cl.open > p.finger.rotation.x ? 12 : 26));
   });
   // Eye stalks swivel on their own; droop on death.
-  (j.stalks ?? []).forEach((s, i) => R(s, 0.15 * Math.sin(t * 0.7 + i * 2) - 0.2 * atk.antic + 1.2 * dead, 0.3 * Math.sin(t * 0.5 + i * 3.1), 0, k(6)));
+  (j.stalks ?? NONE).forEach((s, i) => R(s, 0.15 * Math.sin(t * 0.7 + i * 2) - 0.2 * atk.antic + 1.2 * dead, 0.3 * Math.sin(t * 0.5 + i * 3.1), 0, k(6)));
   if (j.jaw) R(j.jaw, 0.2 * Math.max(0, Math.sin(t * 6)) + 0.4 * (style === 'volley' ? atk.on : 0), 0, 0, k(14));
-  animStrands(c, j.strands ?? [], 0.15, mv * 0.3);
-  animSpiderLegs(c, j.limbs ?? [], 0.25, 0.35, mv, dead);
+  animStrands(c, j.strands ?? NONE, 0.15, mv * 0.3);
+  animSpiderLegs(c, j.limbs ?? NONE, 0.25, 0.35, mv, dead);
 }
 
 /** Robe tatters, tentacles, hair and seaweed: lagging waves, swept back by motion. */
@@ -2121,8 +2149,13 @@ function hover(c: Ctx, height: number, bob: number) {
   const kb = k(6);
   R(rig.body, 0.25 * mv - 0.25 * h + 0.5 * dead, Math.sin(t * 0.6) * 0.1 * (1 - mv), Math.sin(t * 1.1) * 0.04 - st.turn * 0.05 + st.hurtSide * 0.15 * h + st.deadSide * 0.3 * dead, kb);
   P(rig.body, 0, y, -0.1 * h, kb);
-  return { mv, t, dead, h };
+  HOVER.mv = mv;
+  HOVER.t = t;
+  HOVER.dead = dead;
+  HOVER.h = h;
+  return HOVER;
 }
+const HOVER = { mv: 0, t: 0, dead: 0, h: 0 };
 
 function animWraith(c: Ctx) {
   const { rig, j, a, k } = c;
@@ -2132,7 +2165,7 @@ function animWraith(c: Ctx) {
   const cast = c.style === 'cast' || c.style === 'volley' ? 1 : 0;
   R(rig.head, -0.15 * atk.antic + 0.2 * atk.strike + 0.4 * dead, Math.sin(t * 0.43) * 0.3 * (1 - atk.on), Math.sin(t * 0.7) * 0.12, k(8));
   if (j.chest) R(j.chest, -0.15 * atk.antic + 0.25 * atk.strike, 0, 0, k(10));
-  for (const arm of j.arms ?? []) {
+  for (const arm of j.arms ?? NONE) {
     const s = arm.side;
     const drift = Math.sin(t * 1.3 + s * 1.7) * 0.12;
     // Claws rise high behind the head, then rake forward and down.
@@ -2143,8 +2176,8 @@ function animWraith(c: Ctx) {
     R(arm.mid, -0.4 - 0.6 * raise + 0.3 * rake - 0.2 * reach + Math.sin(t * 2 + s) * 0.1, 0, 0, k(12));
     R(arm.low, 0.2 * raise - 0.5 * rake - 0.4 * reach + Math.sin(t * 3.1 + s) * 0.15, 0, s * 0.2 * reach, k(14));
   }
-  animStrands(c, j.strands ?? [], 0.12 + 0.05 * atk.on, mv * 0.8 + 0.6 * dead);
-  for (const w of j.wisps ?? []) {
+  animStrands(c, j.strands ?? NONE, 0.12 + 0.05 * atk.on, mv * 0.8 + 0.6 * dead);
+  for (const w of j.wisps ?? NONE) {
     const s = (0.5 + 0.06 * Math.sin(t * 11) + 0.04 * Math.sin(t * 27) + 0.3 * (atk.antic + atk.strike)) * (1 - dead);
     w.scale.set(s, s, s);
   }
@@ -2172,10 +2205,10 @@ function animEye(c: Ctx) {
   // Lids: half-lidded idle, wide open when it glares, shut on blink, hurt or death.
   const close = Math.max(blink, 0.6 * h, dead);
   const lid = 0.16 * (1 - focus) + 0.05 * focus - 0.25 * Math.max(atk.antic, atk.strike);
-  (j.lids ?? []).forEach((l, i) => R(l, (i === 0 ? 1 : -1) * (lid + (0.9 - lid) * close), 0, 0, k(close > 0.3 ? 30 : 12)));
+  (j.lids ?? NONE).forEach((l, i) => R(l, (i === 0 ? 1 : -1) * (lid + (0.9 - lid) * close), 0, 0, k(close > 0.3 ? 30 : 12)));
   R(rig.head, -0.2 * atk.antic + 0.25 * atk.strike, 0, 0, k(10));
   P(rig.head, 0, 0, -0.15 * atk.antic + 0.3 * atk.strike, k(12));
-  animStrands(c, j.strands ?? [], 0.1, mv * 0.6 + dead * 0.4, 0.22 + 0.25 * atk.on);
+  animStrands(c, j.strands ?? NONE, 0.1, mv * 0.6 + dead * 0.4, 0.22 + 0.25 * atk.on);
 }
 
 const FACES = [0, -2.1, 2.1];
@@ -2190,7 +2223,7 @@ function animWitch(c: Ctx) {
   const turnTo = atk.on > 0 ? 0 : FACES[Math.floor((t / 7) % 3)];
   const fury = a.fury;
   R(rig.head, -0.1 * atk.antic + 0.15 * atk.strike, turnTo, Math.sin(t * 0.5) * 0.08, k(2.5));
-  const arms = j.arms ?? [];
+  const arms = j.arms ?? NONE;
   const right = arms[0], left = arms[1];
   let rUp = -0.15, rUpZ = 0, rMid = -0.5, lUp = -0.1, lUpZ = 0, lMid = -0.6, chestX = 0, chestY = 0;
   const sweep = style === 'sweep', slam = style === 'slam' || style === 'ring', summon = style === 'summon', tele = style === 'teleport';
@@ -2238,9 +2271,9 @@ function animWitch(c: Ctx) {
     R(left.mid, lMid, 0, 0, k(10));
     R(left.low, 0.3, 0, 0, k(10));
   }
-  animStrands(c, j.strands ?? [], 0.1 + 0.1 * (summon ? atk.on : 0), mv * 0.8 + dead * 0.5);
+  animStrands(c, j.strands ?? NONE, 0.1 + 0.1 * (summon ? atk.on : 0), mv * 0.8 + dead * 0.5);
   if (j.glow) j.glow.emissiveIntensity += ((1 + fury * 0.6 + (summon || slam ? atk.on : 0) * 1.5 + Math.sin(t * 3) * 0.1) * (1 - dead) - j.glow.emissiveIntensity) * k(6);
-  for (const w of j.wisps ?? []) {
+  for (const w of j.wisps ?? NONE) {
     const s = (0.5 + 0.08 * Math.sin(t * 9 + w.id) + 0.05 * Math.sin(t * 23 + w.id) + (summon ? 0.4 * atk.on : 0)) * (1 - dead);
     w.scale.set(s, s * 1.3, s);
   }
@@ -2265,7 +2298,7 @@ function animImp(c: Ctx) {
   if (j.chest) R(j.chest, 0.1 * Math.sin(t * flapRate - 1) * 0.3, 0, 0, kb);
   R(rig.head, -0.25 * mv + Math.sin(t * 0.8) * 0.1 - 0.2 * h, Math.sin(t * 0.6) * 0.3 * (1 - atk.on), Math.sin(t * 1.3) * 0.1, k(12));
   if (j.jaw) R(j.jaw, 0.1 + 0.4 * atk.strike + 0.2 * Math.max(0, Math.sin(t * 2.3)) ** 4 + 0.4 * h, 0, 0, k(18));
-  const arms = j.arms ?? [];
+  const arms = j.arms ?? NONE;
   for (const arm of arms) {
     const s = arm.side;
     const throwing = s < 0;
@@ -2275,13 +2308,13 @@ function animImp(c: Ctx) {
     R(arm.mid, -0.6 - 1.0 * back + 0.7 * fling, 0, 0, k(16));
     R(arm.low, -0.2 + 0.3 * fling, 0, 0, k(16));
   }
-  for (const l of j.limbs ?? []) {
+  for (const l of j.limbs ?? NONE) {
     const kick = Math.sin(t * 5 + (l.side > 0 ? 0 : Math.PI)) * 0.25 * (0.3 + mv);
     R(l.up, 0.2 + 0.5 * mv + kick - 0.6 * dead, 0, l.side * 0.1, k(10));
     R(l.mid, 0.6 + 0.3 * mv, 0, 0, k(10));
     R(l.low, -0.6 - 0.2 * kick, 0, 0, k(10));
   }
-  const tail = j.tail ?? [];
+  const tail = j.tail ?? NONE;
   tail.forEach((s, i) => R(s, -0.1 + 0.25 * mv + 0.1 * Math.sin(t * 3 - i), Math.sin(t * 2.2 - i * 0.7) * 0.35, 0, k(8)));
-  for (const w of j.wings ?? []) animWing(c, w, dead ? 0 : 1, dead ? 0.8 : 0, flapRate);
+  for (const w of j.wings ?? NONE) animWing(c, w, dead ? 0 : 1, dead ? 0.8 : 0, flapRate);
 }
