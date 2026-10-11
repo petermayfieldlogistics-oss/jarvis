@@ -16,7 +16,7 @@ can play the same hero on any device. Accounts switch on when the `DATABASE_URL`
 PostgreSQL database (a free [Neon](https://neon.tech) database works: in Render, open the service, then Environment,
 and add `DATABASE_URL` with Neon's connection string). Without it, co-op still works and the game offers offline play.
 
-- Passwords and recovery codes are stored as scrypt hashes; sign-ins are random tokens stored as SHA-256 hashes.
+- Passwords are stored as scrypt hashes; recovery codes (80 random bits) and sign-in tokens as SHA-256 hashes.
 - A forgotten password is reset with the recovery code shown once when the account is made.
 - Login attempts are rate-limited per address and per username.
 - `GET /health` reports `accounts: true` when the database is connected.
