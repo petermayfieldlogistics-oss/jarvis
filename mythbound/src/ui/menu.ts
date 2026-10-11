@@ -60,7 +60,9 @@ export class Menu {
         <div class="mbody" data-tab="${this.tab}">${this.body()}</div>
       </div>`;
     if (keep) this.el.querySelector<HTMLElement>('.mbody')!.scrollTop = keep;
-    this.el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => ((this.tab = b.dataset.tab as Tab), this.render())));
+    // Only the tab buttons: the body also carries data-tab, and re-rendering on a
+    // click inside it would wipe out a text box as soon as it is tapped.
+    this.el.querySelectorAll<HTMLButtonElement>('.mtabs button[data-tab]').forEach((b) => b.addEventListener('click', () => ((this.tab = b.dataset.tab as Tab), this.render())));
     this.el.querySelector('[data-act="resume"]')!.addEventListener('click', () => this.close());
     this.bind();
   }

@@ -54,6 +54,8 @@ html, body {
 .game-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 button { font-family: var(--display); cursor: pointer; }
 .hidden { display: none !important; }
+/* Safari will not let you type in a box that inherits user-select: none. */
+input, textarea { -webkit-user-select: text; user-select: text; }
 small { color: var(--ink-dim); }
 .hint { color: var(--ink-dim); font-style: italic; font-size: 0.95em; }
 * { scrollbar-width: thin; scrollbar-color: #6b5430 rgba(0, 0, 0, 0.3); }
