@@ -5,12 +5,15 @@
   "description": "Co-op relay server for Mythbound: rooms with short codes that pass messages between players.",
   "type": "module",
   "main": "server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node --test"
   },
   "dependencies": {
+    "pg": "^8.23.1",
     "ws": "^8.22.0"
   }
 }

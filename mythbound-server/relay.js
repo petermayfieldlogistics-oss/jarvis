@@ -5,6 +5,9 @@
 // only creates rooms and passes messages between the players in them.
 //
 // Protocol (JSON over WebSocket at /ws):
+// Accounts (accounts.js) are served over plain HTTP at /api/ when a database
+// is connected; see server.js.
+//
 //   client -> server
 //     { t: 'create', name, version }          make a room and become its host
 //     { t: 'join', room, name, version }      join a room by code
@@ -123,12 +126,23 @@ function handle(player, msg) {
   }
 }
 
-export function startServer(port = Number(process.env.PORT) || 8080) {
-  const http = createServer((req, res) => {
+/**
+ * @param {number} port
+ * @param {{ accounts?: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<boolean> }} [options]
+ *   accounts: the /api handler (accounts.js), when a database is connected.
+ */
+export function startServer(port = Number(process.env.PORT) || 8080, options = {}) {
+  const http = createServer(async (req, res) => {
     const path = (req.url ?? '/').split('?')[0];
     if (path === '/' || path === '/health') {
       res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({ ok: true, game: 'mythbound', version: PROTOCOL_VERSION, rooms: rooms.size }));
+      res.end(JSON.stringify({ ok: true, game: 'mythbound', version: PROTOCOL_VERSION, rooms: rooms.size, accounts: !!options.accounts }));
+      return;
+    }
+    if (path.startsWith('/api/')) {
+      if (options.accounts && (await options.accounts(req, res))) return;
+      res.writeHead(503, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS' });
+      res.end(JSON.stringify({ error: 'no-accounts', message: 'Accounts are not switched on for this server yet.' }));
       return;
     }
     res.writeHead(404, { 'content-type': 'text/plain' });
