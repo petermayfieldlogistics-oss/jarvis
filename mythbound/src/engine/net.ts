@@ -55,22 +55,25 @@ export class Net {
     if (!/^wss?:\/\//.test(url)) throw new Error('The server address must start with wss://');
     const health = healthUrl(url);
     if (health) {
-      status('Waking the server… (up to a minute if it was asleep)');
-      const deadline = Date.now() + 90_000;
+      // A sleeping free server shows a loading page for a while; wait for the relay itself to answer.
+      const start = Date.now();
+      const deadline = start + 150_000;
       let awake = false;
       while (!awake && Date.now() < deadline) {
+        status(`Waking the server… ${Math.round((Date.now() - start) / 1000)} s (it can take a minute or two)`);
         try {
           const ctl = new AbortController();
-          const timer = setTimeout(() => ctl.abort(), 20_000);
+          const timer = setTimeout(() => ctl.abort(), 25_000);
           const r = await fetch(health, { cache: 'no-store', signal: ctl.signal });
           clearTimeout(timer);
-          awake = r.ok;
+          const body = r.ok ? await r.json().catch(() => null) : null;
+          awake = !!body && body.game === 'mythbound';
         } catch {
-          // Asleep, starting up, or blocked: wait and try again.
+          // Asleep, starting up, or the loading page: wait and try again.
         }
-        if (!awake) await new Promise((res) => setTimeout(res, 2500));
+        if (!awake) await new Promise((res) => setTimeout(res, 3000));
       }
-      if (!awake) throw new Error('The server did not answer. Check the address, or try again in a minute.');
+      // Even without an answer, try the connection itself before giving up.
     }
     status('Connecting…');
     await new Promise<void>((resolve, reject) => {
@@ -84,15 +87,15 @@ export class Net {
       this.ws = ws;
       const timer = setTimeout(() => {
         ws.close();
-        reject(new Error('The connection timed out.'));
-      }, 20_000);
+        reject(new Error('The server is not answering. If this keeps happening, check that it shows "Live" on Render.'));
+      }, 30_000);
       ws.onopen = () => {
         clearTimeout(timer);
         resolve();
       };
       ws.onerror = () => {
         clearTimeout(timer);
-        reject(new Error('Could not connect to the server.'));
+        reject(new Error('Could not connect to the server. It may still be waking up: try again in a minute.'));
       };
       ws.onclose = () => {
         clearTimeout(timer);

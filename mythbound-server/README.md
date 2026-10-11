@@ -9,5 +9,7 @@ npm start      # listens on $PORT (default 8080): health check at /health, WebSo
 npm test
 ```
 
+`server.js` starts the relay (it is what Render runs); the relay itself is in `relay.js`, which the tests import.
+
 It is deployed on Render's free plan from `render.yaml` at the repository root. Free services fall asleep after 15
 minutes without players and take about a minute to wake up on the next connection.

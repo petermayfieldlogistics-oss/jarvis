@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
-import { startServer, PROTOCOL_VERSION } from './server.js';
+import { startServer, PROTOCOL_VERSION } from './relay.js';
 
 function client(port) {
   const ws = new WebSocket(`ws://localhost:${port}/ws`);
