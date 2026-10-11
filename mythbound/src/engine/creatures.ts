@@ -1749,13 +1749,20 @@ function animQuad(c: Ctx) {
       headX += 0.35 * lower;
       jaw += 0.3 * rear;
     } else if (style === 'sweep') {
-      // Swing the head (antlers) to one side, then sweep across.
+      // Drop the antlers low and cock them to one side (a clear warning), then
+      // rake them across the ground in front with the whole body behind it.
       const side = 1;
-      neckY += side * (0.7 * atk.antic - 1.2 * atk.strike);
-      headZ += side * (0.25 * atk.antic - 0.35 * atk.strike);
-      neckX += 0.25 * atk.antic + 0.35 * atk.strike;
-      bodyRoll += side * (-0.06 * atk.antic + 0.1 * atk.strike);
-      bodyZ += 0.1 * atk.strike;
+      const low = Math.max(atk.antic, atk.strike);
+      neckX += 0.9 * low + 0.15 * atk.strike;
+      headX += 0.35 * low;
+      neckY += side * (0.75 * atk.antic - 1.25 * atk.strike);
+      headY += side * (0.25 * atk.antic - 0.4 * atk.strike);
+      headZ += side * (0.3 * atk.antic - 0.45 * atk.strike);
+      bodyRoll += side * (-0.1 * atk.antic + 0.14 * atk.strike);
+      bodyX += 0.1 * atk.antic;
+      bodyY += -0.1 * atk.antic - 0.05 * atk.strike;
+      bodyZ += -0.15 * atk.antic + 0.3 * atk.strike;
+      frontReach = 0.35 * atk.strike;
     } else if (style === 'volley' || style === 'cast' || style === 'summon' || style === 'roar') {
       // Rear back, then thrust the head forward (spit / launch / call).
       const pull = style === 'volley' ? env(a.attack, 0, 0.25, 0.3, 0.4) : atk.antic;

@@ -814,6 +814,8 @@ export class World {
   eyeMaterial!: THREE.MeshStandardMaterial;
   giantOrb!: THREE.Mesh;
   private lights: THREE.PointLight[] = [];
+  /** A soft moonlit glow around the hero at night, so the hero and nearby ground stay readable. */
+  private heroLight = new THREE.PointLight(0xa8b8ff, 0, 16, 1.4);
   private lightPick: (Emitter | null)[] = [];
   private animated: { obj: THREE.Object3D; kind: 'spin' | 'bob' | 'flicker'; base: number }[] = [];
   private batch = new Batcher();
@@ -852,6 +854,7 @@ export class World {
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.04;
     for (let i = 0; i < (quality === 'low' ? 2 : 5); i++) {
+      if (i === 0) scene.add(this.heroLight);
       const l = new THREE.PointLight(0xffa040, 0, 20, 1.6);
       this.lights.push(l);
       this.lightPick.push(null);
@@ -1981,13 +1984,15 @@ export class World {
     this.sun.target.position.copy(focus);
     this.sun.color.setHex(0xfff0d8).lerp(this.tmp.setHex(0xff9050), golden);
     // The moon takes over from the sun after dusk (fading in, so there is no pop).
-    this.sun.intensity = sunUp > -0.05 ? 2.7 * smoothstep(-0.05, 0.2, sunUp) : 1.2 * smoothstep(-0.05, -0.25, sunUp);
+    this.sun.intensity = sunUp > -0.05 ? 2.7 * smoothstep(-0.05, 0.2, sunUp) : 1.7 * smoothstep(-0.05, -0.25, sunUp);
     if (sunUp <= -0.05) this.sun.color.setHex(0x8494c8);
     // Moonlit nights stay dark but readable.
     this.hemi.intensity = 1.1 + 0.15 * night + (nightVision ? 0.9 * night : 0);
     this.hemi.color.setHex(0xd8c8a0).lerp(this.tmp.setHex(0xe0a070), golden * 0.5).lerp(this.tmp.setHex(0x7a8cc0), night);
     this.hemi.groundColor.setHex(0x3a3020).lerp(this.tmp.setHex(0x222a3a), night);
-    this.ambient.intensity = 0.2 + 0.12 * night + (nightVision ? 0.6 * night : 0);
+    this.ambient.intensity = 0.2 + 0.4 * night + (nightVision ? 0.6 * night : 0);
+    this.heroLight.position.set(focus.x, focus.y + 3, focus.z);
+    this.heroLight.intensity = 7 * night;
 
     // Water mirrors the sky; the glint follows the sun, or the moon at night.
     const w = this.waterU;

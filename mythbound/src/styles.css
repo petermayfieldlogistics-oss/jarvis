@@ -751,7 +751,9 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 
 .is-touch .hud .bc { bottom: auto; top: max(8px, env(safe-area-inset-top)); }
 .is-touch .hud .bc .xp { display: none; }
-.is-touch .hud .bossbar { bottom: auto; top: 108px; width: min(520px, 52vw); }
+.is-touch .hud .bossbar { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 54px); left: calc(50% - 65px); width: min(400px, 44vw); }
+/* Keep the status chips clear of the top button row. */
+.is-touch .hud .tl .status { max-width: calc(50vw - 215px); }
 /* Between the joystick and the action pad. */
 .is-touch .hud .prompt { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 14px); left: calc(50% - 65px); font-size: 13px; padding: 4px 14px 5px; max-width: 330px; overflow: hidden; text-overflow: ellipsis; }
 .is-touch .banner.zone { padding-top: 42vh; }
@@ -766,7 +768,7 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 .is-touch .hud .tl { width: 30vw; top: max(14px, env(safe-area-inset-top)); left: calc(max(12px, env(safe-area-inset-left)) + 20px); }
 .is-touch .hud .tl .bar:not(.stam) { max-width: calc(50vw - 190px); }
 .is-touch .hud .tl .bar.stam { width: 24vw; }
-.is-touch .toasts { top: 43%; gap: 3px; }
+.is-touch .toasts { top: calc(max(8px, env(safe-area-inset-top)) + 104px); gap: 3px; }
 .is-touch .hud:has(.banner.show.zone) .toasts { top: 66%; }
 .is-touch .toast { font-size: 13px; padding: 2px 26px 3px; }
 .is-touch .toast::before { left: 8px; }
@@ -788,7 +790,8 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
   .is-touch .slot { width: 44px; height: 44px; }
   .is-touch .slot.ability { width: 40px; height: 40px; margin-left: 8px; }
   .is-touch .hud .bl { top: calc(max(8px, env(safe-area-inset-top)) + 246px); font-size: 12px; }
-  .is-touch .hud .bossbar { top: calc(max(8px, env(safe-area-inset-top)) + 304px); width: 84vw; }
+  .is-touch .hud .bossbar { top: calc(max(8px, env(safe-area-inset-top)) + 304px); bottom: auto; left: 50%; width: 84vw; }
+  .is-touch .hud .tl .status { max-width: none; }
   .is-touch .toasts { top: 47%; }
   .is-touch .hud .prompt { left: 50%; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 250px); max-width: 80vw; }
   .tpad { transform: scale(0.85); transform-origin: 100% 100%; }

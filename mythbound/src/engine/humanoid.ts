@@ -1249,9 +1249,9 @@ const MOVES: Partial<Record<AttackStyle, Move>> = {
   ]),
   roar: move(0.25, [
     [0, {}],
-    [0.25, { ...torso(0.35, 0, 0.2, 0), [HDX]: 0.2, ...CROSSED, ...legs(-0.3, 0.6, -0.3, 0.6) }],
-    [0.36, { ...torso(-0.12, 0, -0.25, 0), [HDX]: -0.55, ...armR('ROAR_R'), ...armL('ROAR_L'), ...legs(-0.15, 0.35, -0.15, 0.35), [LLZ]: 0.1, [LRZ]: -0.1 }, E_OUT],
-    [0.8, { ...torso(-0.1, 0, -0.25, 0), [HDX]: -0.5, ...armR('ROAR_R'), ...armL('ROAR_L'), ...legs(-0.15, 0.35, -0.15, 0.35), [LLZ]: 0.1, [LRZ]: -0.1 }],
+    [0.25, { ...torso(0.55, 0, 0.3, 0), [HDX]: 0.35, ...CROSSED, ...legs(-0.45, 0.85, -0.45, 0.85) }],
+    [0.36, { ...torso(-0.3, 0, -0.4, 0), [HDX]: -0.85, ...armR('ROAR_R'), ...armL('ROAR_L'), ...legs(-0.2, 0.45, -0.2, 0.45), [LLZ]: 0.16, [LRZ]: -0.16 }, E_OUT],
+    [0.8, { ...torso(-0.26, 0, -0.38, 0), [HDX]: -0.8, ...armR('ROAR_R'), ...armL('ROAR_L'), ...legs(-0.2, 0.45, -0.2, 0.45), [LLZ]: 0.16, [LRZ]: -0.16 }],
     [1, {}],
   ]),
   bow: move(0.62, [[0, {}], [0.4, AIM_DRAWN], [0.64, AIM_DRAWN], [0.7, AIM_LOOSE, E_OUT], [1, AIM_REST]]),
@@ -1502,7 +1502,7 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   const left = j.handL.children[0];
   if (left !== s.left) {
     s.left = left;
-    s.bow = !!left && left.userData.string !== undefined;
+    s.bow = !!left && left.userData.bow !== undefined;
     s.shield = !!left && !s.bow;
     // Turn a shield so its face looks outward at rest and forward in a block,
     // whichever way it was attached.
@@ -1720,7 +1720,10 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   const busy = v >= 0;
   // Moves are keyed smoothly already, so they only need a stiff ease (which
   // still blends in and out of them, and between chained combo swings).
-  const rate = (dead ? 9 : rolling ? 30 : busy ? 55 : s.block > 0.5 ? 18 : 12) * (1 - 0.25 * prof.heavy);
+  // The stiff ease ramps up over the first few frames of a move or roll, so
+  // starting one blends out of the current pose instead of twitching.
+  const rollIn = rolling ? smooth(0, 0.14, a.rolling) : 0;
+  const rate = (dead ? 9 : rolling ? 12 + 18 * rollIn : busy ? 18 + 37 * s.act : s.block > 0.5 ? 18 : 12) * (1 - 0.25 * prof.heavy);
   const kk = snap ? 1 : damp(rate, dt);
   const cur = s.cur;
   for (let c = 0; c < NCH; c++) cur[c] += (g[c] - cur[c]) * kk;

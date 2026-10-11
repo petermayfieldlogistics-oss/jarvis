@@ -111,6 +111,15 @@ export class CameraRig {
     // Tree trunks, rocks and walls in the way.
     const hz = Math.hypot(back.x, back.z);
     if (hz > 0.05) len = Math.min(len, Math.max(0.8, g.world.rayHit(pivot.x, pivot.y, pivot.z, back.x / hz, back.y / hz, back.z / hz, len * hz, 0.35) / hz));
+    // In a trial, stay inside the fog wall so the fight isn't seen through the fog.
+    const arena = g.activeTrial;
+    if (arena && hz > 0.05) {
+      const px = pivot.x - arena.x, pz = pivot.z - arena.z;
+      const r = arena.radius - 1.5;
+      const b2 = hz * hz, pb = px * back.x + pz * back.z, c = px * px + pz * pz - r * r;
+      const disc = pb * pb - b2 * c;
+      if (disc >= 0) len = Math.min(len, Math.max(0.8, (-pb + Math.sqrt(disc)) / b2));
+    }
     // Pull in at once, ease back out.
     this.boom = snap || len < this.boom ? len : this.boom + (len - this.boom) * damp(3.5, dt);
     const pos = cam.position.copy(pivot).addScaledVector(back, this.boom);

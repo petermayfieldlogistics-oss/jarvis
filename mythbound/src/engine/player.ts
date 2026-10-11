@@ -9,7 +9,7 @@ import {
   hasBloodsteal, immuneToBleed, mainWeapon, newFury, onMeleeLanded, onMeleeMissed, powerShot, retribution, spellCost, spellPowerMultiplier, strikeDevilDeal,
   type FuryState,
 } from '../rules/combat';
-import { buildShield, buildWeapon, compact, disposeObject } from './models';
+import { buildShield, buildWeapon, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim, type AttackStyle } from './anim';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
@@ -386,11 +386,11 @@ export class Player {
       if (!this.backstep) this.faceTowards(this.pos.x + this.rollDir.x, this.pos.z + this.rollDir.z, dt, 30);
     } else if (swinging) {
       // A swing commits to its direction once the blade starts moving.
-      if (a.t < a.from) this.yaw = rotateTowards(this.yaw, target ? Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z) : a.aim, dt * 24);
+      if (a.t < a.from) this.yaw = rotateTowards(this.yaw, target ? Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z) : a.aim, dt, 24);
     } else if (target) {
       this.faceTowards(target.pos.x, target.pos.z, dt, 12);
     } else if ((shiftLock && !this.sailing) || this.drawing > 0 || a) {
-      this.yaw = rotateTowards(this.yaw, camYaw, dt * (shiftLock ? 22 : 14));
+      this.yaw = rotateTowards(this.yaw, camYaw, dt, shiftLock ? 22 : 14);
     } else if (wantLen > 0.1) {
       this.faceTowards(this.pos.x + wantX, this.pos.z + wantZ, dt, 10);
     }
@@ -530,7 +530,7 @@ export class Player {
   }
 
   private faceTowards(x: number, z: number, dt: number, rate: number) {
-    this.yaw = rotateTowards(this.yaw, Math.atan2(x - this.pos.x, z - this.pos.z), dt * rate);
+    this.yaw = rotateTowards(this.yaw, Math.atan2(x - this.pos.x, z - this.pos.z), dt, rate);
   }
 
   /** Starts a roll toward the input direction, or a backstep hop without one. */
@@ -854,7 +854,8 @@ export class Player {
     const base = w.localToWorld(this.tv.set(0, b0, 0));
     const tip = w.localToWorld(this.tv2.set(0, b1, 0));
     const life = a.kind === 'spin' ? 0.5 : a.kind === 'heavy' || a.finisher ? 0.26 : 0.2;
-    g.fx.trailPoint(w, base, tip, this.trailColor(), 1, life);
+    // Only the outer part of the blade leaves a trail (not a wedge from the hilt).
+    g.fx.trailPoint(w, base, tip, this.trailColor(), a.kind === 'spin' ? 0.7 : 0.55, life);
   }
 
   arrows() {
@@ -1371,6 +1372,26 @@ export class Player {
       this.boat.rotation.y = this.yaw;
       r.position.y = WATER_LEVEL + 0.35;
     }
+    this.updateBowString();
+  }
+
+  private nock = new THREE.Vector3();
+  /** Draws the bowstring back to the pulling hand, with an arrow nocked while aiming. */
+  private updateBowString() {
+    const bow = this.weaponMesh;
+    if (!bow || this.weaponKind !== 'bow') return;
+    const a = this.anim;
+    const pulling = this.drawing > 0 || (a.attackStyle === 'bow' && a.attack >= 0 && a.attack < 0.12);
+    const n = this.nock.set(0, 0, -0.191);
+    if (pulling) {
+      this.rig.root.updateMatrixWorld(true);
+      this.rig.handR.getWorldPosition(n);
+      bow.worldToLocal(n);
+      n.x = Math.max(-0.06, Math.min(0.06, n.x));
+      n.y = Math.max(-0.12, Math.min(0.12, n.y));
+      n.z = Math.max(-0.95, Math.min(-0.191, n.z));
+    }
+    setBowString(bow, n, this.drawing > 0 && this.arrows() > 0);
   }
 
   hasBloodsteal() {
@@ -1384,10 +1405,18 @@ export class Player {
   }
 }
 
-function rotateTowards(from: number, to: number, step: number) {
+/**
+ * Turns toward an angle with frame-rate-independent easing and a top turning
+ * speed, so the hero never snaps round in a single frame (even at 30 fps).
+ */
+function rotateTowards(from: number, to: number, dt: number, rate: number, maxSpeed = 14) {
   let d = to - from;
   d = Math.atan2(Math.sin(d), Math.cos(d));
-  return from + d * Math.min(1, step);
+  let turn = d * (1 - Math.exp(-rate * dt));
+  const cap = maxSpeed * dt;
+  if (turn > cap) turn = cap;
+  else if (turn < -cap) turn = -cap;
+  return from + turn;
 }
 
 export function buildPlayerRig(c: Character): Rig {
@@ -1400,7 +1429,7 @@ export function buildPlayerRig(c: Character): Rig {
   if (c.roleId === 'knight') {
     look.armor = 0xc8c0a8;
     look.accent = 0xffe080;
-    look.cape = 0xe8e0c8;
+    look.cape = 0xb8ae94;
   }
   if (c.roleId === 'assassin' || c.roleId === 'darkslayer') {
     look.cloth = 0x18161a;

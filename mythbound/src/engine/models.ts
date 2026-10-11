@@ -150,40 +150,76 @@ export function glowSprite(color: number, size: number, opacity = 1): THREE.Spri
 
 // --------------------------------------------------------------- weapons --
 
+/** A flat blade outline (x across, y along) extruded thin with bevelled edges that catch the light. */
+function bladeGeo(outline: [number, number][], thick: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  outline.forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)));
+  shape.closePath();
+  const bevel = Math.min(thick * 0.9, 0.012);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: 4 });
+  geo.translate(0, 0, -thick / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** A straight blade from y0 to y1 with a pointed tip. */
+const straightBlade = (w: number, y0: number, y1: number, tip: number, thick: number) =>
+  bladeGeo([[-w / 2, y0], [w / 2, y0], [w * 0.42, y1 - tip], [0, y1], [-w * 0.42, y1 - tip]], thick);
+
 export function buildWeapon(kind: WeaponKind, legendary = false): THREE.Group {
   const g = new THREE.Group();
-  const steel = mat(legendary ? 0xd8c27a : 0xa8a8a8, { rough: 0.3, metal: 0.9 });
+  // Brushed rather than mirror-like: the scene has no reflections, so very
+  // metallic surfaces would render almost black.
+  const steel = mat(legendary ? 0xe0c886 : 0xc4c8cc, { rough: 0.38, metal: 0.45 });
+  const darkSteel = mat(0x6a6e74, { rough: 0.5, metal: 0.4 });
+  const brass = mat(0xb8944a, { rough: 0.4, metal: 0.5 });
   const grip = mat(0x3a2a1c, { rough: 0.9 });
+  const wrap = mat(0x5a3a22, { rough: 0.95 });
   const glow = legendary ? mat(0xffd27a, { emissive: 0xffb040, emissiveIntensity: 1.6 }) : steel;
   switch (kind) {
-    case 'sword':
-      part(box(0.05, 0.22, 0.05), grip, 0, 0.0, 0, g);
-      part(box(0.28, 0.05, 0.07), steel, 0, 0.12, 0, g);
-      part(box(0.07, 1.05, 0.025), legendary ? glow : steel, 0, 0.66, 0, g);
+    case 'sword': {
+      part(cyl(0.022, 0.026, 0.2, 8), wrap, 0, 0.0, 0, g);
+      part(sphere(0.04, 8, 6), brass, 0, -0.12, 0, g);
+      part(box(0.3, 0.035, 0.06), brass, 0, 0.115, 0, g);
+      for (const x of [-0.15, 0.15]) part(sphere(0.03, 6, 5), brass, x, 0.115, 0, g);
+      part(straightBlade(0.075, 0.13, 1.22, 0.16, 0.016), legendary ? glow : steel, 0, 0, 0, g);
+      // Fuller: a darker groove down the middle of the blade.
+      part(box(0.018, 0.75, 0.021), darkSteel, 0, 0.55, 0, g);
       break;
+    }
     case 'dagger':
-      part(box(0.04, 0.14, 0.04), grip, 0, 0, 0, g);
-      part(box(0.16, 0.03, 0.05), steel, 0, 0.08, 0, g);
-      part(box(0.05, 0.42, 0.02), steel, 0, 0.3, 0, g);
+      part(cyl(0.018, 0.022, 0.13, 8), wrap, 0, 0, 0, g);
+      part(sphere(0.026, 6, 5), brass, 0, -0.08, 0, g);
+      part(box(0.15, 0.025, 0.045), brass, 0, 0.075, 0, g);
+      part(straightBlade(0.05, 0.085, 0.5, 0.1, 0.012), steel, 0, 0, 0, g);
       break;
-    case 'axe':
-      part(cyl(0.03, 0.035, 1.0), grip, 0, 0.4, 0, g);
-      part(box(0.04, 0.32, 0.36), steel, 0, 0.78, 0.15, g);
+    case 'axe': {
+      part(cyl(0.026, 0.032, 1.02, 8), grip, 0, 0.4, 0, g);
+      part(cyl(0.032, 0.032, 0.16, 8), wrap, 0, -0.02, 0, g);
+      // Bearded head: a broad curved edge in front, a short spike behind.
+      const head = bladeGeo([[0.02, 0.66], [0.2, 0.6], [0.3, 0.68], [0.33, 0.8], [0.3, 0.94], [0.2, 0.98], [0.02, 0.9]], 0.035);
+      head.rotateY(-Math.PI / 2);
+      part(head, legendary ? glow : steel, 0, 0, 0, g);
+      part(box(0.05, 0.13, 0.08), darkSteel, 0, 0.8, 0, g);
+      part(cone(0.03, 0.12, 6), darkSteel, 0, 0.8, -0.09, g).rotation.x = -Math.PI / 2;
       break;
+    }
     case 'hammer':
-      part(cyl(0.035, 0.04, 1.1), grip, 0, 0.45, 0, g);
-      part(box(0.26, 0.24, 0.42), mat(0x2a2422, { rough: 0.4, metal: 0.8 }), 0, 0.98, 0, g);
-      part(box(0.27, 0.06, 0.43), glow, 0, 0.98, 0, g);
+      part(cyl(0.03, 0.038, 1.12, 8), grip, 0, 0.45, 0, g);
+      part(cyl(0.04, 0.04, 0.18, 8), wrap, 0, -0.04, 0, g);
+      part(box(0.24, 0.22, 0.4), mat(0x3a3634, { rough: 0.45, metal: 0.35 }), 0, 0.98, 0, g);
+      for (const z of [-0.205, 0.205]) part(box(0.26, 0.24, 0.02), darkSteel, 0, 0.98, z, g);
+      part(box(0.25, 0.05, 0.41), legendary ? glow : brass, 0, 0.98, 0, g);
       break;
     case 'staff': {
       part(cyl(0.03, 0.04, 1.7), mat(legendary ? 0x221830 : 0x5a3e22, { rough: 0.8 }), 0, 0.5, 0, g);
       const orb = part(sphere(0.1), mat(legendary ? 0xb080ff : 0x80c0ff, { emissive: legendary ? 0x8040ff : 0x3080ff, emissiveIntensity: 2 }), 0, 1.42, 0, g);
       orb.castShadow = false;
-      if (legendary) for (let i = 0; i < 3; i++) part(cone(0.03, 0.25), mat(0x221830), Math.cos(i * 2.1) * 0.1, 1.5, Math.sin(i * 2.1) * 0.1, g);
+      for (let i = 0; i < 3; i++) part(cone(0.025, 0.26), legendary ? mat(0x221830) : brass, Math.cos(i * 2.1) * 0.1, 1.42, Math.sin(i * 2.1) * 0.1, g).rotation.set(Math.sin(i * 2.1) * 0.5, 0, -Math.cos(i * 2.1) * 0.5);
       break;
     }
     case 'trident':
-      part(cyl(0.03, 0.03, 1.9), mat(0x2a6a7a, { rough: 0.3, metal: 0.7 }), 0, 0.6, 0, g);
+      part(cyl(0.03, 0.03, 1.9), mat(0x2a6a7a, { rough: 0.35, metal: 0.4 }), 0, 0.6, 0, g);
       for (const x of [-0.12, 0, 0.12]) part(cone(0.035, 0.32), legendary ? glow : steel, x, 1.68 + (x === 0 ? 0.06 : 0), 0, g);
       part(box(0.28, 0.04, 0.04), steel, 0, 1.52, 0, g);
       break;
@@ -197,10 +233,28 @@ export function buildWeapon(kind: WeaponKind, legendary = false): THREE.Group {
     case 'bow': {
       // Vertical along local y, limbs curving back toward -z; the group is
       // turned so it sits upright in a raised left hand.
-      const wood = legendary ? mat(0xe8e4d8, { emissive: 0xa0b0ff, emissiveIntensity: 0.6 }) : mat(0x5a3a1e, { rough: 0.8 });
-      for (const s of [-1, 1]) part(box(0.04, 0.75, 0.05), wood, 0, s * 0.36, -0.08, g).rotation.x = -s * 0.3;
-      part(box(0.05, 0.18, 0.06), grip, 0, 0, 0, g);
-      g.userData.string = part(cyl(0.006, 0.006, 1.36, 3), mat(0xdddddd), 0, 0, -0.2, g);
+      const wood = legendary ? mat(0xe8e4d8, { emissive: 0xa0b0ff, emissiveIntensity: 0.6 }) : mat(0x6a4426, { rough: 0.75 });
+      for (const s of [-1, 1]) part(box(0.035, 0.75, 0.045), wood, 0, s * 0.36, -0.08, g).rotation.x = -s * 0.3;
+      part(box(0.05, 0.18, 0.06), wrap, 0, 0, 0, g);
+      // The string is two segments meeting at the nock, so it can be drawn back.
+      const stringMat = mat(0xe8e2d0, { rough: 0.9 });
+      const seg = () => {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1, 3).translate(0, 0.5, 0), stringMat);
+        m.userData.keep = true;
+        g.add(m);
+        return m;
+      };
+      const top = seg(), bottom = seg();
+      // An arrow on the string while drawing.
+      const arrow = new THREE.Group();
+      arrow.userData.keep = true;
+      part(cyl(0.008, 0.008, 0.78, 4), mat(0x8a6a40, { rough: 0.8 }), 0, 0.39, 0, arrow);
+      part(cone(0.02, 0.07, 4), steel, 0, 0.8, 0, arrow);
+      for (let i = 0; i < 3; i++) part(box(0.002, 0.08, 0.03), mat(0xd8d0c0), 0, 0.06, 0, arrow).rotation.y = (i * Math.PI * 2) / 3;
+      arrow.visible = false;
+      g.add(arrow);
+      g.userData.bow = { top, bottom, arrow, tipTop: new THREE.Vector3(0, 0.718, -0.191), tipBottom: new THREE.Vector3(0, -0.718, -0.191) };
+      setBowString(g, new THREE.Vector3(0, 0, -0.191), false);
       g.rotation.x = Math.PI / 2;
       break;
     }
@@ -208,11 +262,47 @@ export function buildWeapon(kind: WeaponKind, legendary = false): THREE.Group {
   return g;
 }
 
+const _seg = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+/** Points a unit-length string segment from `a` to `b`. */
+function aimSegment(m: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3) {
+  _seg.subVectors(b, a);
+  const len = _seg.length();
+  m.position.copy(a);
+  m.scale.set(1, Math.max(1e-3, len), 1);
+  m.quaternion.setFromUnitVectors(_up, _seg.multiplyScalar(1 / Math.max(1e-6, len)));
+}
+
+/**
+ * Bends a bow's string to the nock point (bow-local coordinates) and shows
+ * or hides the nocked arrow, which points from the nock out past the grip.
+ */
+export function setBowString(bow: THREE.Object3D, nock: THREE.Vector3, arrow: boolean) {
+  const b = bow.userData.bow as { top: THREE.Mesh; bottom: THREE.Mesh; arrow: THREE.Object3D; tipTop: THREE.Vector3; tipBottom: THREE.Vector3 } | undefined;
+  if (!b) return;
+  aimSegment(b.top, nock, b.tipTop);
+  aimSegment(b.bottom, nock, b.tipBottom);
+  b.arrow.visible = arrow;
+  if (arrow) {
+    b.arrow.position.copy(nock);
+    b.arrow.quaternion.setFromUnitVectors(_up, _seg.set(-nock.x, -nock.y, 0.25 - nock.z).normalize());
+  }
+}
+
 export function buildShield(): THREE.Group {
   const g = new THREE.Group();
-  part(cyl(0.38, 0.38, 0.06, 12), mat(0x4a3424, { rough: 0.8 }), 0, 0, 0, g).rotation.x = Math.PI / 2;
-  part(cyl(0.4, 0.4, 0.04, 12), mat(0x8a8070, { rough: 0.4, metal: 0.8 }), 0, 0, -0.02, g).rotation.x = Math.PI / 2;
-  part(sphere(0.08), mat(0xb09a60, { rough: 0.3, metal: 0.9 }), 0, 0, 0.05, g);
+  const wood = mat(0x5a3e26, { rough: 0.85 });
+  const iron = mat(0x8c8a84, { rough: 0.45, metal: 0.4 });
+  part(cyl(0.38, 0.38, 0.05, 16), wood, 0, 0, 0, g).rotation.x = Math.PI / 2;
+  // Painted field and an iron rim.
+  part(cyl(0.34, 0.34, 0.052, 16), mat(0x6a1e18, { rough: 0.8 }), 0, 0, 0.002, g).rotation.x = Math.PI / 2;
+  const rim = part(new THREE.TorusGeometry(0.385, 0.022, 6, 24), iron, 0, 0, 0, g);
+  rim.rotation.z = 0;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    part(sphere(0.018, 5, 4), iron, Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0.03, g);
+  }
+  part(sphere(0.085, 10, 8), mat(0xb8944a, { rough: 0.35, metal: 0.5 }), 0, 0, 0.04, g).scale.z = 0.7;
   return g;
 }
 
