@@ -269,6 +269,8 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
     const path = (req.url ?? '/').split('?')[0];
     if (!path.startsWith('/api/')) return false;
     if (req.method === 'OPTIONS') {
+      // The browser's permission check before a cross-site request (logged too: if it fails, nothing else arrives).
+      console.log(`api OPTIONS ${path} 204 (asks for ${req.headers['access-control-request-method'] ?? '?'} from ${req.headers.origin ?? '?'})`);
       res.writeHead(204, {
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',

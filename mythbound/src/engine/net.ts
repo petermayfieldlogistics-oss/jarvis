@@ -22,10 +22,37 @@ export type ServerMsg =
 
 export type Destination = 'host' | 'all' | number;
 
+/**
+ * The relay's WebSocket address from whatever was typed in the Co-op server
+ * box: a bare host, an https:// link or a wss:// address all work. A secure
+ * page can only talk to secure addresses, so http/ws are upgraded except for
+ * a server on this computer.
+ */
+export function serverUrl(input?: string): string {
+  let text = (input ?? '').trim();
+  if (!text) return DEFAULT_SERVER;
+  if (!/^[a-z]+:\/\//i.test(text)) text = `wss://${text}`;
+  try {
+    const u = new URL(text);
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname);
+    const secure = typeof location === 'undefined' || location.protocol === 'https:';
+    if (u.protocol === 'https:' || u.protocol === 'wss:') u.protocol = 'wss:';
+    else if (u.protocol === 'http:' || u.protocol === 'ws:') u.protocol = secure && !local ? 'wss:' : 'ws:';
+    else return DEFAULT_SERVER;
+    // A pasted page link (the site itself, or its /health check) means the relay at /ws.
+    if (u.pathname === '/' || u.pathname === '' || u.pathname === '/health') u.pathname = '/ws';
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return DEFAULT_SERVER;
+  }
+}
+
 /** The server's health address for a WebSocket address (used to wake a sleeping free server). */
 export function healthUrl(ws: string): string {
   try {
-    const u = new URL(ws);
+    const u = new URL(serverUrl(ws));
     u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
     u.pathname = '/health';
     u.search = '';
@@ -65,7 +92,7 @@ export async function wakeServer(wsUrl: string, status: (text: string) => void, 
 /** The server's web address (https://…) for its WebSocket address. */
 export function httpBase(ws: string): string {
   try {
-    const u = new URL(ws);
+    const u = new URL(serverUrl(ws));
     u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
     return u.origin;
   } catch {
@@ -88,9 +115,9 @@ export class Net {
    * Wakes the server (free servers sleep after a quiet spell and take up to a
    * minute to start) and opens the connection.
    */
-  async connect(url: string, status: (text: string) => void): Promise<void> {
+  async connect(address: string, status: (text: string) => void): Promise<void> {
     this.close();
-    if (!/^wss?:\/\//.test(url)) throw new Error('The server address must start with wss://');
+    const url = serverUrl(address);
     await wakeServer(url, status);
     // Even without an answer, try the connection itself before giving up.
     status('Connecting…');

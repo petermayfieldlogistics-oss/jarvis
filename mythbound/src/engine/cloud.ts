@@ -2,7 +2,7 @@
 // and uploading saves while playing. The server is the co-op relay (see
 // mythbound-server/accounts.js); its address comes from the Co-op settings.
 
-import { DEFAULT_SERVER, httpBase, PAGES_URL, wakeServer } from './net';
+import { httpBase, PAGES_URL, serverUrl, wakeServer } from './net';
 import { normalizeSave, readLocal, serializeSave, writeLocal, type SaveData } from './state';
 
 const SESSION_KEY = 'mythbound.account.v1';
@@ -52,7 +52,7 @@ export class Cloud {
   constructor(private server: () => string) {}
 
   get base() {
-    return httpBase(this.server() || DEFAULT_SERVER);
+    return httpBase(serverUrl(this.server()));
   }
 
   get signedIn() {
@@ -71,7 +71,7 @@ export class Cloud {
    */
   warm() {
     if (this.awake || this.waking) return this.waking;
-    this.waking = wakeServer(this.server() || DEFAULT_SERVER, (t) => this.wakeStatus(t)).then((r) => {
+    this.waking = wakeServer(serverUrl(this.server()), (t) => this.wakeStatus(t)).then((r) => {
       this.awake = r;
       this.waking = null;
       return r;
@@ -95,6 +95,18 @@ export class Cloud {
   }
 
   private async call<T>(method: string, path: string, body?: unknown, o: { keepalive?: boolean } = {}): Promise<T> {
+    try {
+      return await this.request<T>(method, path, body, o);
+    } catch (err) {
+      // A dropped connection (the server restarting or napping again): wake it and try once more.
+      if (!(err instanceof CloudError) || err.code !== 'network' || o.keepalive) throw err;
+      this.awake = null;
+      await this.warm();
+      return this.request<T>(method, path, body, o);
+    }
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, o: { keepalive?: boolean } = {}): Promise<T> {
     let res: Response;
     // Never wait forever: a request the server hasn't answered in 40 s has failed.
     const ctl = new AbortController();
@@ -108,11 +120,13 @@ export class Cloud {
         keepalive: o.keepalive,
         signal: ctl.signal,
       });
-    } catch {
+    } catch (err) {
       // It may be asleep again: wake it before the next try.
       this.awake = null;
       if (ctl.signal.aborted) throw new CloudError('timeout', 'The server took too long to answer. Try again in a moment.');
-      throw new CloudError('network', 'Could not reach the server. Check your internet connection.');
+      // The browser's own words help find the cause (blocked, offline, connection reset...).
+      const detail = err instanceof Error && err.message ? ` (${err.message})` : '';
+      throw new CloudError('network', `Could not reach the server${detail}. Check your internet connection, then try again.`);
     } finally {
       clearTimeout(timer);
     }
