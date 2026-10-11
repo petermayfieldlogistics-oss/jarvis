@@ -120,7 +120,9 @@ export class Game {
   ) {
     this.state = state;
     const q = settings.quality;
-    this.renderer = new THREE.WebGLRenderer({ antialias: q !== 'low', powerPreference: 'high-performance' });
+    // Low renders straight to the canvas without antialiasing; medium and high
+    // render through post-processing, whose own target is multisampled.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -732,6 +734,8 @@ export class Game {
     this.mode = m;
     this.input.enabled = m === 'play';
     if (m !== 'play' && document.pointerLockElement) document.exitPointerLock();
+    // Back from a menu or conversation (a click or key press): capture the mouse again for shift lock.
+    if (m === 'play' && this.cam.shiftLock) this.input.requestLock();
     this.input.setTouchVisible(m === 'play' || m === 'dead');
   }
 

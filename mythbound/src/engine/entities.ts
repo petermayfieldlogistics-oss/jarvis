@@ -269,6 +269,8 @@ export class Enemy extends Actor {
   spawnGroup = -1;
   /** True for minions summoned in a boss fight. */
   summoned = false;
+  /** Tamed by a Trainer: it left the wild for good, so its camp won't bring it back. */
+  tamed = false;
   hitFlash = 0;
   levelBonus = 0;
   /** Set for members of a walking patrol. */

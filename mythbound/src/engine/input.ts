@@ -50,8 +50,8 @@ export class Input {
   private stick = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   private lookTouch = { id: -1, x: 0, y: 0 };
   private touchRoot: HTMLElement | null = null;
-  /** Mirrors the camera's shift lock (set by the player), so the mouse steers even where pointer lock is refused. */
-  private shiftLock = false;
+  /** Mirrors the camera's shift lock (set by the player). */
+  shiftLock = false;
   pointerLocked = false;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -74,7 +74,8 @@ export class Input {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => (this.pointerLocked = document.pointerLockElement === canvas));
     window.addEventListener('mousemove', (e) => {
-      if ((this.pointerLocked || ((e.buttons & 1 || this.shiftLock) && !this.touch)) && this.enabled) {
+      // Without a captured pointer, only dragging turns the camera, so a free cursor never steers on its own.
+      if ((this.pointerLocked || (e.buttons & 1 && !this.touch)) && this.enabled) {
         this.look.dx += e.movementX * 0.0025 * this.sensitivity;
         this.look.dy += e.movementY * 0.0025 * this.sensitivity * (this.invertY ? -1 : 1);
       }

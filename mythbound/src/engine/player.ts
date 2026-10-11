@@ -968,6 +968,7 @@ export class Player {
       if (old) g.removeAlly(old);
     }
     g.fx.magicCircle(target.pos, 0x50ff70, 2.2, 1.6);
+    target.tamed = true;
     g.removeEnemy(target);
     g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond'), 1 + 0.2 * rank(this.c, 'feral-bite')));
     if (!this.c.tamed.includes(kind)) this.c.tamed.push(kind);

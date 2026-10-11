@@ -306,7 +306,7 @@ export class Hud {
 
     // Status chips.
     const chips: string[] = [];
-    if (g.cam.shiftLock) chips.push('<b class="sl">Shift lock</b>');
+    if (g.cam.shiftLock) chips.push(`<b class="sl">Shift lock${!g.input.touch && !g.input.pointerLocked ? ' · click to aim' : ''}</b>`);
     if (p.fury.bloodrageActive) chips.push(`<b class="rage">BloodRage ×${(1 + 0.25 * (p.fury.stacks + 1)).toFixed(2)}${p.hasBloodsteal() ? ' · Bloodsteal' : ''}</b>`);
     if (p.powerShotArmed) chips.push('<b class="skill">Power Shot armed</b>');
     if (p.combineMode) {

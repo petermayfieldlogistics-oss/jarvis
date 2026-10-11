@@ -137,7 +137,7 @@ export class Spawner {
     for (const gr of this.groups) {
       for (let i = gr.members.length - 1; i >= 0; i--) {
         const e = gr.members[i];
-        if (!e.alive) gr.members.splice(i, 1);
+        if (!e.alive || e.tamed) gr.members.splice(i, 1);
         else if (!this.present.has(e)) {
           // Removed from the world alive (a trial cleared its arena): keep them for later.
           gr.members.splice(i, 1);

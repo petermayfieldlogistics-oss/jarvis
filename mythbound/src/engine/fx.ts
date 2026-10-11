@@ -540,6 +540,8 @@ export class Fx {
   private flashGeo = new THREE.RingGeometry(0.84, 1, 40);
   private torusGeo = new THREE.TorusGeometry(1, 0.09, 6, 48);
   private trails: Trail[] = [];
+  /** Length of the last frame, so trail gaps are judged against the frame rate. */
+  private frameDt = 1 / 60;
   private trailMap = new Map<object, Trail>();
   private trailTmp = new Float32Array(6 * 8);
   private trailNew = new Float32Array(6);
@@ -681,6 +683,9 @@ export class Fx {
     if (!tr) tr = this.claimTrail(key);
     tr.mat.uniforms.color.value.setHex(color);
     tr.life = Math.max(0.05, life);
+    // A pause in feeding means a new swing: start a fresh ribbon instead of
+    // bridging from the last swing's follow-through to this one's wind-up.
+    if (tr.idle > Math.max(0.08, this.frameDt * 1.6)) tr.count = 0;
     tr.idle = 0;
     const w = Math.max(0.1, Math.min(3, width));
     const bx = tip.x + (base.x - tip.x) * w, by = tip.y + (base.y - tip.y) * w, bz = tip.z + (base.z - tip.z) * w;
@@ -928,6 +933,7 @@ export class Fx {
   }
 
   update(dt: number) {
+    this.frameDt = dt;
     this.particles.update(dt);
     this.soft.update(dt);
     // Shade the unlit puffs like the lit world around them.

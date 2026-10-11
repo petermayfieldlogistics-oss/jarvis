@@ -45,6 +45,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // Other apps published on the same site (Mythbound at /mythbound/) look after their own files.
+  if (url.pathname.startsWith(new URL('./mythbound/', self.location).pathname)) return;
 
   if (req.mode === 'navigate') {
     // Network first so updates show up; fall back to the cached app offline.
