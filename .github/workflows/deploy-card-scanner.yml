@@ -1,17 +1,20 @@
-name: Deploy Card Scanner
+name: Deploy site
 
-# Tests and builds card-scanner/ on every change, and publishes it to GitHub
-# Pages from the repository's default branch (whatever it is named).
+# Tests and builds card-scanner/ and mythbound/ on every change, and publishes
+# both to GitHub Pages from the repository's default branch (whatever it is
+# named): the card scanner at the site root, Mythbound at /mythbound/.
 # One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
 
 on:
   push:
     paths:
       - 'card-scanner/**'
+      - 'mythbound/**'
       - '.github/workflows/deploy-card-scanner.yml'
   pull_request:
     paths:
       - 'card-scanner/**'
+      - 'mythbound/**'
       - '.github/workflows/deploy-card-scanner.yml'
   workflow_dispatch:
 
@@ -27,23 +30,37 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: card-scanner
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: card-scanner/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+          cache-dependency-path: |
+            card-scanner/package-lock.json
+            mythbound/package-lock.json
+      - name: Card scanner
+        working-directory: card-scanner
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Mythbound
+        working-directory: mythbound
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Combine
+        run: |
+          mkdir -p site
+          cp -r card-scanner/dist/. site/
+          mkdir -p site/mythbound
+          cp -r mythbound/dist/. site/mythbound/
       - uses: actions/upload-pages-artifact@v4
         if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:
-          path: card-scanner/dist
+          path: site
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
