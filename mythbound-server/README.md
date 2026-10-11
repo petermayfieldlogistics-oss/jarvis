@@ -27,5 +27,10 @@ and add `DATABASE_URL` with Neon's connection string). Without it, co-op still w
 
 `server.js` starts the relay (it is what Render runs); the relay itself is in `relay.js`, which the tests import.
 
-It is deployed on Render's free plan from `render.yaml` at the repository root. Free services fall asleep after 15
-minutes without players and take about a minute to wake up on the next connection.
+On Render it keeps itself awake by visiting its own `/health` every 10 minutes (Render sets `RENDER_EXTERNAL_URL`;
+set `KEEP_AWAKE=off` to stop). One always-on free service fits within the free plan's monthly instance hours, so
+don't run a second free service on the same Render account. `/health` reports `up`, the seconds since the server
+started.
+
+It is deployed on Render's free plan from `render.yaml` at the repository root. Without the keep-awake visits, free services
+fall asleep after 15 minutes without players and take about a minute to wake up on the next connection.

@@ -29,8 +29,26 @@ async function accounts() {
   }
 }
 
+/**
+ * Render's free plan puts a server to sleep after 15 minutes without visitors,
+ * and the next player then waits about a minute. Visiting our own public
+ * address every 10 minutes keeps it awake (one always-on server fits in the
+ * free plan's monthly hours). Only /health is visited, so the database can
+ * still nap. Set KEEP_AWAKE=off to let the server sleep again.
+ */
+function keepAwake() {
+  const self = process.env.RENDER_EXTERNAL_URL;
+  if (!self || process.env.KEEP_AWAKE === 'off') return;
+  const ping = () => fetch(`${self}/health`, { signal: AbortSignal.timeout(30_000) }).catch(() => {});
+  setInterval(ping, 10 * 60_000).unref();
+  console.log(`Keeping awake: visiting ${self}/health every 10 minutes.`);
+}
+
 startServer(Number(process.env.PORT) || 8080, { accounts: await accounts() }).then(
-  ({ port }) => console.log(`Mythbound relay listening on port ${port}`),
+  ({ port }) => {
+    console.log(`Mythbound relay listening on port ${port}`);
+    keepAwake();
+  },
   (err) => {
     // Without its port the server is useless: stop, so the host starts it again.
     console.error('Could not start:', err.message);

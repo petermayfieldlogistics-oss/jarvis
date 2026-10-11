@@ -136,7 +136,8 @@ export function startServer(port = Number(process.env.PORT) || 8080, options = {
     const path = (req.url ?? '/').split('?')[0];
     if (path === '/' || path === '/health') {
       res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
-      res.end(JSON.stringify({ ok: true, game: 'mythbound', version: PROTOCOL_VERSION, rooms: rooms.size, accounts: !!options.accounts }));
+      // up: seconds since start (shows whether the server has been napping).
+      res.end(JSON.stringify({ ok: true, game: 'mythbound', version: PROTOCOL_VERSION, rooms: rooms.size, accounts: !!options.accounts, up: Math.round(process.uptime()) }));
       return;
     }
     if (path.startsWith('/api/')) {

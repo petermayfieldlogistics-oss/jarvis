@@ -1739,8 +1739,26 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const arms = w * armsFree;
     // A weapon arm swings less and stays straighter.
     const armsR = s.weaponLen > 0 ? 0.55 : 1;
-    if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), arms * (1 - s.back), arms * armsR * (1 - s.back));
+    // Charging: running flat out, the body drives forward and both arms sweep
+    // back behind it (halfway at a run, fully at a sprint), barely pumping.
+    const charge = arms * (1 - s.back) * (1 - s.crouch) * (1 - prof.robe * 0.5) * clamp01(0.5 * s.run + 0.5 * s.sprint);
+    const pump = 1 - 0.75 * charge;
+    if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), arms * (1 - s.back) * pump, arms * armsR * (1 - s.back) * pump);
     if (s.back > 0.001) stride(o, -a.phase, s.run * 0.6, 0, s.crouch, prof.robe, legs * s.back, arms * s.back, arms * armsR * s.back);
+    if (charge > 0.001) {
+      const bob = Math.sin(a.phase * 2) * 0.06;
+      o[SPX] += charge * (0.36 + 0.03 * Math.cos(a.phase * 2));
+      o[CHX] += charge * 0.16;
+      o[HDX] -= charge * 0.42;
+      o[ALX] += charge * (0.78 + bob);
+      o[ARX] += charge * (0.78 - bob);
+      o[ALZ] += charge * 0.12;
+      o[ARZ] -= charge * 0.12;
+      o[ALY] += charge * 0.3;
+      o[ARY] -= charge * 0.3;
+      o[FLX] += charge * 0.95;
+      o[FRX] += charge * 0.95;
+    }
   }
   // Breathing, weight shift and a wandering gaze when idle.
   const idle = (1 - s.mv) * (1 - s.act) * (dead ? 0 : 1);
