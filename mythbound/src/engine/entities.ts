@@ -7,6 +7,7 @@ import { animateCreature, buildCrab, buildFloater, buildImp, buildInsect, buildQ
 import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, WATER_LEVEL } from './terrain';
 import type { Game } from './game';
+import type { Hero } from './hero';
 
 // ------------------------------------------------------------------ models --
 
@@ -175,11 +176,41 @@ export interface Status {
   marked: number;
 }
 
-const newStatus = (): Status => ({ bleed: 0, burn: 0, wet: 0, slow: 0, root: 0, stun: 0, fear: 0, marked: 0 });
-const STATUS_KEYS = Object.keys(newStatus()) as (keyof Status)[];
+export const newStatus = (): Status => ({ bleed: 0, burn: 0, wet: 0, slow: 0, root: 0, stun: 0, fear: 0, marked: 0 });
+export const STATUS_KEYS = Object.keys(newStatus()) as (keyof Status)[];
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+let nextNid = 1;
+const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+/** -1 means "not attacking": step to a new move rather than blend into it. */
+const lerpMove = (a: number, b: number, k: number) => (a >= 0 && b >= a ? a + (b - a) * k : a);
+
+/** One update of a monster from the host, as a guest's copy receives it. */
+export interface MirrorSample {
+  /** Local arrival time, seconds. */
+  t: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  attack: number;
+  windup: number;
+  draw: number;
+  fury: number;
+  style: AttackStyle;
+}
+
+/** Co-op: a guest's copy of a monster follows the host's instead of thinking for itself. */
+export interface MirrorState {
+  samples: MirrorSample[];
+  /** Local time of the last update. */
+  seen: number;
+  visible: boolean;
+  phase2: boolean;
+  /** Status values after the last frame, to notice effects this player adds. */
+  prevStatus: Status;
+}
 
 export abstract class Actor {
   pos = new THREE.Vector3();
@@ -275,6 +306,15 @@ export class Enemy extends Actor {
   levelBonus = 0;
   /** Set for members of a walking patrol. */
   patrol: PatrolSlot | null = null;
+  /** The hero it hunts (in co-op, re-chosen now and then). */
+  target: Hero | null = null;
+  protected retarget = 0;
+  /** Co-op: an id shared by every player's copy of this monster. */
+  nid = nextNid++;
+  /** Co-op: the players (by id) who have hurt it, for kill rewards. */
+  hitBy = new Set<number>();
+  /** Co-op: set on a guest's copy, which follows the host's monster. */
+  net: MirrorState | null = null;
   /** The move being performed (windup/strike/recover). */
   move: Move | null = null;
   private timing: Timing = { a0: 0, hits: [0.22] };
@@ -338,7 +378,7 @@ export class Enemy extends Actor {
       this.syncModel(dt);
       return;
     }
-    const p = g.player;
+    const p = this.chooseTarget(dt, g);
     const dx = p.pos.x - this.pos.x;
     const dz = p.pos.z - this.pos.z;
     const dist = Math.hypot(dx, dz);
@@ -463,9 +503,9 @@ export class Enemy extends Actor {
             this.setState('return');
             break;
           }
-          if (this.status.fear <= 0 && g.player.roleId === 'darkslayer' && this.dark && this.hp < this.maxHp * 0.3 && dist < 14) {
+          if (this.status.fear <= 0 && p.roleId === 'darkslayer' && this.dark && this.hp < this.maxHp * 0.3 && dist < 14) {
             this.status.fear = 4;
-            g.fx.damageNumber(this.center(), 'dread', 'info');
+            g.sfx.damageNumber(this.center(), 'dread', 'info');
           }
           this.faceTowards(p.pos.x, p.pos.z, dt);
           const set = MOVESET[this.def.id];
@@ -546,8 +586,8 @@ export class Enemy extends Actor {
             this.setState('strike');
             this.hitIdx = 0;
             a.attack = this.timing.a0;
-            if (mv.style === 'bow') g.audio.play('bow');
-            else if (this.model.humanoid && dist < 20) g.audio.play('swing');
+            if (mv.style === 'bow') g.sfx.sound('bow', this.pos);
+            else if (this.model.humanoid) g.sfx.sound('swing', this.pos, 20);
           }
           break;
         }
@@ -608,7 +648,7 @@ export class Enemy extends Actor {
     this.vel.z = moveZ * speed + rootZ;
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
-    if (this.aware && dist < 20) this.separate(g, dist);
+    if (this.aware && dist < 20) this.separate(g, p, dist);
     // The trial's fog keeps wandering monsters out of a boss arena.
     const t = g.activeTrial;
     if (t && !this.summoned) {
@@ -630,6 +670,83 @@ export class Enemy extends Actor {
     // Far, unaware monsters are posed less often.
     const lod = this.aware ? 1 : dist > 90 ? 4 : dist > 45 ? 2 : 1;
     this.syncModel(dt, lod);
+  }
+
+  /** Who to hunt: alone, always you; with friends, the nearest, keeping to the current one unless another is clearly closer. */
+  protected chooseTarget(dt: number, g: Game): Hero {
+    const heroes = g.heroes;
+    if (heroes.length === 1) return (this.target = heroes[0]);
+    this.retarget -= dt;
+    const cur = this.target;
+    if (cur && cur.alive && this.retarget > 0 && heroes.includes(cur)) return cur;
+    this.retarget = 0.5 + Math.random() * 0.5;
+    return (this.target = g.nearestHero(this.pos, cur, this.aware ? 4 : 0));
+  }
+
+  /** A guest's copy: follows the host's monster a moment behind, so its moves play smoothly. */
+  updateMirror(dt: number, g: Game, at: number) {
+    const n = this.net!;
+    const a = this.anim;
+    for (const k of STATUS_KEYS) this.status[k] = Math.max(0, this.status[k] - dt);
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    const s = n.samples;
+    if (!s.length) return this.syncModel(dt);
+    let j = -1;
+    for (let k = s.length - 1; k >= 0; k--) {
+      if (s[k].t <= at) {
+        j = k;
+        break;
+      }
+    }
+    const A = s[Math.max(0, j)];
+    let vx = 0, vz = 0;
+    if (j < 0) {
+      this.pos.set(A.x, A.y, A.z);
+      this.yaw = A.yaw;
+    } else if (j === s.length - 1) {
+      // Past the newest update: carry on a little in the same direction.
+      const P = s[j - 1];
+      const span = P ? A.t - P.t : 0;
+      if (P && span > 1e-3 && span < 0.6) {
+        vx = (A.x - P.x) / span;
+        vz = (A.z - P.z) / span;
+      }
+      const ex = Math.min(0.2, at - A.t);
+      this.pos.set(A.x + vx * ex, A.y, A.z + vz * ex);
+      this.yaw = A.yaw;
+      if (at - A.t > 0.2) vx = vz = 0;
+    } else {
+      const B = s[j + 1];
+      const span = B.t - A.t;
+      const k = span > 1e-4 ? Math.min(1, (at - A.t) / span) : 1;
+      this.pos.set(A.x + (B.x - A.x) * k, A.y + (B.y - A.y) * k, A.z + (B.z - A.z) * k);
+      this.yaw = A.yaw + wrapAngle(B.yaw - A.yaw) * k;
+      if (span > 1e-3) {
+        vx = (B.x - A.x) / span;
+        vz = (B.z - A.z) / span;
+      }
+      a.attack = lerpMove(A.attack, B.attack, k);
+      a.windup = lerpMove(A.windup, B.windup, k);
+      a.draw = A.draw + (B.draw - A.draw) * k;
+      a.fury = A.fury + (B.fury - A.fury) * k;
+      a.attackStyle = A.attack >= 0 || A.windup > 0 ? A.style : B.style;
+    }
+    if (j < 0 || j === s.length - 1) {
+      a.attack = A.attack;
+      a.windup = A.windup;
+      a.draw = A.draw;
+      a.fury = A.fury;
+      a.attackStyle = A.style;
+    }
+    // Drop updates that are no longer needed.
+    while (s.length > 2 && s[1].t <= at) s.shift();
+    this.vel.set(vx, this.vel.y, vz);
+    a.dead = -1;
+    this.setMotion(vx, vz);
+    a.phase += Math.hypot(vx, vz) * dt * (this.def.body === 'quad' ? 2.2 : 2.6);
+    const p = g.player.pos;
+    const d = Math.abs(p.x - this.pos.x) + Math.abs(p.z - this.pos.z);
+    this.syncModel(dt, this.aware ? 1 : d > 90 ? 4 : d > 45 ? 2 : 1);
   }
 
   becomeAware(g: Game) {
@@ -671,12 +788,13 @@ export class Enemy extends Actor {
     this.anim.draw = 0;
   }
 
-  /** Only a couple of monsters swing at the hero at once; the rest circle and wait. */
+  /** Only a couple of monsters swing at a hero at once; the rest circle and wait. */
   private mayAttack(g: Game) {
     let n = 0;
+    const tp = (this.target ?? g.player).pos;
     for (const e of g.enemies) {
       if (e === this || !e.alive || (e.state !== 'windup' && e.state !== 'strike') || e.move?.ranged) continue;
-      if (Math.abs(e.pos.x - g.player.pos.x) + Math.abs(e.pos.z - g.player.pos.z) < 14 && ++n >= 2) {
+      if (Math.abs(e.pos.x - tp.x) + Math.abs(e.pos.z - tp.z) < 14 && ++n >= 2) {
         this.attackCd = 0.25 + Math.random() * 0.4;
         return false;
       }
@@ -712,7 +830,7 @@ export class Enemy extends Actor {
   }
 
   private resolveMove(g: Game, mv: Move) {
-    const p = g.player;
+    const p = this.target ?? g.player;
     const dx = p.pos.x - this.pos.x, dz = p.pos.z - this.pos.z;
     const dist = Math.hypot(dx, dz);
     const dmg = Math.round(this.damage() * (mv.dmg ?? 1));
@@ -733,12 +851,12 @@ export class Enemy extends Actor {
         }
         g.spawnProjectile({ from, to, speed: ranged.speed, kind: ranged.projectile, owner: 'enemy', damage: dmg, element: elementOf(this.def.affinity), source: this, gravity: ranged.projectile === 'arrow' ? 6 : 0 });
       }
-      if (mv.style === 'throw' || mv.style === 'cast' || mv.style === 'volley') g.audio.play('throw');
+      if (mv.style === 'throw' || mv.style === 'cast' || mv.style === 'volley') g.sfx.sound('throw', this.pos);
       return;
     }
     const facing = Math.cos(Math.atan2(dx, dz) - this.yaw);
     if (dist < this.def.reach + this.radius + 0.9 && facing > 0.2 && Math.abs(p.pos.y - this.pos.y) < 3) {
-      g.damagePlayer(dmg, elementOf(this.def.affinity), this);
+      g.damageHero(p, dmg, elementOf(this.def.affinity), this);
     }
   }
 
@@ -761,11 +879,11 @@ export class Enemy extends Actor {
     this.attackCd = Math.max(this.attackCd, this.staggerFor + 0.3);
     this.setState('stagger');
     this.anim.hurt = 1;
-    if (!this.flies) g.fx.dust(this.pos, 5);
+    if (!this.flies) g.sfx.dust(this.pos, 5);
   }
 
   /** Keeps a crowd from stacking on one spot (and off the hero). */
-  private separate(g: Game, dist: number) {
+  private separate(g: Game, p: Hero, dist: number) {
     for (const o of g.enemies) {
       if (o === this || !o.alive) continue;
       const min = this.radius + o.radius;
@@ -778,7 +896,6 @@ export class Enemy extends Actor {
         this.pos.z += oz * k;
       }
     }
-    const p = g.player;
     const min = this.radius + p.radius + 0.1;
     if (dist < min && dist > 1e-4 && Math.abs(p.pos.y - this.pos.y) < 2) {
       const k = (min - dist) / dist;
@@ -852,6 +969,7 @@ export class Boss extends Enemy {
   private bossStaggerImmune = 0;
   private bossLastHp: number;
   private strafeSide = 1;
+  private trampled = new Set<Hero>();
 
   constructor(def: BossDef, arena: { x: number; z: number; radius: number }) {
     super('wolf', arena.x, arena.z - arena.radius * 0.5, bossModel(def));
@@ -911,7 +1029,7 @@ export class Boss extends Enemy {
       this.syncModel(dt);
       return;
     }
-    const p = g.player;
+    const p = this.chooseTarget(dt, g);
     const dx = p.pos.x - this.pos.x;
     const dz = p.pos.z - this.pos.z;
     const dist = Math.hypot(dx, dz);
@@ -923,10 +1041,10 @@ export class Boss extends Enemy {
 
     if (this.phase === 1 && this.hp < this.maxHp * 0.5) {
       this.phase = 2;
-      g.hud.toast(`${this.bdef.name} is enraged!`, 'boss');
-      g.fx.ring(this.center(), 10, 0xff4020, 0.8);
-      g.audio.play('roar');
-      g.shake(0.5);
+      g.sfx.toast(`${this.bdef.name} is enraged!`, 'boss', this.pos);
+      g.sfx.ring(this.center(), 10, 0xff4020, 0.8);
+      g.sfx.sound('roar', this.pos);
+      g.sfx.shake(this.pos, 0.5);
       this.auraFx = g.fx.aura(this.model.root, this.color, 3600);
       // Roar into the second phase once the current move is done.
       if (!this.attack || this.stage === 'recover') this.startRoar(1.2);
@@ -951,9 +1069,9 @@ export class Boss extends Enemy {
       this.faceTowards(p.pos.x, p.pos.z, dt, 3);
       if (!this.roared && k > 0.38) {
         this.roared = true;
-        g.shake(0.45);
-        g.fx.ring(this.center(), 7, this.color, 0.7);
-        g.fx.dust(this.pos, 24);
+        g.sfx.shake(this.pos, 0.45);
+        g.sfx.ring(this.center(), 7, this.color, 0.7);
+        g.sfx.dust(this.pos, 24);
       }
       if (this.roarLeft <= 0) {
         a.attack = -1;
@@ -999,6 +1117,42 @@ export class Boss extends Enemy {
     this.syncModel(dt);
   }
 
+  /** Bosses fight whoever is inside the fog, switching foes now and then, never mid-attack. */
+  protected chooseTarget(dt: number, g: Game): Hero {
+    const heroes = g.heroes;
+    if (heroes.length === 1) return (this.target = heroes[0]);
+    this.retarget -= dt;
+    const cur = this.target;
+    const ok = !!cur && cur.alive && heroes.includes(cur) && this.inArena(cur);
+    if (ok && (this.attack || this.retarget > 0)) return cur!;
+    this.retarget = 2.5 + Math.random() * 2;
+    return (this.target = g.nearestHero(this.pos, ok ? cur : null, 3, (h) => this.inArena(h)));
+  }
+
+  private inArena(h: Hero) {
+    return Math.hypot(h.pos.x - this.arena.x, h.pos.z - this.arena.z) < this.arena.radius + 1;
+  }
+
+  /** The living heroes inside the arena (alone: just you). */
+  private foes(g: Game): Hero[] {
+    const heroes = g.heroes;
+    if (heroes.length === 1) return heroes[0].alive ? heroes : [];
+    return heroes.filter((h) => h.alive && this.inArena(h));
+  }
+
+  /** More heroes, a tougher boss. */
+  scaleHealth(k: number) {
+    this.maxHp = this.hp = Math.round(this.bdef.hp * k);
+    this.bossLastHp = this.hp;
+  }
+
+  updateMirror(dt: number, g: Game, at: number) {
+    super.updateMirror(dt, g, at);
+    const n = this.net!;
+    this.model.root.visible = n.visible;
+    if (n.phase2 && !this.auraFx) this.auraFx = g.fx.aura(this.model.root, this.color, 3600);
+  }
+
   private startRoar(seconds: number) {
     this.roarLeft = this.roarDur = seconds;
     this.roared = false;
@@ -1024,9 +1178,9 @@ export class Boss extends Enemy {
     this.attack = null;
     this.cooldown = 0.5;
     this.anim.hurt = 1;
-    g.fx.damageNumber(this.center().add(_v.set(0, this.height * 0.5, 0)), 'STAGGERED', 'crit');
-    g.fx.dust(this.pos, 18);
-    g.shake(0.3);
+    g.sfx.damageNumber(this.center().add(_v.set(0, this.height * 0.5, 0)), 'STAGGERED', 'crit');
+    g.sfx.dust(this.pos, 18);
+    g.sfx.shake(this.pos, 0.3);
   }
 
   private cancelTelegraphs() {
@@ -1050,7 +1204,7 @@ export class Boss extends Enemy {
   }
 
   private begin(attack: BossAttack, g: Game, windup?: number) {
-    const p = g.player;
+    const p = this.target ?? g.player;
     const base = BOSS_TIMING[attack];
     const two = this.phase === 2;
     this.attack = this.last = attack;
@@ -1061,6 +1215,7 @@ export class Boss extends Enemy {
     this.fired = 0;
     this.dustT = 0;
     this.telegraphs.length = 0;
+    this.trampled.clear();
     this.dur = { w: windup ?? base.w * (two ? 0.8 : 1), s: base.s * (two ? 0.9 : 1), r: base.r * (two ? 0.7 : 1) };
     this.btiming = strikeTiming(!!this.model.humanoid, attack);
     this.anim.attackStyle = attack;
@@ -1075,21 +1230,21 @@ export class Boss extends Enemy {
       case 'leap':
         this.leapFrom.copy(this.pos);
         this.leapTo.copy(p.pos);
-        this.telegraphs.push(g.fx.telegraph(this.leapTo.x, this.leapTo.z, 5, landAt));
+        this.telegraphs.push(g.sfx.telegraph(this.leapTo.x, this.leapTo.z, 5, landAt));
         break;
       case 'slam':
         this.leapTo.copy(p.pos);
-        this.telegraphs.push(g.fx.telegraph(p.pos.x, p.pos.z, 4.5, landAt));
+        this.telegraphs.push(g.sfx.telegraph(p.pos.x, p.pos.z, 4.5, landAt));
         break;
       case 'ring':
-        this.telegraphs.push(g.fx.telegraph(this.pos.x, this.pos.z, 10, landAt, 0xffa020));
-        g.fx.magicCircle(feet, this.color, 4.5, w + s * 0.5);
+        this.telegraphs.push(g.sfx.telegraph(this.pos.x, this.pos.z, 10, landAt, 0xffa020));
+        g.sfx.magicCircle(feet, this.color, 4.5, w + s * 0.5);
         break;
       case 'summon':
-        g.fx.magicCircle(feet, this.color, 5, w + s);
+        g.sfx.magicCircle(feet, this.color, 5, w + s);
         break;
       case 'strikes': {
-        g.fx.magicCircle(feet, 0x80b0ff, 4, w + s);
+        g.sfx.magicCircle(feet, 0x80b0ff, 4, w + s);
         const n = this.phase === 2 ? 7 : 5;
         for (let i = 0; i < n; i++) {
           const ang = Math.random() * Math.PI * 2;
@@ -1097,27 +1252,27 @@ export class Boss extends Enemy {
           const x = p.pos.x + Math.cos(ang) * r;
           const z = p.pos.z + Math.sin(ang) * r;
           // The first bolt falls as the arm comes down, the rest ripple outward.
-          g.fx.telegraph(x, z, 3, landAt + 0.15 + i * 0.14, 0x80b0ff, () => {
+          g.sfx.telegraph(x, z, 3, landAt + 0.15 + i * 0.14, 0x80b0ff, () => {
             if (!this.alive) return;
             const at = new THREE.Vector3(x, heightAt(x, z), z);
-            g.fx.lightning(at.clone().add(new THREE.Vector3(0, 30, 0)), at);
-            g.fx.impact(at, 0x9fc8ff, 0.6);
-            if (Math.hypot(g.player.pos.x - x, g.player.pos.z - z) < 3.2 && g.player.pos.y - at.y < 3) g.damagePlayer(this.damage(), 'lightning', this);
-            g.audio.play('slam');
+            g.sfx.lightning(at.clone().add(new THREE.Vector3(0, 30, 0)), at);
+            g.sfx.impact(at, 0x9fc8ff, 0.6);
+            for (const h of this.foes(g)) if (Math.hypot(h.pos.x - x, h.pos.z - z) < 3.2 && h.pos.y - at.y < 3) g.damageHero(h, this.damage(), 'lightning', this);
+            g.sfx.sound('slam', at);
           });
         }
         break;
       }
       case 'teleport':
-        g.fx.magicCircle(feet, this.color, 3, w + 0.2);
+        g.sfx.magicCircle(feet, this.color, 3, w + 0.2);
         break;
     }
-    g.audio.play('windup');
+    g.sfx.sound('windup', this.pos);
   }
 
   /** Advances the current attack; returns [moveX, moveZ, speed]. */
   private runAttack(dt: number, g: Game, dist: number): [number, number, number] {
-    const p = g.player;
+    const p = this.target ?? g.player;
     const a = this.anim;
     const { w, s, r } = this.dur;
     this.attackTime += dt;
@@ -1126,7 +1281,7 @@ export class Boss extends Enemy {
       this.stage = 'strike';
       this.stageTime = 0;
       if (this.attack === 'charge') this.chargeDir.set(p.pos.x - this.pos.x, 0, p.pos.z - this.pos.z).normalize();
-      if (this.attack === 'sweep' || this.attack === 'combo') g.audio.play('swing');
+      if (this.attack === 'sweep' || this.attack === 'combo') g.sfx.sound('swing', this.pos);
       if (this.attack === 'teleport') return this.teleport(g);
     } else if (this.stage === 'strike' && this.stageTime >= s) {
       this.stage = 'recover';
@@ -1154,10 +1309,12 @@ export class Boss extends Enemy {
     const fwdX = Math.sin(this.yaw), fwdZ = Math.cos(this.yaw);
     const reach = this.radius + 4.5;
     const swingHit = () => {
-      const facing = Math.cos(Math.atan2(p.pos.x - this.pos.x, p.pos.z - this.pos.z) - this.yaw);
-      if (dist < reach && facing > -0.1) g.damagePlayer(this.damage(), elementOf(this.affinity), this);
+      for (const h of this.foes(g)) {
+        const facing = Math.cos(Math.atan2(h.pos.x - this.pos.x, h.pos.z - this.pos.z) - this.yaw);
+        if (Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z) < reach && facing > -0.1) g.damageHero(h, this.damage(), elementOf(this.affinity), this);
+      }
       const at = this.center().add(_w.set(fwdX, 0, fwdZ).multiplyScalar(this.radius + 2));
-      g.fx.impact(at, this.color, 0.5);
+      g.sfx.impact(at, this.color, 0.5);
     };
     const groundAt = (x: number, z: number) => _w.set(x, heightAt(x, z) + 0.2, z);
 
@@ -1176,7 +1333,7 @@ export class Boss extends Enemy {
           while (this.hits < hits.length && k >= hits[this.hits]) {
             this.hits++;
             swingHit();
-            g.audio.play('swing');
+            g.sfx.sound('swing', this.pos);
           }
           return [fwdX, fwdZ, this.hits < hits.length && dist > this.radius + 1.5 ? 2.5 : 0];
         }
@@ -1188,23 +1345,26 @@ export class Boss extends Enemy {
           if (t > w * 0.6 && this.hits === 0) {
             // Paw the ground.
             this.dustT -= dt;
-            if (this.dustT <= 0) (this.dustT = 0.18), g.fx.dust(this.pos, 3);
+            if (this.dustT <= 0) (this.dustT = 0.18), g.sfx.dust(this.pos, 3);
           }
           return [0, 0, 0];
         }
         if (this.stage === 'strike') {
           this.yaw = Math.atan2(this.chargeDir.x, this.chargeDir.z);
-          if (dist < this.radius + 1.5 && this.hits === 0) {
+          // Tramples everyone in its path, once each.
+          for (const h of this.foes(g)) {
+            if (this.trampled.has(h) || Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z) >= this.radius + 1.5) continue;
+            this.trampled.add(h);
             this.hits = 1;
-            g.damagePlayer(Math.round(this.damage() * 1.2), 'physical', this);
-            g.player.knockback(this.chargeDir, 12);
-            g.fx.impact(p.center(), 0xe0d0b0, 0.9);
-            g.shake(0.4);
+            g.damageHero(h, Math.round(this.damage() * 1.2), 'physical', this);
+            g.knockHero(h, this.chargeDir, 12);
+            g.sfx.impact(h.center(), 0xe0d0b0, 0.9);
+            g.sfx.shake(this.pos, 0.4);
           }
           this.dustT -= dt;
           if (this.dustT <= 0) {
             this.dustT = 0.1;
-            g.fx.dust(this.pos, 6);
+            g.sfx.dust(this.pos, 6);
           }
           // Stop short at the arena wall.
           const ex = this.pos.x + this.chargeDir.x * 2 - this.arena.x, ez = this.pos.z + this.chargeDir.z * 2 - this.arena.z;
@@ -1222,30 +1382,29 @@ export class Boss extends Enemy {
         }
         if (this.stage === 'strike' && this.hits === 0 && k >= hits[0]) {
           this.hits = 1;
-          const hit = Math.hypot(p.pos.x - this.leapTo.x, p.pos.z - this.leapTo.z) < 4.5;
-          if (hit) g.damagePlayer(Math.round(this.damage() * 1.3), elementOf(this.affinity), this);
+          for (const h of this.foes(g)) if (Math.hypot(h.pos.x - this.leapTo.x, h.pos.z - this.leapTo.z) < 4.5) g.damageHero(h, Math.round(this.damage() * 1.3), elementOf(this.affinity), this);
           const at = groundAt(this.leapTo.x, this.leapTo.z);
-          if (this.bdef.projectile === 'water') g.fx.spikes(at.x, at.z, 0x40c0ff, 9, 3.5);
-          else g.fx.ring(at, 4.5, this.affinity === 'fire' ? 0xff5010 : 0xd8c8a0, 0.5);
-          g.fx.impact(at, this.color, 1);
-          g.fx.dust(at, 22);
-          g.shake(0.5);
-          g.audio.play('slam');
+          if (this.bdef.projectile === 'water') g.sfx.spikes(at.x, at.z, 0x40c0ff, 9, 3.5);
+          else g.sfx.ring(at, 4.5, this.affinity === 'fire' ? 0xff5010 : 0xd8c8a0, 0.5);
+          g.sfx.impact(at, this.color, 1);
+          g.sfx.dust(at, 22);
+          g.sfx.shake(this.pos, 0.5);
+          g.sfx.sound('slam', this.pos);
         }
         return [0, 0, 0];
       }
       case 'ring':
         if (this.stage === 'strike' && this.hits === 0 && k >= hits[0]) {
           this.hits = 1;
-          if (dist < 10 + p.radius) g.damagePlayer(Math.round(this.damage() * 1.1), elementOf(this.affinity), this);
-          g.fx.ring(this.center(), 10, this.color, 0.6);
-          g.fx.impact(groundAt(this.pos.x, this.pos.z), this.color, 1);
+          for (const h of this.foes(g)) if (Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z) < 10 + h.radius) g.damageHero(h, Math.round(this.damage() * 1.1), elementOf(this.affinity), this);
+          g.sfx.ring(this.center(), 10, this.color, 0.6);
+          g.sfx.impact(groundAt(this.pos.x, this.pos.z), this.color, 1);
           for (let i = 0; i < 8; i++) {
             const ang = (i / 8) * Math.PI * 2;
-            g.fx.dust(groundAt(this.pos.x + Math.cos(ang) * 4, this.pos.z + Math.sin(ang) * 4), 3);
+            g.sfx.dust(groundAt(this.pos.x + Math.cos(ang) * 4, this.pos.z + Math.sin(ang) * 4), 3);
           }
-          g.shake(0.6);
-          g.audio.play('slam');
+          g.sfx.shake(this.pos, 0.6);
+          g.sfx.sound('slam', this.pos);
         }
         return [0, 0, 0];
       case 'volley': {
@@ -1284,11 +1443,11 @@ export class Boss extends Enemy {
               e.aware = true;
               e.state = 'chase';
               e.attackCd = 1 + Math.random();
-              g.fx.magicCircle(e.pos, this.color, 1.6, 1.2);
-              g.fx.emit(e.center(), { color: 0xa070ff, count: 25, speed: 4, life: 0.6 });
+              g.sfx.magicCircle(e.pos, this.color, 1.6, 1.2);
+              g.sfx.emit(e.center(), { color: 0xa070ff, count: 25, speed: 4, life: 0.6 });
             }
           }
-          g.shake(0.25);
+          g.sfx.shake(this.pos, 0.25);
         }
         return [0, 0, 0];
       case 'teleport':
@@ -1307,13 +1466,13 @@ export class Boss extends Enemy {
           this.pos.y = heightAt(this.pos.x, this.pos.z) + Math.sin(q * Math.PI) * 10;
           if (q >= 1 && this.hits === 0) {
             this.hits = 1;
-            if (Math.hypot(p.pos.x - this.pos.x, p.pos.z - this.pos.z) < 5) g.damagePlayer(Math.round(this.damage() * 1.4), elementOf(this.affinity), this);
+            for (const h of this.foes(g)) if (Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z) < 5) g.damageHero(h, Math.round(this.damage() * 1.4), elementOf(this.affinity), this);
             const at = groundAt(this.pos.x, this.pos.z);
-            g.fx.ring(at, 5, 0xffa040, 0.5);
-            g.fx.impact(at, this.color, 1);
-            g.fx.dust(at, 30);
-            g.shake(0.8);
-            g.audio.play('slam');
+            g.sfx.ring(at, 5, 0xffa040, 0.5);
+            g.sfx.impact(at, this.color, 1);
+            g.sfx.dust(at, 30);
+            g.sfx.shake(this.pos, 0.8);
+            g.sfx.sound('slam', this.pos);
           }
         }
         return [0, 0, 0];
@@ -1327,8 +1486,8 @@ export class Boss extends Enemy {
 
   /** Vanish, reappear behind the hero and strike at once. */
   private teleport(g: Game): [number, number, number] {
-    const p = g.player;
-    g.fx.emit(this.center(), { color: 0x8040ff, count: 40, speed: 6, life: 0.6 });
+    const p = this.target ?? g.player;
+    g.sfx.emit(this.center(), { color: 0x8040ff, count: 40, speed: 6, life: 0.6 });
     const behind = Math.atan2(p.pos.x - this.pos.x, p.pos.z - this.pos.z);
     let x = p.pos.x + Math.sin(behind) * 4, z = p.pos.z + Math.cos(behind) * 4;
     // Keep the landing spot inside the arena.
@@ -1337,8 +1496,8 @@ export class Boss extends Enemy {
     this.pos.set(x, heightAt(x, z), z);
     this.yaw = Math.atan2(p.pos.x - x, p.pos.z - z);
     this.model.root.visible = true;
-    g.fx.emit(this.center(), { color: 0x8040ff, count: 40, speed: 6, life: 0.6 });
-    g.fx.magicCircle(this.pos, this.color, 2.5, 0.8);
+    g.sfx.emit(this.center(), { color: 0x8040ff, count: 40, speed: 6, life: 0.6 });
+    g.sfx.magicCircle(this.pos, this.color, 2.5, 0.8);
     this.begin('sweep', g, this.phase === 2 ? 0.4 : 0.5);
     this.last = 'teleport';
     return [0, 0, 0];

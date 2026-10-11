@@ -112,7 +112,7 @@ export class CameraRig {
     const hz = Math.hypot(back.x, back.z);
     if (hz > 0.05) len = Math.min(len, Math.max(0.8, g.world.rayHit(pivot.x, pivot.y, pivot.z, back.x / hz, back.y / hz, back.z / hz, len * hz, 0.35) / hz));
     // In a trial, stay inside the fog wall so the fight isn't seen through the fog.
-    const arena = g.activeTrial;
+    const arena = g.inTrial ? g.activeTrial : null;
     if (arena && hz > 0.05) {
       const px = pivot.x - arena.x, pz = pivot.z - arena.z;
       const r = arena.radius - 1.5;

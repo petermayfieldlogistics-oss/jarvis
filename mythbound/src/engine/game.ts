@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, WEAPONS, type DamageElement } from '../data/defs';
-import { BOSSES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
+import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, maxHp, type Character } from '../rules/character';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { Audio } from './audio';
@@ -8,6 +8,9 @@ import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
 import { Spawner } from './spawner';
 import { Ally, Boss, Enemy, type Actor } from './entities';
+import { Coop, RemoteHero, type KillInfo } from './coop';
+import type { Hero } from './hero';
+import { SharedFx } from './sharedfx';
 import { Fx } from './fx';
 import { Input } from './input';
 import { buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
@@ -29,7 +32,8 @@ export interface ProjectileSpec {
   to: THREE.Vector3;
   speed: number;
   kind: ProjectileKind;
-  owner: 'player' | 'enemy' | 'ally';
+  /** 'remote': another player's shot, shown here but only their game deals its damage. */
+  owner: 'player' | 'enemy' | 'ally' | 'remote';
   damage: number;
   element: DamageElement;
   gravity: number;
@@ -56,6 +60,8 @@ interface Tornado {
   color: number;
   life: number;
   seek: boolean;
+  /** Another player's spell: shown here, harmless here. */
+  remote: boolean;
 }
 
 interface Npc {
@@ -93,8 +99,17 @@ export class Game {
   state: WorldState;
   mode: Mode = 'play';
   zone: ZoneId = 'town';
+  /** The trial whose fog is up in this world (in co-op, maybe someone else's fight). */
   activeTrial: TrialDef | null = null;
+  /** The local hero is inside the active trial's fog. */
+  inTrial = false;
+  private trialTime = 0;
   boss: Boss | null = null;
+  /** Effects every player sees (monsters' attacks, heroes' blows and spells). */
+  sfx: SharedFx;
+  coop: Coop;
+  /** The heroes monsters can hunt: the local hero first, then any friends. */
+  heroes: Hero[] = [];
   isNight = false;
   nearest: Interactable | null = null;
   eyeStare = 0;
@@ -160,6 +175,9 @@ export class Game {
     this.fx = new Fx(this.scene, this.camera, this.hud.numberLayer, q === 'low');
     this.story = new Story(this);
     this.spawner = new Spawner(this);
+    this.sfx = new SharedFx(this);
+    this.coop = new Coop(this);
+    this.coop.onChange = () => this.menu.coopChanged();
 
     this.buildNpcs();
     this.setPlayer(character);
@@ -181,6 +199,7 @@ export class Game {
     if (p) this.player.pos.set(p[0], p[1], p[2]);
     else this.player.pos.set(shrine.x + 2, heightAt(shrine.x + 2, shrine.z + 3), shrine.z + 3);
     this.cam.yaw = Math.PI;
+    this.refreshHeroes();
     this.summonLizardKin();
     this.updateTouchButtons();
   }
@@ -243,6 +262,8 @@ export class Game {
   }
 
   removeEnemy(e: Enemy) {
+    if (e.net) this.coop.forget(e);
+    else if (e.alive && this.coop.isHost) this.coop.gone(e);
     e.dispose();
     this.scene.remove(e.model.root);
     disposeObject(e.model.root);
@@ -250,7 +271,16 @@ export class Game {
     if (this.player.lockTarget === e) this.player.lockTarget = null;
   }
 
-  spawnAll() {
+  /** Takes every monster (and corpse) out of the world: switching between our world and a host's. */
+  clearEnemies() {
+    for (const e of [...this.enemies]) this.removeEnemy(e);
+    this.corpses = [];
+    this.boss = null;
+  }
+
+  /** Fills every camp again. In co-op the host's world is shared, so resting doesn't reset it (and guests have no monsters of their own). */
+  spawnAll(force = false) {
+    if (this.coop?.isGuest || (this.coop?.sharing && !force)) return;
     this.spawner.spawnAll();
   }
 
@@ -264,6 +294,45 @@ export class Game {
     this.scene.remove(a.model.root);
     disposeObject(a.model.root);
     this.allies = this.allies.filter((x) => x !== a);
+  }
+
+  // ----------------------------------------------------------------- heroes --
+
+  refreshHeroes() {
+    this.heroes = [this.player, ...[...(this.coop?.remotes.values() ?? [])].filter((r) => r.ready)];
+  }
+
+  /** The nearest living hero (the preferred one counts `bias` metres closer), or the local hero when none qualify. */
+  nearestHero(pos: THREE.Vector3, prefer: Hero | null, bias: number, filter?: (h: Hero) => boolean): Hero {
+    let best: Hero | null = null;
+    let bestD = Infinity;
+    for (const h of this.heroes) {
+      if (!h.alive || (filter && !filter(h))) continue;
+      const d = Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) - (h === prefer ? bias : 0);
+      if (d < bestD) (bestD = d), (best = h);
+    }
+    return best ?? this.player;
+  }
+
+  /** Distance (Manhattan, flat) from a point to the nearest hero. */
+  heroDistance(x: number, z: number) {
+    let d = Infinity;
+    for (const h of this.heroes) d = Math.min(d, Math.abs(h.pos.x - x) + Math.abs(h.pos.z - z));
+    return d;
+  }
+
+  /** A monster's blow on a hero: here, or sent to the friend's game. */
+  damageHero(h: Hero, amount: number, element: DamageElement, source: Enemy | null) {
+    if (h === this.player) return this.damagePlayer(amount, element, source);
+    if (h instanceof RemoteHero && h.alive) {
+      this.coop.hurt(h, amount, element, source);
+      if (source) source.damageDealt += amount;
+    }
+  }
+
+  knockHero(h: Hero, dir: THREE.Vector3, force: number) {
+    if (h === this.player) this.player.knockback(dir, force);
+    else if (h instanceof RemoteHero) this.coop.knock(h, dir, force);
   }
 
   private summonLizardKin() {
@@ -318,7 +387,8 @@ export class Game {
     return origin.addScaledVector(dir, maxDist + this.camDist);
   }
 
-  spawnProjectile(spec: ProjectileSpec) {
+  spawnProjectile(spec: ProjectileSpec, fromNet = false) {
+    if (!fromNet) this.coop.shareProjectile(spec);
     const dir = spec.to.clone().sub(spec.from);
     const dist = dir.length();
     dir.normalize();
@@ -331,8 +401,9 @@ export class Game {
     this.projectiles.push({ ...spec, pos: spec.from.clone(), vel, life: 4, mesh, hit: new Set() });
   }
 
-  addTornado(pos: THREE.Vector3, radius: number, dps: number, color: number, life = 3, seek = false) {
-    this.tornados.push({ pos: pos.clone(), radius, dps, color, life, seek });
+  addTornado(pos: THREE.Vector3, radius: number, dps: number, color: number, life = 3, seek = false, remote = false) {
+    if (!remote) this.coop.shareTornado(pos, radius, color, life, seek);
+    this.tornados.push({ pos: pos.clone(), radius, dps, color, life, seek, remote });
   }
 
   shake(a: number) {
@@ -372,25 +443,31 @@ export class Game {
     if (kind === 'bow' && c.skills['hunters-mark']) e.status.marked = 8;
   }
 
-  damageEnemy(e: Enemy, amount: number, element: DamageElement, o: { source?: string; dot?: boolean; quiet?: boolean; tags?: string[] } = {}) {
+  damageEnemy(e: Enemy, amount: number, element: DamageElement, o: { source?: string; dot?: boolean; quiet?: boolean; tags?: string[]; by?: number } = {}) {
     if (!e.alive || amount <= 0) return;
+    // A guest's blow goes to the host, whose game owns the monster; show it here at once.
+    const guest = !!e.net;
+    if (guest) this.coop.hit(e, amount, element, o);
+    const remote = o.by !== undefined && o.by !== this.coop.myId;
+    e.hitBy.add(o.by ?? this.coop.myId);
     let dmg = amount;
     const weak = elementWeakness(e.affinity === 'none' ? 'none' : e.affinity);
     if (weak && weak === element) dmg *= 1.5;
     if (e.affinity !== 'none' && e.affinity !== 'dark' && element === e.affinity) dmg *= 0.5;
     if (e.status.marked > 0) dmg *= 1.15;
     if (element === 'lightning' && e.status.wet > 0 && o.source !== 'spell') dmg *= 1.5;
-    e.hp -= dmg;
+    e.hp = guest ? Math.max(1, e.hp - dmg) : e.hp - dmg;
     e.hitFlash = 0.15;
     if (!o.dot) e.anim.hurt = 1;
     // Bloodsteal: every point of damage a bleeding foe takes heals the hero.
-    if (e.status.bleed > 0 && this.player.hasBloodsteal()) this.player.heal(dmg);
+    if (e.status.bleed > 0 && !remote && this.player.hasBloodsteal()) this.player.heal(dmg);
     if (!o.dot) {
       const tags = o.tags?.filter((t) => t !== 'sneak') ?? [];
       const text = `${Math.round(dmg)}${tags.includes('backstab') ? ' BACKSTAB' : ''}`;
       this.fx.damageNumber(e.center().add(new THREE.Vector3(0, e.height * 0.5, 0)), text, tags.includes('backstab') || tags.includes('power') ? 'crit' : weak === element ? 'weak' : '');
       this.fx.impact(e.center(), e.bleeds ? 0x8a0a0a : 0xd8d0c0, Math.min(1, dmg / 40));
     }
+    if (guest) return;
     if (!e.aware && !o.quiet && o.source !== 'devil') e.becomeAware(this);
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -400,27 +477,63 @@ export class Game {
     e.hp = 0;
     this.corpses.push({ e, t: 0 });
     if (this.player.lockTarget === e) this.player.lockTarget = null;
-    const c = this.player.c;
     const isBoss = e instanceof Boss;
-    const xp = isBoss ? e.bdef.xp : e.summoned ? e.def.xp * 0.3 : e.def.xp;
-    const gold = isBoss ? e.bdef.gold : Math.round(e.def.gold * (0.6 + Math.random() * 0.8));
-    c.gold += gold;
-    this.gainXp(xp);
-    if (e.dark) this.questProgress('dead', 1);
-    if (!isBoss && e.def.id.startsWith('bandit')) this.questProgress('bounty', 1);
-    if (!isBoss && e.def.drop && Math.random() < e.def.drop.chance) {
-      if (e.def.drop.item === 'arrows') {
-        if (this.player.weaponKind === 'bow' || c.weapons.some((w) => WEAPONS[w.id].kind === 'bow')) {
-          c.arrows.wood += 5;
-          this.hud.toast('+5 arrows');
+    const info: KillInfo = {
+      id: isBoss ? e.bdef.id : e.def.id,
+      boss: isBoss,
+      xp: isBoss ? e.bdef.xp : e.summoned ? e.def.xp * 0.3 : e.def.xp,
+      gold: isBoss ? e.bdef.gold : Math.round(e.def.gold * (0.6 + Math.random() * 0.8)),
+      x: Math.round(e.pos.x),
+      z: Math.round(e.pos.z),
+      by: [...e.hitBy],
+    };
+    if (this.coop.sharing) this.coop.killed(e, info);
+    this.reward(info);
+  }
+
+  /** Guest: the host's monster died. */
+  killMirror(e: Enemy) {
+    e.alive = false;
+    e.hp = 0;
+    e.net = null;
+    this.corpses.push({ e, t: 0 });
+    if (this.player.lockTarget === e) this.player.lockTarget = null;
+  }
+
+  /** Guest: a kill in the host's world (ours to reward if we were part of it). */
+  remoteKill(info: KillInfo) {
+    if (info.boss || ENEMIES[info.id as EnemyId]) this.reward(info);
+  }
+
+  /** XP, embers, quest progress and drops for a kill (in co-op, if the hero was part of it). */
+  private reward(info: KillInfo) {
+    const bossDef = info.boss ? BOSSES[info.id as BossId] : null;
+    const credited = this.coop.credited(info);
+    if (credited) {
+      const c = this.player.c;
+      c.gold += info.gold;
+      this.gainXp(info.xp);
+      const def = bossDef ? null : ENEMIES[info.id as EnemyId];
+      if (bossDef ? bossDef.dark : def!.dark) this.questProgress('dead', 1);
+      if (def && def.id.startsWith('bandit')) this.questProgress('bounty', 1);
+      if (def && def.drop && Math.random() < def.drop.chance) {
+        if (def.drop.item === 'arrows') {
+          if (this.player.weaponKind === 'bow' || c.weapons.some((w) => WEAPONS[w.id].kind === 'bow')) {
+            c.arrows.wood += 5;
+            this.hud.toast('+5 arrows');
+          }
+        } else {
+          c.items[def.drop.item] = (c.items[def.drop.item] ?? 0) + 1;
+          this.hud.toast(`+1 ${def.drop.item === 'ember-ore' ? 'Ember Ore' : def.drop.item}`);
+          if (def.drop.item === 'ember-ore') this.questProgress('ore', 0);
         }
-      } else {
-        c.items[e.def.drop.item] = (c.items[e.def.drop.item] ?? 0) + 1;
-        this.hud.toast(`+1 ${e.def.drop.item === 'ember-ore' ? 'Ember Ore' : e.def.drop.item}`);
-        if (e.def.drop.item === 'ember-ore') this.questProgress('ore', 0);
       }
     }
-    if (isBoss) this.completeTrial(e);
+    // A felled boss lifts the fog; those who fought it win the trial.
+    if (bossDef) {
+      if (this.inTrial || credited) this.completeTrial(bossDef);
+      else this.endTrial(true);
+    }
   }
 
   gainXp(xp: number) {
@@ -520,7 +633,9 @@ export class Game {
   private respawn() {
     const p = this.player;
     const shrine = SHRINES.find((s) => s.id === this.state.lastShrine) ?? SHRINES[0];
-    this.endTrial(false);
+    // With friends still fighting, the trial goes on without us.
+    if (this.coop.sharing && this.activeTrial) this.inTrial = false;
+    else this.endTrial(false);
     p.alive = true;
     p.anim.dead = -1;
     p.c.flasks = p.c.flasksMax;
@@ -559,22 +674,44 @@ export class Game {
 
   // ----------------------------------------------------------------- trials --
 
-  startTrial(t: TrialDef) {
+  /** Begins a trial (in co-op the host runs it; `peer` is the friend who asked). */
+  startTrial(t: TrialDef, peer?: number) {
     if (this.activeTrial) return;
-    if (this.state.trialsDone.includes(t.id)) return this.hud.toast('You have already conquered this trial.');
-    this.activeTrial = t;
-    const fog = this.world.trialFog.get(t.id);
-    if (fog) fog.visible = true;
+    if (this.coop.isGuest) return this.coop.requestTrial(t.id);
+    if (peer === undefined && this.state.trialsDone.includes(t.id)) return this.hud.toast('You have already conquered this trial.');
     const boss = new Boss(BOSSES[t.boss], { x: t.x, z: t.z, radius: t.radius });
+    // Everyone near the altar is sealed in; more heroes, a tougher boss.
+    const inside = (h: Hero) => Math.hypot(h.pos.x - t.x, h.pos.z - t.z) < t.radius + 3;
+    const ids: number[] = [];
+    for (const r of this.coop.remotes.values()) {
+      r.inTrial = r.ready && r.alive && inside(r);
+      if (r.inTrial) ids.push(r.id);
+    }
+    const me = peer === undefined || inside(this.player);
+    if (me) ids.push(this.coop.myId);
+    if (ids.length > 1) boss.scaleHealth(1 + 0.6 * (ids.length - 1));
     this.boss = boss;
     this.enemies.push(boss);
     this.scene.add(boss.model.root);
     // Clear the arena of wandering monsters.
-    for (const e of this.enemies) if (e !== boss && Math.hypot(e.pos.x - t.x, e.pos.z - t.z) < t.radius + 6) this.removeEnemy(e);
-    this.hud.banner(t.name, 'zone', t.intro);
-    this.audio.play('roar');
-    this.audio.setMood(1, BOSSES[t.boss].dark);
-    if (this.state.quests.trials.state === 'none') this.state.quests.trials.state = 'active';
+    for (const e of [...this.enemies]) if (e !== boss && Math.hypot(e.pos.x - t.x, e.pos.z - t.z) < t.radius + 6) this.removeEnemy(e);
+    this.trialBegan(t, me);
+    this.coop.trialStarted(t.id, ids);
+  }
+
+  /** The fog rises: everyone sees it; those inside are sealed in. */
+  trialBegan(t: TrialDef, inside: boolean) {
+    this.activeTrial = t;
+    this.inTrial = inside;
+    this.trialTime = 0;
+    const fog = this.world.trialFog.get(t.id);
+    if (fog) fog.visible = true;
+    if (inside) {
+      this.hud.banner(t.name, 'zone', t.intro);
+      this.audio.play('roar');
+      this.audio.setMood(1, BOSSES[t.boss].dark);
+    } else this.hud.toast(`The fog rises over the ${t.name}.`);
+    if (inside && this.state.quests.trials.state === 'none') this.state.quests.trials.state = 'active';
   }
 
   endTrial(won: boolean) {
@@ -586,24 +723,29 @@ export class Game {
     for (const e of [...this.enemies]) if (e.summoned && e.alive) this.removeEnemy(e);
     this.boss = null;
     this.activeTrial = null;
+    this.inTrial = false;
     this.fx.clearTelegraphs();
     this.audio.setMood(0, false);
     if (!won) this.hud.setBoss(null);
   }
 
-  private completeTrial(boss: Boss) {
-    const t = this.activeTrial;
+  private completeTrial(boss: BossDef) {
+    const t = this.activeTrial ?? TRIALS.find((x) => x.boss === boss.id);
     if (!t) return;
-    this.state.trialsDone.push(t.id);
+    // In co-op a trial can be fought again to help a friend; the weapon is only won once.
+    const first = !this.state.trialsDone.includes(t.id);
+    if (first) this.state.trialsDone.push(t.id);
     this.hud.setBoss(null);
     setTimeout(() => {
-      this.hud.banner('GREAT FOE FELLED', 'victory', `${boss.bdef.name}, ${boss.bdef.title}`);
+      this.hud.banner('GREAT FOE FELLED', 'victory', `${boss.name}, ${boss.title}`);
       this.audio.play('victory');
     }, 1200);
     this.endTrial(true);
-    this.state.unclaimed.push(boss.bdef.reward);
-    this.placeLegendary(boss.bdef.reward);
-    this.questProgress('trials', 1);
+    if (first) {
+      this.state.unclaimed.push(boss.reward);
+      this.placeLegendary(boss.reward);
+      this.questProgress('trials', 1);
+    }
     this.save();
   }
 
@@ -651,7 +793,7 @@ export class Game {
     let best: Interactable | null = null;
     let bestD = Infinity;
     for (const it of this.world.interactables) {
-      if (it.used) continue;
+      if (it.used || (it.kind === 'trial' && this.activeTrial)) continue;
       const d = Math.hypot(it.x - p.x, it.z - p.z);
       if (d < it.radius && d < bestD && Math.abs(it.y - p.y) < 4) (best = it), (bestD = d);
     }
@@ -667,7 +809,7 @@ export class Game {
 
   save() {
     const p = this.player;
-    this.state.pos = this.activeTrial || !p.alive ? null : [p.pos.x, Math.max(p.pos.y, heightAt(p.pos.x, p.pos.z)), p.pos.z];
+    this.state.pos = this.inTrial || !p.alive ? null : [p.pos.x, Math.max(p.pos.y, heightAt(p.pos.x, p.pos.z)), p.pos.z];
     if (p.sailing || p.flying || p.swimming) this.state.pos = null;
     const ok = writeSave({ character: p.c, world: this.state });
     if (!ok) this.hud.toast('Could not save (storage unavailable).', 'warn');
@@ -691,6 +833,7 @@ export class Game {
   }
 
   passTime(toMinute: number) {
+    if (this.coop.isGuest) return this.hud.toast('In co-op the host’s world keeps the time.');
     const day = this.dayMinutes;
     let delta = toMinute - day;
     if (delta <= 0) delta += 1440;
@@ -720,6 +863,7 @@ export class Game {
 
   stop() {
     this.running = false;
+    this.coop.shutdown();
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('visibilitychange', this.onVisibility);
     if (document.pointerLockElement) document.exitPointerLock();
@@ -745,7 +889,8 @@ export class Game {
     const input = this.input;
     input.poll();
     const t = this.elapsed;
-    const playing = this.mode === 'play' || this.mode === 'dead';
+    // With friends the world never pauses (menus and conversations included).
+    const playing = this.mode === 'play' || this.mode === 'dead' || this.coop.sharing;
     // Hit-stop slows the action (not the camera or HUD) for a moment.
     const gdt = this.freeze > 0 ? dt * 0.06 : dt;
     this.freeze = Math.max(0, this.freeze - dt);
@@ -758,7 +903,8 @@ export class Game {
     }
 
     if (playing) {
-      this.state.gameMinutes += dt * 1; // 1 game minute per real second
+      // 1 game minute per real second (a co-op guest follows the host's clock).
+      if (!this.coop.isGuest) this.state.gameMinutes += dt;
       this.state.playTime += dt;
       this.isNight = this.world.isNight(this.dayMinutes);
 
@@ -772,10 +918,17 @@ export class Game {
       }
 
       const pp = this.player.pos;
+      const many = this.heroes.length > 1;
+      const mirrorAt = performance.now() / 1000 - 0.13;
       for (const e of this.enemies) {
+        if (e.net && e.alive) {
+          e.updateMirror(gdt, this, mirrorAt);
+          continue;
+        }
         const d = Math.abs(e.pos.x - pp.x) + Math.abs(e.pos.z - pp.z);
-        const active = d < 150 || e instanceof Boss;
-        e.model.root.visible = d < 150 || e instanceof Boss;
+        // Monsters near any hero think; the model is only drawn near this one.
+        const active = d < 150 || e instanceof Boss || (many && this.heroDistance(e.pos.x, e.pos.z) < 150);
+        if (!(e instanceof Boss)) e.model.root.visible = d < 150;
         // Watchers leave the eye-touched alone unless provoked.
         if (e.def.id === 'eye-watcher' && this.player.c.mysteryRevealed && this.player.c.elfMystery && e.hp >= e.maxHp && !(e instanceof Boss)) {
           e.aware = false;
@@ -794,21 +947,22 @@ export class Game {
       this.updateTornados(gdt);
       this.updateCorpses(gdt);
       this.updateNpcs(dt);
-      this.updateTrial();
+      this.updateTrial(dt);
       this.updateZone();
       this.updateEyes(dt);
-      this.spawner.update(dt);
+      if (!this.coop.isGuest) this.spawner.update(dt);
       this.updateOre();
       if (this.mode === 'play') this.updateInteraction();
       else this.hud.prompt(null);
 
       this.autosave -= dt;
-      if (this.autosave <= 0 && this.mode === 'play' && !this.activeTrial) {
+      if (this.autosave <= 0 && this.mode === 'play' && !this.inTrial) {
         this.autosave = 60;
         this.save();
       }
     }
 
+    this.coop.update(dt);
     this.cam.update(dt, this);
     this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer', this.fog);
     this.fx.update(gdt);
@@ -831,6 +985,7 @@ export class Game {
       let impact = false;
       if (pr.pos.y < heightAt(pr.pos.x, pr.pos.z) || pr.life <= 0) impact = true;
       if (pr.owner === 'enemy') {
+        // Each player's game checks its own hero; the shot's copies elsewhere check theirs.
         const p = this.player;
         if (p.alive && p.center().distanceTo(pr.pos) < 0.9 + (p.crouching ? 0 : 0.2)) {
           this.damagePlayer(pr.damage, pr.element, pr.source);
@@ -846,7 +1001,7 @@ export class Game {
           const closest = prev.clone().addScaledVector(seg, t);
           if (closest.distanceTo(c) < e.radius + 0.35 + e.height * 0.25) {
             pr.hit.add(e);
-            this.projectileHit(pr, e);
+            if (pr.owner !== 'remote') this.projectileHit(pr, e);
             if ((pr.pierce ?? 0) > 0) pr.pierce!--;
             else {
               impact = true;
@@ -858,11 +1013,11 @@ export class Game {
       if (impact) {
         if (pr.explode) {
           this.fx.ring(pr.pos.clone(), pr.explode, pr.element === 'lightning' ? 0xd8e8ff : 0xff6020, 0.45);
-          for (const e of this.enemies) if (e.alive && !pr.hit.has(e) && e.center().distanceTo(pr.pos) < pr.explode + e.radius) {
+          if (pr.owner !== 'remote') for (const e of this.enemies) if (e.alive && !pr.hit.has(e) && e.center().distanceTo(pr.pos) < pr.explode + e.radius) {
             this.damageEnemy(e, pr.damage * 0.7, pr.element, { source: 'spell' });
             if (pr.burn) e.status.burn = 3;
           }
-          this.shake(0.15);
+          if (pr.owner !== 'remote') this.shake(0.15);
         } else {
           this.fx.emit(pr.pos, { color: pr.kind === 'fireball' ? 0xff6020 : pr.kind === 'orb' ? 0xa070ff : pr.kind === 'water' ? 0x60b0ff : 0xc0b090, count: 10, speed: 3, life: 0.35 });
         }
@@ -912,7 +1067,7 @@ export class Game {
         this.fx.emit(new THREE.Vector3(t.pos.x + Math.cos(a) * r, t.pos.y + h, t.pos.z + Math.sin(a) * r), { color: t.color, count: 1, speed: 1, life: 0.5, size: 0.9, drift: new THREE.Vector3(-Math.sin(a) * 8, 2, Math.cos(a) * 8) });
       }
       for (const e of this.enemies) {
-        if (!e.alive || e instanceof Boss) continue;
+        if (t.remote || !e.alive || e instanceof Boss) continue;
         const d = Math.hypot(e.pos.x - t.pos.x, e.pos.z - t.pos.z);
         if (d < t.radius * 1.6) {
           e.pos.x += ((t.pos.x - e.pos.x) / (d || 1)) * dt * 4;
@@ -920,7 +1075,7 @@ export class Game {
           this.damageEnemy(e, t.dps * dt, t.color === 0xff5010 ? 'fire' : 'wind', { dot: true, source: 'spell' });
         }
       }
-      if (this.boss && this.boss.alive && this.boss.pos.distanceTo(t.pos) < t.radius + this.boss.radius) this.damageEnemy(this.boss, t.dps * dt, 'wind', { dot: true, source: 'spell' });
+      if (!t.remote && this.boss && this.boss.alive && this.boss.pos.distanceTo(t.pos) < t.radius + this.boss.radius) this.damageEnemy(this.boss, t.dps * dt, 'wind', { dot: true, source: 'spell' });
       if (t.life <= 0) this.tornados.splice(i, 1);
     }
   }
@@ -953,7 +1108,7 @@ export class Game {
     }
   }
 
-  private updateTrial() {
+  private updateTrial(dt: number) {
     const t = this.activeTrial;
     if (!t) {
       this.hud.setBoss(null);
@@ -962,10 +1117,28 @@ export class Game {
     const p = this.player.pos;
     const dx = p.x - t.x, dz = p.z - t.z;
     const d = Math.hypot(dx, dz);
-    // The fog wall keeps you in.
-    if (d > t.radius - 0.6 && this.player.alive) {
-      p.x = t.x + (dx / d) * (t.radius - 0.6);
-      p.z = t.z + (dz / d) * (t.radius - 0.6);
+    this.trialTime += dt;
+    if (this.inTrial) {
+      // The fog wall keeps you in.
+      if (d > t.radius - 0.6 && this.player.alive) {
+        p.x = t.x + (dx / d) * (t.radius - 0.6);
+        p.z = t.z + (dz / d) * (t.radius - 0.6);
+      }
+    } else if (d < t.radius + 1 && d > 1e-3 && this.player.alive) {
+      // Someone else's fight: the fog bars the way.
+      p.x = t.x + (dx / d) * (t.radius + 1);
+      p.z = t.z + (dz / d) * (t.radius + 1);
+    }
+    // Host: the trial is lost once no one inside is standing (alone, death ends it on respawn).
+    if (!this.coop.isGuest && this.trialTime > 3) {
+      let standing = this.inTrial && this.player.alive;
+      for (const r of this.coop.remotes.values()) if (r.inTrial && r.alive) standing = true;
+      if (!standing && (this.coop.sharing || !this.inTrial)) {
+        this.endTrial(false);
+        this.coop.trialFailed();
+        this.hud.toast('The trial is lost. The fog lifts.');
+        return;
+      }
     }
     if (this.boss) this.hud.setBoss(this.boss.alive ? `${this.boss.bdef.name}, ${this.boss.bdef.title}` : null, this.boss.hp, this.boss.maxHp);
   }
@@ -976,7 +1149,7 @@ export class Game {
     if (this.zone !== this.lastZone) {
       if (this.lastZone !== null) this.hud.banner(ZONES[this.zone].name, 'zone');
       this.lastZone = this.zone;
-      this.audio.setMood(this.activeTrial ? 1 : 0, this.zone === 'crossroads' || this.zone === 'swamp');
+      this.audio.setMood(this.inTrial ? 1 : 0, this.zone === 'crossroads' || this.zone === 'swamp');
     }
     // The elf secret wakes at night once the hero has grown a little, or near the eyes.
     const c = this.player.c;

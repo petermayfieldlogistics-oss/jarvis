@@ -3,15 +3,16 @@ import { EYES_RUINS, ITEMS, LORE, PAGES, QUESTS, SHRINES, TRIALS, BOSSES, type Q
 import { dracoFlightHours, maxHp, maxMana, maxStamina, rank, treeFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { saveSettings } from '../engine/state';
+import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
 import { mapImage, toMap } from './mapimage';
 
-type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'settings' | 'controls';
+type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
 
 const TABS: [Tab, string][] = [
   ['character', 'Hero'], ['equipment', 'Gear'], ['skills', 'Skills'], ['spells', 'Spells'], ['quests', 'Quests'],
-  ['map', 'Map'], ['lore', 'Lore'], ['settings', 'Settings'], ['controls', 'Controls'],
+  ['map', 'Map'], ['lore', 'Lore'], ['coop', 'Co-op'], ['settings', 'Settings'], ['controls', 'Controls'],
 ];
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
@@ -21,6 +22,7 @@ export class Menu {
   private el: HTMLElement;
   private tab: Tab = 'character';
   private pickSpell: SpellId | null = null;
+  private coopCode = '';
 
   constructor(parent: HTMLElement, private g: Game) {
     this.el = document.createElement('div');
@@ -33,6 +35,11 @@ export class Menu {
     this.isOpen = true;
     this.g.setMode('menu');
     this.render(true);
+  }
+
+  /** The co-op link changed (connected, someone joined...): refresh the Co-op tab if it is showing. */
+  coopChanged() {
+    if (this.isOpen && this.tab === 'coop') this.render();
   }
 
   close() {
@@ -67,6 +74,7 @@ export class Menu {
       case 'quests': return this.quests();
       case 'map': return '<canvas class="bigmap" width="640" height="640"></canvas><p class="hint">Click a discovered shrine (gold) to travel there. Red: trials. Grey: conquered.</p>';
       case 'lore': return this.lore();
+      case 'coop': return this.coopTab();
       case 'settings': return this.settingsTab();
       case 'controls': return this.controls();
     }
@@ -189,6 +197,44 @@ export class Menu {
     </div>`;
   }
 
+  private coopName(): string {
+    const c = this.g.player.c;
+    return this.g.settings.coopName || c.classId[0].toUpperCase() + c.classId.slice(1);
+  }
+
+  private coopTab(): string {
+    const co = this.g.coop;
+    const s = this.g.settings;
+    const name = this.coopName();
+    const status = `<div class="cstatus${co.busy ? ' busy' : ''}">${esc(co.status)}</div>`;
+    if (co.active) {
+      const party = co.party();
+      const host = party.find((m) => m.host);
+      return `<div class="coop form">
+        ${co.isHost
+          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div><p class="hint">Friends open Mythbound, go to Menu → Co-op, type this code and press Join.</p>`
+          : `<p>You are in <b>${esc(host?.name ?? 'the host')}</b>’s world (room <b>${esc(co.room)}</b>).</p>`}
+        <ul class="who"><li>${co.isHost ? '♛ ' : ''}${esc(name)} <small>(you)</small></li>${party.map((m) => `<li>${m.host ? '♛ ' : ''}${esc(m.name)} <small>level ${m.level}${m.alive ? '' : ' · fallen'}</small></li>`).join('')}</ul>
+        ${status}
+        <div class="btnrow"><button data-act="coop-leave">Leave co-op</button></div>
+        <p class="hint">${co.isHost
+          ? 'Your world is shared: keep this tab open and in view, or it pauses for everyone. Resting at a shrine no longer brings monsters back while friends are here.'
+          : 'Monsters, bosses and the time of day come from the host. Your hero, items and progress are yours and save on this device.'}</p>
+      </div>`;
+    }
+    const pages = !/github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+    return `<div class="coop form">
+      <p>Play together with up to 3 friends. One of you hosts, and everyone joins that world: its monsters, bosses and time of day are shared. Each of you keeps your own hero, items and progress.</p>
+      <label>Your name <input type="text" maxlength="20" data-coop="name" value="${esc(name)}"></label>
+      <div class="btnrow"><button data-act="coop-host"${co.busy ? ' disabled' : ''}>Host a game</button></div>
+      <label>Join with a room code <span><input type="text" class="codein" maxlength="6" data-coop="code" placeholder="ABCDE" value="${esc(this.coopCode)}"> <button data-act="coop-join"${co.busy ? ' disabled' : ''}>Join</button></span></label>
+      ${status}
+      ${pages ? `<p class="hint">Co-op needs the online version of the game: <a href="${PAGES_URL}" target="_blank" rel="noopener">${PAGES_URL}</a></p>` : ''}
+      <p class="hint">The free server naps when nobody is playing, so the first connection can take up to a minute.</p>
+      <details><summary class="hint">Server address</summary><label>Address <input type="text" data-coop="server" value="${esc(s.coopServer || DEFAULT_SERVER)}"></label></details>
+    </div>`;
+  }
+
   private controls(): string {
     const k = (...keys: string[]) => keys.map((x) => `<kbd>${x}</kbd>`).join('');
     return `<div class="cols keys"><div><h4>Keyboard &amp; mouse</h4><ul>
@@ -265,6 +311,33 @@ export class Menu {
         saveSettings(g.settings);
       }),
     );
+    const coopSet = (key: 'coopName' | 'coopServer', value: string) => {
+      g.settings[key] = value.trim();
+      saveSettings(g.settings);
+    };
+    this.el.querySelector<HTMLInputElement>('[data-coop="name"]')?.addEventListener('change', (e) => coopSet('coopName', (e.target as HTMLInputElement).value.slice(0, 20)));
+    this.el.querySelector<HTMLInputElement>('[data-coop="server"]')?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLInputElement).value.trim();
+      coopSet('coopServer', v === DEFAULT_SERVER ? '' : v);
+    });
+    const code = this.el.querySelector<HTMLInputElement>('[data-coop="code"]');
+    code?.addEventListener('input', () => (this.coopCode = code.value.toUpperCase()));
+    code?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') this.el.querySelector<HTMLButtonElement>('[data-act="coop-join"]')?.click();
+    });
+    this.el.querySelectorAll<HTMLInputElement>('input[type="text"]').forEach((inp) => inp.addEventListener('keydown', (e) => e.stopPropagation()));
+    this.el.querySelector('[data-act="coop-host"]')?.addEventListener('click', () => {
+      const name = this.el.querySelector<HTMLInputElement>('[data-coop="name"]')?.value.trim().slice(0, 20);
+      if (name) coopSet('coopName', name);
+      void g.coop.host(g.settings.coopServer || DEFAULT_SERVER, this.coopName());
+    });
+    this.el.querySelector('[data-act="coop-join"]')?.addEventListener('click', () => {
+      const name = this.el.querySelector<HTMLInputElement>('[data-coop="name"]')?.value.trim().slice(0, 20);
+      if (name) coopSet('coopName', name);
+      void g.coop.join(g.settings.coopServer || DEFAULT_SERVER, this.coopCode, this.coopName());
+    });
+    this.el.querySelector('[data-act="coop-leave"]')?.addEventListener('click', () => g.coop.leave());
     this.el.querySelector('[data-act="reload"]')?.addEventListener('click', () => {
       g.save();
       location.reload();
@@ -305,6 +378,7 @@ export class Menu {
     for (const s of SHRINES) if (g.state.shrinesFound.includes(s.id)) label(s.x, s.z, '', '#ffd070', 5);
     if (g.state.flags.eyesRevealed) label(EYES_RUINS.x, EYES_RUINS.z, '◉ ◉ ◉', '#60ff90', 5);
     if (g.state.lostEmbers) label(g.state.lostEmbers.x, g.state.lostEmbers.z, 'Lost embers', '#ffb040', 4);
+    for (const r of g.coop.remotes.values()) if (r.ready) label(r.pos.x, r.pos.z, r.name, r.alive ? '#6fd6ff' : '#4a6a78', 5);
     const p = g.player;
     const [px, py] = toMap(p.pos.x, p.pos.z, S);
     ctx.save();
@@ -332,7 +406,7 @@ export class Menu {
 
   private travel(id: string) {
     const g = this.g;
-    if (g.activeTrial) return g.hud.toast('The fog holds you here.');
+    if (g.inTrial) return g.hud.toast('The fog holds you here.');
     if (g.enemies.some((e) => e.alive && e.aware && e.pos.distanceTo(g.player.pos) < 25)) return g.hud.toast('You cannot travel while enemies hunt you.');
     if (g.player.sailing) return g.hud.toast('Step ashore first.');
     const s = SHRINES.find((x) => x.id === id)!;

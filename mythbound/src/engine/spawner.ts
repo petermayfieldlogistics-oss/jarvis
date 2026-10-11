@@ -1,11 +1,13 @@
 // Monster population. Camps (SPAWNS) and walking patrols (PATROLS) are only
 // placed in the world near the hero and remember who is left while away; a
 // cleared camp returns a few minutes later once the hero has moved on.
-// Wanderers top the wild up when it runs thin, more of them at night.
+// Wanderers top the wild up when it runs thin, more of them at night. In
+// co-op the host's spawner does this around every hero.
 
 import * as THREE from 'three';
 import { AMBIENT, ENEMIES, PATROLS, SHRINES, SPAWNS, TOWN, TRIALS, VOLCANO, ZONES, type EnemyId } from '../data/world';
 import { Boss, type Enemy } from './entities';
+import type { Hero } from './hero';
 import { heightAt, inLava, zoneAt, WATER_LEVEL } from './terrain';
 import type { Game } from './game';
 
@@ -61,6 +63,8 @@ export class Spawner {
   private ambientTimer = 2;
   private watcherTimer = 30;
   private present = new Set<Enemy>();
+  /** Which hero the wild is topped up around next (co-op takes turns). */
+  private turn = 0;
 
   constructor(private g: Game) {
     for (const s of SPAWNS) {
@@ -113,22 +117,48 @@ export class Spawner {
     }
   }
 
-  /** Live monster counts: everywhere, and close enough to the hero to be active. */
+  /** Live monster counts: everywhere, and close enough to a hero to be active. */
   private counts() {
-    const p = this.g.player.pos;
     let live = 0, near = 0;
     for (const e of this.g.enemies) {
       if (!e.alive) continue;
       live++;
-      if (Math.abs(e.pos.x - p.x) + Math.abs(e.pos.z - p.z) < NEAR) near++;
+      if (this.g.heroDistance(e.pos.x, e.pos.z) < NEAR) near++;
     }
     return { live, near };
+  }
+
+  /** The caps grow a little with each friend, who brings their own patch of world. */
+  private get maxLive() {
+    return MAX_LIVE + 25 * (this.g.heroes.length - 1);
+  }
+  private get maxNear() {
+    return MAX_NEAR + 15 * (this.g.heroes.length - 1);
+  }
+
+  /** Flat distance to the nearest hero. */
+  private dist(x: number, z: number) {
+    let d = Infinity;
+    for (const h of this.g.heroes) d = Math.min(d, Math.hypot(h.pos.x - x, h.pos.z - z));
+    return d;
+  }
+
+  /** The next living hero to spawn wanderers around. */
+  private nextHero(): Hero | null {
+    const hs = this.g.heroes;
+    for (let k = 0; k < hs.length; k++) {
+      const h = hs[(this.turn + k) % hs.length];
+      if (h.alive) {
+        this.turn = (this.turn + k + 1) % hs.length;
+        return h;
+      }
+    }
+    return null;
   }
 
   /** Books keeping for camps and patrols: who died, who to place, who to put away. */
   private refresh(all: boolean) {
     const g = this.g;
-    const p = g.player.pos;
     this.present.clear();
     for (const e of g.enemies) this.present.add(e);
     const c = this.counts();
@@ -150,7 +180,7 @@ export class Spawner {
         else this.depleted(gr);
       }
       const cx = gr.patrol ? gr.patrol.anchor.x : gr.x, cz = gr.patrol ? gr.patrol.anchor.z : gr.z;
-      const d = Math.hypot(cx - p.x, cz - p.z);
+      const d = this.dist(cx, cz);
       if (gr.live) {
         if (d > HIDE && !gr.members.some((e) => e.aware)) this.hide(gr);
         continue;
@@ -178,7 +208,7 @@ export class Spawner {
 
   private fits(gr: Group, d: number, c: { live: number; near: number }) {
     const n = gr.left.length;
-    return c.live + n <= MAX_LIVE && (d > NEAR || c.near + n <= MAX_NEAR);
+    return c.live + n <= this.maxLive && (d > NEAR || c.near + n <= this.maxNear);
   }
 
   private show(gr: Group) {
@@ -302,16 +332,20 @@ export class Spawner {
   /** Keeps a minimum of monsters around the hero in the wild, picked by the region they appear in. */
   private topUp() {
     const g = this.g;
-    const p = g.player.pos;
     for (let i = this.ambient.length - 1; i >= 0; i--) {
       const e = this.ambient[i];
       const gone = !e.alive || !g.enemies.includes(e);
-      if (gone || (!e.aware && Math.hypot(e.pos.x - p.x, e.pos.z - p.z) > HIDE - 20)) {
+      if (gone || (!e.aware && this.dist(e.pos.x, e.pos.z) > HIDE - 20)) {
         if (!gone) g.removeEnemy(e);
         this.ambient.splice(i, 1);
       }
     }
-    if (g.activeTrial || !g.player.alive || g.zone === 'town') return;
+    const hero = this.nextHero();
+    if (!hero) return;
+    const p = hero.pos;
+    if (zoneAt(p.x, p.z) === 'town') return;
+    const t = g.activeTrial;
+    if (t && Math.hypot(p.x - t.x, p.z - t.z) < t.radius + 40) return;
     let around = 0;
     for (const e of g.enemies) if (e.alive && !e.summoned && Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < AMBIENT_COUNT_R) around++;
     const night = g.isNight;
@@ -334,7 +368,7 @@ export class Spawner {
       let n = Math.round(rand(table.pack[0], table.pack[1] + (night ? 1 : 0)));
       // Big brutes come alone or in pairs.
       if (def.level >= 12 || lead === 'eye-watcher') n = Math.min(n, 2);
-      n = Math.min(n, want - around + 1, MAX_LIVE - c.live, MAX_NEAR - c.near);
+      n = Math.min(n, want - around + 1, this.maxLive - c.live, this.maxNear - c.near);
       if (n <= 0) return;
       // The Golden Reach stays gentle; elsewhere wanderers rise to the region's level.
       const nearTown = Math.hypot(x - TOWN.x, z - TOWN.z) < 170;
@@ -360,15 +394,16 @@ export class Spawner {
   /** At night the Watchers drift in over the darker lands. */
   private nightWatcher() {
     const g = this.g;
-    if (!g.isNight || g.activeTrial || !['swamp', 'crossroads', 'badlands', 'volcano'].includes(g.zone)) return;
+    const hero = this.nextHero();
+    if (!hero || !g.isNight || g.activeTrial || !['swamp', 'crossroads', 'badlands', 'volcano'].includes(zoneAt(hero.pos.x, hero.pos.z))) return;
     if (this.watchers() > 6) return;
     const c = this.counts();
-    if (c.live >= MAX_LIVE || c.near >= MAX_NEAR) return;
+    if (c.live >= this.maxLive || c.near >= this.maxNear) return;
     for (let t = 0; t < 6; t++) {
       const a = Math.random() * Math.PI * 2;
       const r = rand(55, 80);
-      const x = g.player.pos.x + Math.cos(a) * r;
-      const z = g.player.pos.z + Math.sin(a) * r;
+      const x = hero.pos.x + Math.cos(a) * r;
+      const z = hero.pos.z + Math.sin(a) * r;
       if (!this.wild(x, z, true) || heightAt(x, z) < 0) continue;
       this.ambient.push(g.spawnEnemy('eye-watcher', x, z));
       return;

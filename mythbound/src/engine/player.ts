@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SPELLS, WEAPONS, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
+import { SPELLS, WEAPONS, type ClassId, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
   dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, manaRegen, maxHp, maxMana, maxStamina, maxTamed, moveSpeed, rank,
   tameableKinds, weaponDamage, type Character,
@@ -11,7 +11,7 @@ import {
 } from '../rules/combat';
 import { buildShield, buildWeapon, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
-import { newAnim, type AttackStyle } from './anim';
+import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { Ally, Boss, Enemy } from './entities';
 import type { Game } from './game';
@@ -49,7 +49,7 @@ interface Attack {
  * When each move lands, its active window and its forward step, as fractions
  * of the move's duration. They follow the hit keys of the humanoid animator.
  */
-const TIMING: Partial<Record<AttackStyle, { hit: number; from: number; to: number; step: number }>> = {
+export const TIMING: Partial<Record<AttackStyle, { hit: number; from: number; to: number; step: number }>> = {
   slash: { hit: 0.46, from: 0.35, to: 0.64, step: 0.45 },
   slash2: { hit: 0.44, from: 0.33, to: 0.62, step: 0.4 },
   slash3: { hit: 0.5, from: 0.41, to: 0.72, step: 0.75 },
@@ -71,11 +71,11 @@ const ROLL = { time: 0.6, dist: 3.9, iFrom: 0.08, iTo: 0.4 };
 const BACKSTEP = { time: 0.42, dist: 2.3, iFrom: 0.05, iTo: 0.26 };
 
 /** The part of the weapon that leaves a trail, along its local +Y from the grip: [start, tip]. */
-const BLADE: Record<WeaponKind, [number, number]> = {
+export const BLADE: Record<WeaponKind, [number, number]> = {
   sword: [0.55, 1.2], axe: [0.6, 1.0], hammer: [0.8, 1.2], dagger: [0.2, 0.5], trident: [1.35, 2.0], staff: [1.1, 1.6], bolt: [0.4, 1.0], bow: [0, 0],
 };
 
-const ELEMENT_COLOR: Record<DamageElement, number> = {
+export const ELEMENT_COLOR: Record<DamageElement, number> = {
   physical: 0xdfe8ff, fire: 0xff7a1a, light: 0xffd25a, lightning: 0xa8d0ff, dark: 0x9a4dff, water: 0x3ee0ff, wind: 0xc8ffe4, earth: 0xc8a070, true: 0xffffff,
 };
 
@@ -83,7 +83,7 @@ const SCHOOL_COLOR: Record<SpellSchool, number> = {
   devil: 0xb8121a, fire: 0xff6a1a, sky: 0xa8ccff, water: 0x2ad8ff, light: 0xffd25a, arcane: 0xa060ff, earth: 0xa8743a,
 };
 
-const RAGE_RED = 0xff2a12;
+export const RAGE_RED = 0xff2a12;
 const UP = new THREE.Vector3(0, 1, 0);
 const smooth01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
@@ -212,17 +212,9 @@ export class Player {
       old.removeFromParent();
       disposeObject(old);
     }
-    const w = WEAPONS[mainWeapon(this.c).id];
-    this.weaponMesh = compact(buildWeapon(w.kind, !!w.legendary));
-    if (w.kind === 'bow') this.rig.handL.add(this.weaponMesh);
-    else this.rig.handR.add(this.weaponMesh);
-    if (this.c.classId === 'warrior' && w.kind !== 'bow') {
-      this.shieldMesh = buildShield();
-      this.shieldMesh.position.set(-0.08, 0, 0.1);
-      this.shieldMesh.rotation.y = -Math.PI / 2;
-      this.rig.handL.add(this.shieldMesh);
-    }
-    this.weaponMesh.traverse((o) => (o.castShadow = true));
+    const gear = attachGear(this.rig, this.c.classId, mainWeapon(this.c).id);
+    this.weaponMesh = gear.weapon;
+    this.shieldMesh = gear.shield;
   }
 
   ready(key: string) {
@@ -551,13 +543,13 @@ export class Player {
     } else {
       this.rollDir.set(wantX / wantLen, 0, wantZ / wantLen);
     }
-    g.fx.dust(this.pos, this.backstep ? 5 : 8);
+    g.sfx.dust(this.pos, this.backstep ? 5 : 8);
     g.audio.play('roll');
   }
 
   private endRoll(g: Game) {
     this.rollT = -1;
-    if (!this.backstep) g.fx.dust(this.tv.copy(this.pos).addScaledVector(this.rollDir, 0.3), 10);
+    if (!this.backstep) g.sfx.dust(this.tv.copy(this.pos).addScaledVector(this.rollDir, 0.3), 10);
     this.backstep = false;
   }
 
@@ -565,7 +557,7 @@ export class Player {
   private land(g: Game, fall: number) {
     this.anim.landing = Math.max(this.anim.landing, Math.min(1, 0.2 + (fall - 3) / 13));
     if (fall > 9) {
-      g.fx.dust(this.pos, Math.min(22, 4 + fall));
+      g.sfx.dust(this.pos, Math.min(22, 4 + fall));
       if (fall > 15) g.shake(Math.min(0.3, fall / 70));
     }
   }
@@ -742,7 +734,7 @@ export class Player {
         this.roarFx(g);
       }
       if (a.landed && this.c.subclassId === 'axeman' && a.kind === 'heavy' && !this.grounded && rank(this.c, 'earthsplitter')) {
-        g.fx.ring(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 5, 0xc8a070);
+        g.sfx.ring(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 5, 0xc8a070);
       }
     }
     if (this.attack === a && a.t >= a.duration) this.finishAttack();
@@ -788,7 +780,7 @@ export class Player {
       landed = true;
       if (e.bleeds && Math.random() < bleedChance(this.c)) e.status.bleed = 4;
       if (def.legendary === 'hammer-of-hephaestus' || def.legendary === 'sword-of-mars') e.status.burn = 3;
-      if (def.element !== 'physical') g.fx.impact(e.center(this.tv), ELEMENT_COLOR[def.element], 0.7);
+      if (def.element !== 'physical') g.sfx.impact(e.center(this.tv), ELEMENT_COLOR[def.element], 0.7);
     }
     if (landed) {
       // Hit-stop and shake scaled to the blow.
@@ -806,9 +798,9 @@ export class Player {
       const reach = WEAPONS[mainWeapon(this.c).id].range;
       for (let i = 0; i < 8; i++) {
         const t = (i / 8) * Math.PI * 2;
-        g.fx.dust(this.tv.set(this.pos.x + Math.cos(t) * 1.1, this.pos.y, this.pos.z + Math.sin(t) * 1.1), 3);
+        g.sfx.dust(this.tv.set(this.pos.x + Math.cos(t) * 1.1, this.pos.y, this.pos.z + Math.sin(t) * 1.1), 3);
       }
-      g.fx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.12, this.pos.z), reach + 0.8, this.trailColor(), 0.32);
+      g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.12, this.pos.z), reach + 0.8, this.trailColor(), 0.32);
       return;
     }
     if ((a.kind !== 'heavy' && !a.finisher) || !this.weaponMesh) return;
@@ -818,8 +810,8 @@ export class Player {
     const gy = heightAt(tip.x, tip.z);
     if (tip.y - gy < 0.7) {
       tip.y = Math.max(gy, WATER_LEVEL);
-      g.fx.dust(tip, a.kind === 'heavy' ? 14 : 8);
-      g.fx.impact(tip.setY(tip.y + 0.15), 0xffd8a0, a.kind === 'heavy' ? 0.5 : 0.3);
+      g.sfx.dust(tip, a.kind === 'heavy' ? 14 : 8);
+      g.sfx.impact(tip.setY(tip.y + 0.15), 0xffd8a0, a.kind === 'heavy' ? 0.5 : 0.3);
       if (a.kind === 'heavy') g.shake(0.18);
     }
   }
@@ -827,11 +819,11 @@ export class Player {
   /** The BloodRage roar at its peak. */
   private roarFx(g: Game) {
     const at = this.center(this.tv);
-    g.fx.emit(at, { color: 0xff1a10, count: 36, speed: 4, life: 0.6, size: 0.45, up: 1.5, drag: 1.5 });
-    g.fx.flash(at, RAGE_RED, 20, 10);
-    g.fx.shockwave(at.set(this.pos.x, this.pos.y + 0.12, this.pos.z), 6, RAGE_RED, 0.45);
-    g.fx.shockwave(at, 3.5, 0xffa080, 0.3);
-    g.fx.dust(this.pos, 16, 0x8a6a5a);
+    g.sfx.emit(at, { color: 0xff1a10, count: 36, speed: 4, life: 0.6, size: 0.45, up: 1.5, drag: 1.5 });
+    g.sfx.flash(at, RAGE_RED, 20, 10);
+    g.sfx.shockwave(at.set(this.pos.x, this.pos.y + 0.12, this.pos.z), 6, RAGE_RED, 0.45);
+    g.sfx.shockwave(at, 3.5, 0xffa080, 0.3);
+    g.sfx.dust(this.pos, 16, 0x8a6a5a);
     g.shake(0.35);
   }
 
@@ -968,8 +960,9 @@ export class Player {
       const old = g.allies.find((a) => a.ttl === Infinity && a.kind !== 'lizard');
       if (old) g.removeAlly(old);
     }
-    g.fx.magicCircle(target.pos, 0x50ff70, 2.2, 1.6);
+    g.sfx.magicCircle(target.pos, 0x50ff70, 2.2, 1.6);
     target.tamed = true;
+    g.coop.tamed(target);
     g.removeEnemy(target);
     g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond'), 1 + 0.2 * rank(this.c, 'feral-bite')));
     if (!this.c.tamed.includes(kind)) this.c.tamed.push(kind);
@@ -1016,7 +1009,7 @@ export class Player {
     this.c.flasks--;
     this.healing += this.maxHp * 0.5;
     this.stagger = 0.5;
-    g.fx.emit(this.center(), { color: 0xffc040, count: 30, speed: 2, life: 0.8, up: 2 });
+    g.sfx.emit(this.center(), { color: 0xffc040, count: 30, speed: 2, life: 0.8, up: 2 });
     g.audio.play('drink');
   }
 
@@ -1059,7 +1052,7 @@ export class Player {
       this.mana -= cost;
       this.castCooldown(combo.id, 6);
       this.startAttack('cast', 'cast', 0.6);
-      g.fx.magicCircle(this.pos, ELEMENT_COLOR[combo.element], 2.6, 1.5);
+      g.sfx.magicCircle(this.pos, ELEMENT_COLOR[combo.element], 2.6, 1.5);
       this.castCombo(g, combo.id, this.spellDamage(comboPower(combo), combo.element));
       g.hud.toast(combo.name + '!', 'skill');
       g.audio.play('spell');
@@ -1078,11 +1071,11 @@ export class Player {
       case 'deal-with-the-devil': {
         // Locked on (or hold): the single foe. Otherwise a ring of level 1-5 foes.
         const single = this.lockTarget ?? (alt ? target : null);
-        g.fx.magicCircle(this.pos, SCHOOL_COLOR.devil, single ? 4 : 7.5, 4.2);
+        g.sfx.magicCircle(this.pos, SCHOOL_COLOR.devil, single ? 4 : 7.5, 4.2);
         let killed = 0;
         if (single) {
           g.damageEnemy(single, single.hp + 1, 'true', { source: 'devil' });
-          g.fx.pillar(single.center(), 0xff2020, 2);
+          g.sfx.pillar(single.center(), 0xff2020, 2);
           killed = 1;
         } else {
           for (const e of [...g.enemies]) {
@@ -1091,7 +1084,7 @@ export class Player {
               killed++;
             }
           }
-          g.fx.ring(this.center(), 14, 0xff2020, 0.9);
+          g.sfx.ring(this.center(), 14, 0xff2020, 0.9);
         }
         const hours = strikeDevilDeal(c, g.gameMinutes);
         this.blackout = 2.5;
@@ -1107,7 +1100,7 @@ export class Player {
       }
       case 'inferno':
         if (alt) {
-          g.fx.ring(this.center().setY(this.pos.y + 0.3), 7, 0xff5010, 0.7);
+          g.sfx.ring(this.center().setY(this.pos.y + 0.3), 7, 0xff5010, 0.7);
           for (const e of g.enemies) if (e.alive && e.pos.distanceTo(this.pos) < 7.5) {
             g.damageEnemy(e, power * 0.9, 'fire', { source: 'spell' });
             e.status.burn = 3;
@@ -1118,8 +1111,8 @@ export class Player {
         break;
       case 'wrath-of-thor': {
         const at = aim.clone();
-        g.fx.magicCircle(at, SCHOOL_COLOR.sky, 3.2, 0.9);
-        g.fx.lightning(at.clone().add(new THREE.Vector3(0, 30, 0)), at);
+        g.sfx.magicCircle(at, SCHOOL_COLOR.sky, 3.2, 0.9);
+        g.sfx.lightning(at.clone().add(new THREE.Vector3(0, 30, 0)), at);
         for (const e of g.enemies) if (e.alive && e.center().distanceTo(at) < 3.5) {
           g.damageEnemy(e, power * (e.status.wet > 0 ? 2 : 1), 'lightning', { source: 'spell' });
           e.status.stun = Math.max(e.status.stun, 0.6);
@@ -1129,8 +1122,8 @@ export class Player {
       }
       case 'waterspike': {
         const at = target ? target.pos.clone() : aim;
-        g.fx.magicCircle(at, SCHOOL_COLOR.water, 2.6, 0.9);
-        g.fx.spikes(at.x, at.z);
+        g.sfx.magicCircle(at, SCHOOL_COLOR.water, 2.6, 0.9);
+        g.sfx.spikes(at.x, at.z);
         for (const e of g.enemies) if (e.alive && Math.hypot(e.pos.x - at.x, e.pos.z - at.z) < 2.8) {
           g.damageEnemy(e, power, 'water', { source: 'spell' });
           e.status.wet = 6;
@@ -1145,10 +1138,10 @@ export class Player {
             const to = e.pos.clone().sub(this.pos);
             if (e.alive && to.length() < 14 && to.normalize().dot(fwd) > 0.5) e.status.slow = 6;
           }
-          g.fx.emit(this.center(), { color: 0xd0f0ff, count: 60, speed: 14, life: 0.6, size: 0.7, drift: fwd.multiplyScalar(10) });
+          g.sfx.emit(this.center(), { color: 0xd0f0ff, count: 60, speed: 14, life: 0.6, size: 0.7, drift: fwd.multiplyScalar(10) });
         } else {
           this.speedBuff = 8;
-          g.fx.emit(this.center(), { color: 0xd0f0ff, count: 40, speed: 6, life: 0.6 });
+          g.sfx.emit(this.center(), { color: 0xd0f0ff, count: 40, speed: 6, life: 0.6 });
         }
         break;
       case 'blade-of-retribution': {
@@ -1160,7 +1153,7 @@ export class Player {
           g.damageEnemy(target, dmg, 'true', { source: 'spell' });
           g.hud.toast(`Retribution: ${dmg} returned.`, 'skill');
         }
-        g.fx.pillar(target.center(), 0xe0e0ff, 1);
+        g.sfx.pillar(target.center(), 0xe0e0ff, 1);
         break;
       }
       case 'soul-or-power':
@@ -1172,34 +1165,34 @@ export class Player {
         this.hp = this.maxHp;
         this.mana = this.maxMana;
         castPowerOfTheLight(c, g.gameMinutes);
-        g.fx.pillar(this.pos.clone(), 0xfff0b0, 2);
+        g.sfx.pillar(this.pos.clone(), 0xfff0b0, 2);
         break;
       case 'imp-familiar':
         g.addAlly(new Ally('imp', this.pos.x + 1, this.pos.z - 1, c.level, 30));
-        g.fx.emit(this.center(), { color: 0xff5010, count: 40, speed: 4, life: 0.6 });
+        g.sfx.emit(this.center(), { color: 0xff5010, count: 40, speed: 4, life: 0.6 });
         break;
       case 'holy-smite':
         if (!target) return g.hud.toast('No target.');
-        g.fx.magicCircle(target.pos, SCHOOL_COLOR.light, 1.8, 0.9);
-        g.fx.pillar(target.pos.clone(), 0xfff0b0, 1.5);
+        g.sfx.magicCircle(target.pos, SCHOOL_COLOR.light, 1.8, 0.9);
+        g.sfx.pillar(target.pos.clone(), 0xfff0b0, 1.5);
         g.damageEnemy(target, power, 'light', { source: 'spell' });
         break;
       case 'radiant-heal':
         this.heal(power);
-        g.fx.emit(this.center(), { color: 0xfff0b0, count: 40, speed: 2, life: 1, up: 2 });
+        g.sfx.emit(this.center(), { color: 0xfff0b0, count: 40, speed: 2, life: 1, up: 2 });
         break;
       case 'aegis-of-light':
         this.aegis = 3;
-        g.fx.ring(this.center(), 2, 0xfff0b0, 0.5);
+        g.sfx.ring(this.center(), 2, 0xfff0b0, 0.5);
         break;
       case 'stone-skin':
         this.stoneSkin = 12;
-        g.fx.emit(this.center(), { color: 0xa08060, count: 40, speed: 3, life: 0.8 });
+        g.sfx.emit(this.center(), { color: 0xa08060, count: 40, speed: 3, life: 0.8 });
         break;
       case 'moonveil':
         this.moonveil = 10;
         for (const e of g.enemies) if (e.aware && !(e instanceof Boss) && e.pos.distanceTo(this.pos) > 5) (e.aware = false), (e.awareness = 0), (e.state = 'return');
-        g.fx.emit(this.center(), { color: 0x8090ff, count: 40, speed: 3, life: 0.8 });
+        g.sfx.emit(this.center(), { color: 0x8090ff, count: 40, speed: 3, life: 0.8 });
         break;
     }
     if (spell !== 'soul-or-power') this.mana -= check.cost;
@@ -1208,7 +1201,7 @@ export class Player {
       this.startAttack('cast', 'cast', 0.55);
       // A rune circle at the caster's feet in the colour of the school.
       const big = spell === 'power-of-the-light' || spell === 'soul-or-power';
-      g.fx.magicCircle(this.pos, SCHOOL_COLOR[def.school], big ? 3.2 : 1.7, big ? 2 : 1.3);
+      g.sfx.magicCircle(this.pos, SCHOOL_COLOR[def.school], big ? 3.2 : 1.7, big ? 2 : 1.3);
     }
     if (def.school === 'light') g.audio.play('holy');
     else g.audio.play('spell');
@@ -1222,8 +1215,8 @@ export class Player {
         g.addTornado(aim, 4.5, power * 0.25, 0xff5010, 6, true);
         break;
       case 'storm-surge':
-        g.fx.spikes(aim.x, aim.z, 0x60b0ff, 12, 5);
-        g.fx.lightning(aim.clone().add(new THREE.Vector3(0, 30, 0)), aim);
+        g.sfx.spikes(aim.x, aim.z, 0x60b0ff, 12, 5);
+        g.sfx.lightning(aim.clone().add(new THREE.Vector3(0, 30, 0)), aim);
         for (const e of g.enemies) if (e.alive && e.pos.distanceTo(aim) < 6) {
           e.status.wet = 6;
           g.damageEnemy(e, power * 2, 'lightning', { source: 'spell' });
@@ -1231,8 +1224,8 @@ export class Player {
         }
         break;
       case 'scalding-geyser':
-        g.fx.spikes(aim.x, aim.z, 0xffa060, 10, 4);
-        g.fx.emit(aim, { color: 0xffffff, count: 80, speed: 8, life: 1.2, up: 10, size: 1.4 });
+        g.sfx.spikes(aim.x, aim.z, 0xffa060, 10, 4);
+        g.sfx.emit(aim, { color: 0xffffff, count: 80, speed: 8, life: 1.2, up: 10, size: 1.4 });
         for (const e of g.enemies) if (e.alive && e.pos.distanceTo(aim) < 5) {
           g.damageEnemy(e, power, 'fire', { source: 'spell' });
           e.status.burn = 5;
@@ -1241,7 +1234,7 @@ export class Player {
       case 'tempest': {
         const near = g.enemies.filter((e) => e.alive && e.pos.distanceTo(this.pos) < 16).slice(0, 6);
         for (const e of near) {
-          g.fx.lightning(e.center().add(new THREE.Vector3(0, 25, 0)), e.center());
+          g.sfx.lightning(e.center().add(new THREE.Vector3(0, 25, 0)), e.center());
           g.damageEnemy(e, power * 0.8 * (e.status.wet > 0 ? 2 : 1), 'lightning', { source: 'spell' });
         }
         g.addTornado(this.pos.clone(), 6, power * 0.1, 0x9ab0c8, 4);
@@ -1260,7 +1253,7 @@ export class Player {
             g.damageEnemy(e, power * 0.6, 'water', { source: 'spell' });
           }
         }
-        g.fx.emit(this.center(), { color: 0xc0f0ff, count: 90, speed: 16, life: 0.8, size: 0.6, drift: fwd.multiplyScalar(12) });
+        g.sfx.emit(this.center(), { color: 0xc0f0ff, count: 90, speed: 16, life: 0.8, size: 0.6, drift: fwd.multiplyScalar(12) });
         break;
       }
     }
@@ -1279,7 +1272,7 @@ export class Player {
         const facing = Math.cos(Math.atan2(this.pos.x - e.pos.x, this.pos.z - e.pos.z) - e.yaw);
         if (d < 15 && facing > 0.5) {
           g.damageEnemy(e, 3 + this.c.level, 'dark', { source: 'gaze', quiet: true });
-          g.fx.emit(e.center(), { color: 0x40ff80, count: 4, speed: 1, life: 0.6 });
+          g.sfx.emit(e.center(), { color: 0x40ff80, count: 4, speed: 1, life: 0.6 });
         }
       }
     }
@@ -1287,7 +1280,7 @@ export class Player {
       const t = g.findTarget(12, -1, true);
       if (t) {
         this.thunderCd = 2.5;
-        g.fx.lightning(t.center().add(new THREE.Vector3(0, 25, 0)), t.center(), 0x80ffa0);
+        g.sfx.lightning(t.center().add(new THREE.Vector3(0, 25, 0)), t.center(), 0x80ffa0);
         g.damageEnemy(t, 20 + 2 * this.c.level, 'lightning', { source: 'spell' });
       }
     }
@@ -1375,23 +1368,9 @@ export class Player {
     this.updateBowString();
   }
 
-  private nock = new THREE.Vector3();
-  /** Draws the bowstring back to the pulling hand, with an arrow nocked while aiming. */
   private updateBowString() {
     const bow = this.weaponMesh;
-    if (!bow || this.weaponKind !== 'bow') return;
-    const a = this.anim;
-    const pulling = this.drawing > 0 || (a.attackStyle === 'bow' && a.attack >= 0 && a.attack < 0.12);
-    const n = this.nock.set(0, 0, -0.191);
-    if (pulling) {
-      this.rig.root.updateMatrixWorld(true);
-      this.rig.handR.getWorldPosition(n);
-      bow.worldToLocal(n);
-      n.x = Math.max(-0.06, Math.min(0.06, n.x));
-      n.y = Math.max(-0.12, Math.min(0.12, n.y));
-      n.z = Math.max(-0.95, Math.min(-0.191, n.z));
-    }
-    setBowString(bow, n, this.drawing > 0 && this.arrows() > 0);
+    if (bow && this.weaponKind === 'bow') poseBowString(this.rig, bow, this.anim, this.arrows() > 0);
   }
 
   hasBloodsteal() {
@@ -1419,7 +1398,40 @@ function rotateTowards(from: number, to: number, dt: number, rate: number, maxSp
   return from + turn;
 }
 
-export function buildPlayerRig(c: Character): Rig {
+/** Puts a weapon in the right hand (a bow in the left) and, for a warrior, a shield on the arm. */
+export function attachGear(rig: Rig, classId: ClassId, weaponId: string): { weapon: THREE.Object3D; shield: THREE.Object3D | null } {
+  const w = WEAPONS[weaponId];
+  const weapon = compact(buildWeapon(w.kind, !!w.legendary));
+  if (w.kind === 'bow') rig.handL.add(weapon);
+  else rig.handR.add(weapon);
+  let shield: THREE.Object3D | null = null;
+  if (classId === 'warrior' && w.kind !== 'bow') {
+    shield = buildShield();
+    shield.position.set(-0.08, 0, 0.1);
+    shield.rotation.y = -Math.PI / 2;
+    rig.handL.add(shield);
+  }
+  weapon.traverse((o) => (o.castShadow = true));
+  return { weapon, shield };
+}
+
+const NOCK = new THREE.Vector3();
+/** Draws a bow's string back to the pulling hand, with an arrow nocked while aiming. */
+export function poseBowString(rig: Rig, bow: THREE.Object3D, a: AnimState, arrows: boolean) {
+  const pulling = a.draw > 0 || (a.attackStyle === 'bow' && a.attack >= 0 && a.attack < 0.12);
+  const n = NOCK.set(0, 0, -0.191);
+  if (pulling) {
+    rig.root.updateMatrixWorld(true);
+    rig.handR.getWorldPosition(n);
+    bow.worldToLocal(n);
+    n.x = Math.max(-0.06, Math.min(0.06, n.x));
+    n.y = Math.max(-0.12, Math.min(0.12, n.y));
+    n.z = Math.max(-0.95, Math.min(-0.191, n.z));
+  }
+  setBowString(bow, n, a.draw > 0 && arrows);
+}
+
+export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId'>): Rig {
   const skin = c.raceId === 'draco' ? 0x5a6a4a : c.raceId === 'elf' ? 0xe0c8a8 : c.raceId === 'ancient' ? 0x3a3a44 : 0xc89a78;
   const look = {
     warrior: { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy' as const, head: 'helmet' as const, cape: 0x5a1a14 },

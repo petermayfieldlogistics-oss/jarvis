@@ -123,6 +123,9 @@ export interface Settings {
   invertY: boolean;
   volume: number;
   touch: 'auto' | 'on' | 'off';
+  /** Co-op: the name friends see, and the relay server's address. */
+  coopName: string;
+  coopServer: string;
 }
 
 export function defaultQuality(): Settings['quality'] {
@@ -131,7 +134,7 @@ export function defaultQuality(): Settings['quality'] {
 }
 
 export function loadSettings(): Settings {
-  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto' };
+  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', coopName: '', coopServer: '' };
   try {
     return { ...d, ...JSON.parse(storage()?.getItem(SETTINGS_KEY) ?? '{}') };
   } catch {

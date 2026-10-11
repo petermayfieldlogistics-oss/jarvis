@@ -60,6 +60,8 @@ export class Hud {
   private mana: Bar;
   private stam: Bar;
   private status: HTMLElement;
+  private partyEl: HTMLElement;
+  private partyT = 0;
   private info: HTMLElement;
   private spells: HTMLElement;
   private bossEl: HTMLElement;
@@ -111,6 +113,7 @@ export class Hud {
         <div class="bar mana"><div class="track"><div class="ghost"></div><div class="fill"></div></div><span class="val"></span></div>
         <div class="bar stam"><div class="track"><div class="fill"></div></div></div>
         <div class="status"></div>
+        <div class="party"></div>
       </div>
       <div class="tr">
         <div class="mframe"><canvas class="mini"></canvas></div>
@@ -137,6 +140,7 @@ export class Hud {
     this.mana = bar('.bar.mana');
     this.stam = bar('.bar.stam');
     this.status = q('.status');
+    this.partyEl = q('.party');
     this.info = q('.info');
     this.spells = q('.spells');
     this.bossEl = q('.bossbar');
@@ -333,6 +337,11 @@ export class Hud {
       <div><span class="ico">${WEAPON_ICON[w.kind] ?? '⚔'}</span>${esc(w.name)} <small>Lv ${mainWeapon(c).level}</small>${w.kind === 'bow' ? ` <small>·</small> ${c.arrows.steel ? `${c.arrows.steel} steel + ` : ''}${c.arrows.wood} arrows` : ''}</div>`);
 
     this.updateSpells();
+    this.partyT -= dt;
+    if (this.partyT <= 0) {
+      this.partyT = 0.2;
+      this.updateParty();
+    }
     put(this.xpFill, 'width', c.level >= MAX_LEVEL ? '100%' : pct(c.xp / xpToNext(c.level)));
 
     // Vignettes.
@@ -370,6 +379,18 @@ export class Hud {
     }
 
     this.updateEnemyBars();
+  }
+
+  /** Co-op: the room code and each friend's health. */
+  private updateParty() {
+    const co = this.g.coop;
+    if (!co.active) return put(this.partyEl, 'html', '');
+    const rows = co.party().map((m) => {
+      const k = m.alive ? Math.max(0, Math.min(1, m.hp / m.maxHp)) : 0;
+      return `<div class="pm${m.alive ? '' : ' down'}"><span>${m.host ? '♛ ' : ''}${esc(m.name)} <small>${m.level}</small></span><i><b style="width:${Math.round(k * 100)}%"></b></i></div>`;
+    });
+    const head = `<div class="proom">${co.isHost ? 'Hosting' : 'Co-op'} · <b>${esc(co.room)}</b>${co.isHost && !rows.length ? ' · waiting for friends' : ''}</div>`;
+    put(this.partyEl, 'html', head + rows.join(''));
   }
 
   /** Fraction of a cooldown still to run; the total is the largest remaining time seen since it started. */
@@ -563,6 +584,7 @@ export class Hud {
     if (g.state.flags.eyesRevealed) dot(EYES_RUINS.x, EYES_RUINS.z, '#60ff90', 3.5);
     for (const e of g.enemies) if (e.alive && e.aware) dot(e.pos.x, e.pos.z, '#e03020', 2);
     if (g.state.lostEmbers) dot(g.state.lostEmbers.x, g.state.lostEmbers.z, '#ffb040', 3);
+    for (const r of g.coop.remotes.values()) if (r.ready) dot(r.pos.x, r.pos.z, r.alive ? '#6fd6ff' : '#4a6a78', 3.5);
     ctx.restore();
     // Inner shadow so the map sinks into the bezel.
     const shade = ctx.createRadialGradient(S / 2, S / 2, S / 2 - 30, S / 2, S / 2, S / 2 - 12);

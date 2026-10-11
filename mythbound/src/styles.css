@@ -314,6 +314,18 @@ button:not(:disabled):active { transform: translateY(1px); }
 .status b.skill { color: #ffd070; }
 .status b.sl { color: #ffe7a8; border-color: var(--gold); box-shadow: 0 0 10px rgba(216, 180, 104, 0.35), inset 0 1px 0 rgba(255, 230, 170, 0.2); font-family: var(--display); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; line-height: 18px; }
 
+/* Co-op party: room code and each friend's health. */
+.party { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; max-width: 220px; font-family: var(--serif); font-size: 13px; text-shadow: 0 1px 2px #000; }
+.party:empty { display: none; }
+.party .proom { color: var(--ink-dim); font-family: var(--display); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.party .proom b { color: #9fe0ff; letter-spacing: 0.18em; }
+.party .pm { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; color: #cfeaff; }
+.party .pm small { color: var(--ink-dim); }
+.party .pm i { display: block; height: 6px; background: rgba(0, 0, 0, 0.6); border: 1px solid rgba(159, 224, 255, 0.35); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+.party .pm i b { display: block; height: 100%; background: linear-gradient(#e0605a, #8a1c14); transition: width 0.25s; }
+.party .pm.down { opacity: 0.5; }
+.party .pm.down span::after { content: ' ✝'; color: #c06050; }
+
 /* Minimap: the canvas draws the compass ring; CSS adds the fleurons. */
 .hud .tr { position: absolute; top: max(16px, env(safe-area-inset-top)); right: calc(max(12px, env(safe-area-inset-right)) + 8px); text-align: center; display: flex; flex-direction: column; align-items: center; }
 .mframe { position: relative; width: 150px; height: 150px; }
@@ -711,6 +723,13 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 .form select { background: #17130f; color: var(--ink); border: 1px solid var(--line); padding: 4px 6px; font-family: var(--serif); font-size: 15px; }
 .form input[type='checkbox'] { accent-color: var(--gold); }
 .btnrow { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.coop .code { font: 600 40px/1.1 var(--display); letter-spacing: 0.25em; color: #9fe0ff; text-shadow: 0 0 14px rgba(120, 200, 255, 0.35); margin: 6px 0 2px; }
+.coop .cstatus { margin: 10px 0; padding: 8px 12px; border-left: 2px solid var(--gold); background: rgba(0, 0, 0, 0.3); max-width: 520px; }
+.coop .cstatus.busy::after { content: ' …'; animation: pulse 0.8s infinite alternate; }
+.form input[type='text'] { background: #17130f; color: var(--ink); border: 1px solid var(--line); padding: 5px 8px; font-family: var(--serif); font-size: 15px; min-width: 160px; }
+.form input.codein { text-transform: uppercase; letter-spacing: 0.2em; width: 9em; min-width: 0; font-family: var(--display); }
+.coop ul.who { list-style: none; padding: 0; margin: 6px 0; }
+.coop ul.who li { padding: 3px 0; }
 .keys li { margin: 3px 0; }
 .keys kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin: 0 1px; font: 600 11px/17px var(--display); text-align: center; color: #f2dca0; background: linear-gradient(#2e271d, #15110c); border: 1px solid rgba(216, 180, 104, 0.45); border-radius: 3px; box-shadow: 0 1px 0 #000; vertical-align: 1px; }
 

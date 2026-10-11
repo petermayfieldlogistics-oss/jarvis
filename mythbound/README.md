@@ -42,6 +42,21 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 over the shoulder and shows a crosshair, so you can strafe, back-pedal and aim spells and arrows precisely. Tap again to
 release it. Holding Shift still sprints.
 
+## Co-op (2–4 players)
+
+Open the menu (Esc or ☰) and choose **Co-op**. One player presses **Host a game** and reads out the five-letter room
+code; friends type it and press **Join**. Co-op needs the online version
+(https://petermayfieldlogistics-oss.github.io/jarvis/mythbound/); the relay server is in `../mythbound-server`.
+
+- The host's world is shared: its monsters, bosses and time of day. Each player's hero, items, skills and progress stay
+  their own and save on their own device.
+- Monsters hunt whichever hero is closest. Everyone near a kill (or who hurt the monster) gets its XP and embers.
+- Anyone can begin a trial; everyone standing near the altar is sealed in with them and the boss grows tougher for each
+  extra hero. Everyone inside wins the legendary weapon (once each). If the heroes inside all fall, the trial is lost.
+- With friends, the world never pauses: menus don't stop it, and resting at a shrine doesn't bring monsters back. The
+  host should keep the game tab open and in view.
+- The free server naps after 15 minutes without players, so the first connection can take up to a minute.
+
 ## The world
 
 - **Hearthhold** (town): Orrin the Historian (main quest, spell tomes), Brann the Smith (upgrades), Sister Lumen
