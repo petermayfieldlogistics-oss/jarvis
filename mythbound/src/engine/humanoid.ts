@@ -586,6 +586,14 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
   const fist = (x: number, hand: O3, color: number, surf: number, s = 1) => {
     k.add(ball(7, 5), surf, color, hand, x, 0.905, 0.025, 0, 0, 0, 0.042 * F * s, 0.058 * F * s, 0.05 * F * s);
   };
+  /** Rivets round a shoulder dome (centre, radii, tilt) on its outer side, just above the rim. */
+  const rivets = (skinTo: O3 | Skin, side: number, c: [number, number, number], r: [number, number, number], tilt: number, color: number) => {
+    for (const da of [-0.75, 0, 0.75]) {
+      const a = (side > 0 ? 0 : PI) + da;
+      const lx = Math.cos(a) * Math.sin(1.2) * r[0] * 1.04, ly = Math.cos(1.2) * r[1] * 1.04, lz = Math.sin(a) * Math.sin(1.2) * r[2] * 1.04;
+      k.add(ball(4, 3), METAL, color, skinTo, c[0] + lx * Math.cos(tilt) - ly * Math.sin(tilt), c[1] + lx * Math.sin(tilt) + ly * Math.cos(tilt), c[2] + lz, 0, 0, 0, 0.011, 0.011, 0.011);
+    }
+  };
 
   if (bony) {
     // Restless bones: a ribcage on a spine, bony limbs, rags and rusty scraps.
@@ -633,6 +641,12 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     k.add(loft(T([[0.995, 0.19, 0.134], [1.04, 0.187, 0.131]]), 12), MATTE, LEATHER, hips);
     k.add(cube(0.07, 0.055, 0.025), METAL, accent, hips, 0, 1.017, 0.134 * BZ);
     k.add(loft([[1.52, 0.135 * B, 0.104 * BZ, -0.006], [1.58, 0.118 * B, 0.096 * BZ, -0.006], [1.645, 0.084, 0.08, 0]], 12), armorS, shade(armor, 0.94), chest);
+    if (!o.stone) {
+      // Overlapping lames across the belly, a trimmed neckline, an emblem on the breast.
+      for (const [y, rx, rz, cz] of [[1.04, 0.181, 0.127, 0.0], [1.1, 0.186, 0.131, 0.007]]) k.add(loft(T([[y, rx, rz, cz], [y + 0.022, rx + 0.002, rz + 0.002, cz]]), 12), armorS, shade(armor, 1.12), torsoW);
+      k.add(loft(T([[1.5, 0.209, 0.124, 0.006], [1.535, 0.19, 0.114, 0.001]]), 12), METAL, accent, torsoW);
+      k.add(shard(), METAL, accent, torsoW, 0, 1.38, 0.168 * BZ, -0.12, 0, 0, 0.045, 0.06, 0.012);
+    }
     // Tabard and tasset skirt.
     const sk = skirt(hips, legL, legR, 0.95, 0.62, 0.55);
     k.add(cube(0.17, 0.42, 0.012), MATTE, cloth, sk, 0, 0.78, 0.136 * BZ, -0.07);
@@ -662,6 +676,11 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     k.add(cube(0.05, 0.3, 0.012), MATTE, accent, skirt(hips, legL, legR, 1.0, 0.7, 0.5), 0.09 * B, 0.86, 0.15 * BZ, -0.08, 0, 0.08);
     k.add(cube(0.045, 0.24, 0.012), MATTE, shade(accent, 0.85), skirt(hips, legL, legR, 1.0, 0.7, 0.5), 0.135 * B, 0.88, 0.14 * BZ, -0.08, 0.3, 0.14);
     k.add(loft(T([[1.37, 0.27, 0.18, -0.01], [1.46, 0.252, 0.164, -0.004], [1.54, 0.182, 0.126, 0], [1.6, 0.11, 0.09, -0.005]]), 14), MATTE, shade(cloth, 0.78), chest);
+    k.add(loft(T([[0.04, 0.303, 0.273, -0.02], [0.085, 0.299, 0.267, -0.019]]), 14), MATTE, accent, sk);
+    // An amulet on a chain below the mantle.
+    for (const t of [-1, 1]) k.add(tube([[t * 0.075 * B, 1.375, 0.168 * BZ], [t * 0.04 * B, 1.335, 0.168 * BZ], [0, 1.31, 0.164 * BZ]], [0.004, 0.004, 0.004], 3), METAL, accent, chest);
+    k.add(ball(6, 4), METAL, accent, chest, 0, 1.29, 0.16 * BZ, 0, 0, 0, 0.026, 0.032, 0.012);
+    k.add(shard(), GLOW, 0x8fd0ff, chest, 0, 1.29, 0.171 * BZ, 0, 0, 0, 0.015, 0.021, 0.008);
   } else {
     // Leather jerkin, coat tails open at the front, belt, pouch.
     k.add(loft(T([[0.96, 0.182, 0.125, -0.006], [1.05, 0.17, 0.118, 0.002], [1.15, 0.174, 0.122, 0.01], [1.27, 0.198, 0.136, 0.02], [1.38, 0.21, 0.135, 0.018], [1.46, 0.206, 0.12, 0.008], [1.53, 0.17, 0.1, 0], [1.585, 0.11, 0.08, -0.004]]), 12), MATTE, armor, torsoW);
@@ -672,6 +691,22 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     k.add(loft(T([[0.985, 0.19, 0.133], [1.035, 0.187, 0.13]]), 12), MATTE, LEATHER, hips);
     k.add(cube(0.055, 0.045, 0.022), METAL, accent, hips, 0, 1.01, 0.132 * BZ);
     k.add(cube(0.075, 0.085, 0.05), MATTE, shade(LEATHER, 1.2), hips, -0.17 * B, 0.95, 0.07, 0, -0.5, 0);
+    k.add(cube(0.08, 0.035, 0.056), MATTE, shade(LEATHER, 0.95), hips, -0.17 * B, 0.985, 0.07, 0, -0.5, 0);
+    k.add(cube(0.016, 0.016, 0.006), METAL, accent, hips, -0.17 * B - 0.013, 0.975, 0.094);
+    k.add(cube(0.055, 0.065, 0.04), MATTE, shade(LEATHER, 1.1), hips, 0.165 * B, 0.95, 0.085, 0, 0.55, 0);
+    k.add(cube(0.06, 0.03, 0.045), MATTE, shade(LEATHER, 0.9), hips, 0.165 * B, 0.978, 0.085, 0, 0.55, 0);
+    // Studded leather over the belly.
+    for (const [y, rx, rz, cz] of [[1.075, 0.172, 0.12, 0.004], [1.14, 0.176, 0.123, 0.009]]) {
+      for (let i = -3; i <= 3; i++) {
+        const a = i * 0.36 + (y > 1.1 ? 0.18 : 0);
+        k.add(ball(4, 3), METAL, accent, torsoW, Math.sin(a) * rx * B * 1.02, y, (cz + Math.cos(a) * rz * 1.02) * BZ, 0, 0, 0, 0.0095, 0.0095, 0.0095);
+      }
+    }
+    // Laced up the left side of the chest.
+    k.add(cube(0.008, 0.13, 0.006), MATTE, shade(armor, 0.35), torsoW, 0.075 * B, 1.265, 0.147 * BZ, -0.12, 0.3, 0);
+    for (const [y, z] of [[1.22, 0.142], [1.265, 0.15], [1.31, 0.152]]) {
+      for (const t of [-1, 1]) k.add(cube(0.04, 0.006, 0.005), MATTE, 0xc8b48a, torsoW, 0.075 * B, y, (z + 0.004) * BZ, 0, 0.3, t * 0.6);
+    }
     if (look.head !== 'hood') {
       // Scarf.
       k.add(new THREE.TorusGeometry(0.1, 0.032, 5, 12), MATTE, accent, chest, 0, 1.585, 0.0, PI / 2 - 0.15, 0, 0, 1.12 * B, 1, 1);
@@ -679,6 +714,7 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     }
     // A leather pad on the left shoulder; a baldric across chest and back.
     k.add(dome(8, 4), MATTE, shade(armor, 0.8), armL, SX * 1.03, 1.49, 0, 0, 0, -0.4, 0.1 * B, 0.075, 0.1 * B);
+    rivets(armL, 1, [SX * 1.03, 1.49, 0], [0.1 * B, 0.075, 0.1 * B], -0.4, accent);
     k.add(cube(0.045, 0.6, 0.014), MATTE, LEATHER, torsoW, -0.02 * B, 1.27, 0.15 * BZ, -0.08, 0, 0.62);
     k.add(cube(0.045, 0.6, 0.014), MATTE, LEATHER, torsoW, -0.02 * B, 1.27, -0.145 * BZ, 0.06, 0, -0.62);
     k.add(cube(0.03, 0.035, 0.016), METAL, accent, torsoW, -0.06 * B, 1.33, 0.162 * BZ, -0.08, 0, 0.62);
@@ -693,6 +729,7 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
       // Wide sleeves with a shadowed opening.
       k.add(loft([[0.965, 0.1 * L, 0.095 * L, 0.01], [1.05, 0.084 * L, 0.08 * L, 0.006], [1.2, 0.062 * L, 0.06 * L], [1.36, 0.062 * L, 0.06 * L], [1.47, 0.068 * L, 0.064 * L], [1.555, 0.035, 0.035]], 10, { top: true }).translate(x, 0, 0), MATTE, cloth, aw);
       k.add(new THREE.CircleGeometry(1, 10), MATTE, shade(cloth, 0.25), fore, x, 0.975, 0.01, PI / 2, 0, 0, 0.09 * L, 0.085 * L, 1);
+      k.add(loft([[0.965, 0.103 * L, 0.098 * L, 0.01], [1.0, 0.098 * L, 0.093 * L, 0.009]], 10).translate(x, 0, 0), MATTE, look.accent, aw);
       k.add(loft([[0.94, 0.034, 0.03], [1.0, 0.038, 0.034]], 6, {}).translate(x, 0, 0.004), MATTE, skin, fore);
       fist(x, hand, skin, MATTE);
       continue;
@@ -708,14 +745,17 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
       };
       const px = s * SX * 1.03;
       k.add(dome(9, 4), armorS, armor, pw, px, 1.5, 0, 0, 0, -s * 0.32, 0.135 * B, 0.1, 0.13 * BZ);
+      if (!o.stone) rivets(pw, s, [px, 1.5, 0], [0.135 * B, 0.1, 0.13 * BZ], -s * 0.32, accent);
       k.add(new THREE.TorusGeometry(1, 0.07, 3, 10), METAL, accent, pw, px, 1.5, 0, PI / 2, -s * 0.32, 0, 0.137 * B, 0.132 * BZ, 0.12);
       k.add(dome(9, 2, 0.4), armorS, shade(armor, 0.85), arm, s * SX * 1.06, 1.445, 0, 0, 0, -s * 0.42, 0.13 * B, 0.07, 0.125 * BZ);
       k.add(dome(9, 2, 0.4), armorS, shade(armor, 0.75), arm, s * SX * 1.08, 1.395, 0, 0, 0, -s * 0.5, 0.12 * B, 0.06, 0.115 * BZ);
       k.add(loft([[1.25, 0.058 * L, 0.056 * L], [1.33, 0.064 * L, 0.062 * L], [1.4, 0.066 * L, 0.064 * L]], 8).translate(x, 0, 0), armorS, shade(armor, 0.9), arm);
       k.add(ball(6, 4), armorS, armor, splitY(arm, fore, 1.205, 0.08), x, 1.205, -0.01, 0, 0, 0, 0.056 * L, 0.05 * L, 0.056 * L);
+      if (!o.stone) k.add(cube(0.012, 0.075 * L, 0.075 * L), armorS, shade(armor, 1.05), splitY(arm, fore, 1.205, 0.08), x + s * 0.056 * L, 1.205, -0.01, PI / 4, 0, 0);
       k.add(loft([[0.975, 0.047 * L, 0.044 * L, 0.004], [1.07, 0.054 * L, 0.051 * L, 0.006], [1.17, 0.057 * L, 0.054 * L, 0.006]], 8).translate(x, 0, 0), armorS, armor, fore);
       k.add(loft([[0.935, 0.05 * L, 0.048 * L, 0.01], [0.995, 0.06 * L, 0.057 * L, 0.008]], 8).translate(x, 0, 0), armorS, shade(armor, 0.9), hand);
       fist(x, hand, shade(armor, 0.8), armorS, 1.08);
+      if (!o.stone) k.add(cube(0.014, 0.05 * F, 0.055 * F), armorS, shade(armor, 1.1), hand, x + s * 0.044 * F, 0.915, 0.025);
     } else {
       // Bracers and gloves.
       k.add(loft([[0.965, 0.044 * L, 0.041 * L, 0.004], [1.06, 0.05 * L, 0.047 * L, 0.006], [1.15, 0.054 * L, 0.051 * L, 0.006]], 8).translate(x, 0, 0), MATTE, shade(armor, 0.75), fore);
@@ -736,10 +776,19 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
       k.add(cube(0.08 * L, 0.05, 0.02), armorS, shade(armor, 0.85), splitY(leg, shin, 0.5, 0.06), x + s * 0.045 * L, 0.5, 0.03, 0, s * 0.9, 0);
       k.add(loft([[0.1, 0.052 * L, 0.058 * L, 0.004], [0.24, 0.064 * L, 0.072 * L, -0.004], [0.36, 0.066 * L, 0.072 * L, -0.002], [0.45, 0.06 * L, 0.064 * L, 0.006]], 8).translate(x, 0, 0), armorS, armor, shin);
       boot(x, foot, shade(armor, 0.75), armorS, L);
+      if (!o.stone) {
+        k.add(cube(0.014, 0.3, 0.02), armorS, shade(armor, 1.15), shin, x, 0.28, 0.068 * L, -0.04);
+        k.add(cube(0.105 * L, 0.012, 0.024), armorS, shade(armor, 0.95), foot, x, 0.093, 0.09, 0.25);
+        k.add(cube(0.095 * L, 0.012, 0.022), armorS, shade(armor, 0.95), foot, x, 0.078, 0.13, 0.4);
+      }
     } else {
       const cuff = robe ? 0.25 : 0.36;
       k.add(loft([[0.05, 0.05 * L, 0.056 * L, 0], [0.2, 0.058 * L, 0.065 * L, -0.008], [cuff - 0.03, 0.06 * L, 0.066 * L, -0.008], [cuff, 0.069 * L, 0.074 * L, -0.006], [cuff + 0.035, 0.066 * L, 0.07 * L, -0.004]], 8).translate(x, 0, 0), MATTE, BOOT, chain([shin, foot], [-0.11], 0.04, down));
       boot(x, foot, shade(BOOT, 0.9), MATTE, L);
+      if (!robe) {
+        k.add(loft([[0.2, 0.0625 * L, 0.0695 * L, -0.008], [0.225, 0.0625 * L, 0.0695 * L, -0.008]], 8).translate(x, 0, 0), MATTE, LEATHER, shin);
+        k.add(cube(0.008, 0.024, 0.022), METAL, accent, shin, x + s * 0.064 * L, 0.2125, -0.008);
+      }
     }
   }
 }
@@ -783,6 +832,9 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
       k.add(cube(0.17, 0.02, 0.03), MATTE, SLIT, H, 0, 1.755, 0.146);
       k.add(cube(0.022, 0.13, 0.03), metalS, shade(look.armor, 1.15), H, 0, 1.69, 0.145, -0.08);
       k.add(new THREE.TorusGeometry(0.135, 0.016, 4, 10, PI), METAL, look.accent, H, 0, 1.745, 0.0, 0, PI / 2, 0, 0.6, 1, 1);
+      k.add(loft([[1.775, 0.134, 0.144, 0.012], [1.797, 0.133, 0.143, 0.011]], 10), metalS, shade(look.armor, 0.85), H);
+      for (const a of [-1.2, -0.6, 0, 0.6, 1.2]) k.add(ball(4, 3), METAL, look.accent, H, Math.sin(a) * 0.138, 1.786, 0.012 + Math.cos(a) * 0.148, 0, 0, 0, 0.009, 0.009, 0.009);
+      for (const a of [-0.78, -0.62, -0.46]) for (const y of [1.69, 1.716]) k.add(cube(0.011, 0.011, 0.008), MATTE, SLIT, H, Math.sin(a) * 0.13, y, 0.014 + Math.cos(a) * 0.14, 0, a, 0);
       break;
     }
     case 'plume': {
@@ -803,6 +855,8 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
       k.add(inside(hoodShell(0.94)), MATTE, shade(look.cloth, 0.22), H);
       k.add(shell, MATTE, look.cloth, H);
       k.add(loft([[1.38, 0.26, 0.175, -0.008], [1.47, 0.245, 0.16, -0.002], [1.55, 0.19, 0.15, -0.01], [1.6, 0.16, 0.17, -0.02]], 12), MATTE, shade(look.cloth, 0.9), j.chest);
+      k.add(new THREE.CylinderGeometry(1, 1, 1, 8), METAL, look.accent, j.chest, 0, 1.5, 0.154, PI / 2 - 0.1, 0, 0, 0.026, 0.008, 0.026);
+      k.add(ball(5, 4), METAL, shade(look.accent, 0.6), j.chest, 0, 1.5, 0.161, 0, 0, 0, 0.011, 0.011, 0.007);
       if (look.ears) ears(skin);
       break;
     }
@@ -816,6 +870,8 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
       k.add(brim, MATTE, look.cloth, H);
       k.add(loft([[1.81, 0.136, 0.136], [1.85, 0.13, 0.13], [1.95, 0.096, 0.096, -0.016], [2.05, 0.062, 0.062, -0.05], [2.13, 0.032, 0.032, -0.11], [2.17, 0.006, 0.006, -0.17]], 10), MATTE, look.cloth, H);
       k.add(loft([[1.822, 0.14, 0.14], [1.86, 0.132, 0.132]], 12), MATTE, look.accent, H);
+      k.add(ball(6, 4), METAL, shade(look.accent, 1.1), H, 0, 1.84, 0.137, -0.1, 0, 0, 0.022, 0.024, 0.008);
+      k.add(shard(), GLOW, 0x8fd0ff, H, 0, 1.84, 0.144, -0.1, 0, 0, 0.012, 0.017, 0.006);
       break;
     }
     case 'skull': {
@@ -1168,6 +1224,10 @@ const ARM: Record<string, number[]> = {
   RG_OUT: [-0.89, 0, -1.12, -0.39, -0.25, 1.03],
   RGL_IN: [-1.19, -1.15, -0.5, -1.43, -0.32, -0.01],
   RGL_OUT: [-0.93, -0.02, 1.13, -0.26, -0.17, -0.01],
+  CH_R: [-3.07, -0.22, -1.14, -1.67, 0.63, 1.75],
+  CH_L: [0.28, -1.19, 2.16, -1.62, 1.07, 0],
+  CH_HR: [-0.63, 0.91, -0.1, -1.34, -0.81, -1.08],
+  CH_HL: [-0.93, -1.13, 0.06, -0.79, -0.23, 0],
 };
 const armR = (k: string): Pose => {
   const v = ARM[k];
@@ -1380,6 +1440,8 @@ interface State {
   bow: boolean;
   shield: boolean;
   leftTwist: number;
+  /** How a charge carries the weapon: 0 arms swept back, 1 a blade cocked high, 2 a heavy weapon in both hands. */
+  carry: number;
 }
 
 const states = new WeakMap<O3, State>();
@@ -1389,7 +1451,7 @@ function newState(j: Joints, prof: Profile): State {
     j, prof, cur: NEUTRAL.slice(), tgt: new Float32Array(NCH), out: new Float32Array(NCH), tmp: new Float32Array(NCH), t: 0, fresh: true,
     mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
     act: 0, spin: 0, roll: 0, tuck: 0, latched: false, lastStyle: '', lastAttack: -1, lastWindup: 0, lastDraw: 0, lastHurt: 0, hurtSide: 1, deadSide: 1,
-    cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, shield: false, leftTwist: 0,
+    cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, shield: false, leftTwist: 0, carry: 0,
   };
 }
 
@@ -1498,6 +1560,8 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
       len = Math.max(len, m.position.y + g.boundingBox!.max.y);
     });
     s.weaponLen = len;
+    const kind = weapon?.userData.kind;
+    s.carry = kind === 'sword' || kind === 'dagger' ? 1 : kind === 'axe' || kind === 'hammer' ? 2 : 0;
   }
   const left = j.handL.children[0];
   if (left !== s.left) {
@@ -1586,6 +1650,14 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   if (s.air > 0.001) {
     const fall = smooth(0.25, 0.6, s.airT);
     for (let c = 0; c < NCH; c++) g[c] += (lerp(AIR_UP[c], AIR_DOWN[c], fall) - g[c]) * s.air;
+  }
+  // Running with a sword, dagger, axe or hammer carries it ready to strike.
+  const chargeW = s.carry ? s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.run : 0;
+  if (chargeW > 0.001) {
+    const p = s.carry === 1 ? CHARGE_BLADE : CHARGE_HEAVY;
+    for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : p[c]) - g[c]) * chargeW;
+    g[SPY] += (p[SPY] - g[SPY]) * chargeW;
+    g[CHY] += (p[CHY] - g[CHY]) * chargeW;
   }
   blend(g, BLOCK, s.block * (1 - s.air));
   if (s.aim > 0.001) {
@@ -1741,15 +1813,18 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const armsR = s.weaponLen > 0 ? 0.55 : 1;
     // Charging: running flat out, the body drives forward and both arms sweep
     // back behind it (halfway at a run, fully at a sprint), barely pumping.
+    // A sword, axe or hammer is carried ready instead (see the target pose).
     const charge = arms * (1 - s.back) * (1 - s.crouch) * (1 - prof.robe * 0.5) * clamp01(0.5 * s.run + 0.5 * s.sprint);
-    const pump = 1 - 0.75 * charge;
+    const pump = 1 - (s.carry ? 0.9 : 0.75) * charge;
     if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), arms * (1 - s.back) * pump, arms * armsR * (1 - s.back) * pump);
     if (s.back > 0.001) stride(o, -a.phase, s.run * 0.6, 0, s.crouch, prof.robe, legs * s.back, arms * s.back, arms * armsR * s.back);
     if (charge > 0.001) {
-      const bob = Math.sin(a.phase * 2) * 0.06;
       o[SPX] += charge * (0.36 + 0.03 * Math.cos(a.phase * 2));
       o[CHX] += charge * 0.16;
       o[HDX] -= charge * 0.42;
+    }
+    if (charge > 0.001 && !s.carry) {
+      const bob = Math.sin(a.phase * 2) * 0.06;
       o[ALX] += charge * (0.78 + bob);
       o[ARX] += charge * (0.78 - bob);
       o[ALZ] += charge * 0.12;
@@ -1812,7 +1887,9 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   o[TRX] = lerp(o[TRX] + 0.25 * (1 - planted), -(o[HIX] + o[LRX] + o[KRX]), flatR);
   // On the move the weapon is held steady against the arm swing: blades
   // trail low behind at a run, staves and spears angle forward.
-  const hold = s.mv * armsFree * (s.weaponLen > 0 ? 1 : 0);
+  // A charge holds the weapon in its own pose.
+  const carried = s.carry ? (1 - s.back) * (1 - s.crouch) * s.run : 0;
+  const hold = s.mv * armsFree * (s.weaponLen > 0 ? 1 : 0) * (1 - carried);
   if (hold > 0.001) {
     const fore = -(o[ARX] + o[FRX]);
     const want = s.weaponLen >= 1.45 ? 2.55 : lerp(0.95, -1.05, s.run);
@@ -1860,6 +1937,13 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
 const AIM_REST_P = poseOf(AIM_REST, NEUTRAL);
 const GUARD_LP = poseOf(GUARD_L, READY);
 const LEFT_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
+// Charging with a weapon ready. A sword or dagger is cocked high beside the
+// head, the shield (or free hand) thrust out in front. An axe or hammer is
+// carried in both hands low at the right hip, its head angled up over the
+// shoulder, the chest turned into it (a shield arm stays out in front).
+const CHARGE_BLADE = poseOf({ ...armR('CH_R'), ...armL('CH_L') });
+const CHARGE_HEAVY = poseOf({ [SPY]: -0.15, [CHY]: -0.3, ...armR('CH_HR'), ...armL('CH_HL') });
+const CHARGE_ARMS = [ALX, ALY, ALZ, FLX, FLY, WLX, WLY, WLZ, ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
 const AIM_DRAWN_P = poseOf(AIM_DRAWN, NEUTRAL);
 
 /** Cape, tail and wings: damped springs that trail the body's motion. */
