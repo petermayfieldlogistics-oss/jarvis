@@ -16,7 +16,7 @@ export interface AnimState {
   moving: number;
   /** Ground speed in m/s (for walk/run blending). */
   speed: number;
-  /** Movement direction relative to facing: x right, z forward, length 0..1 (strafing, backpedal). */
+  /** Movement direction relative to facing, length 0..1 (strafing, backpedal): x along the rig's local +X (its left side; armR sits at -X), z forward. */
   moveX: number;
   moveZ: number;
   /** -1 when not attacking, else 0..1 progress through the current move. */

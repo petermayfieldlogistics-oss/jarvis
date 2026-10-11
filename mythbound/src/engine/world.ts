@@ -14,6 +14,8 @@ export interface Collider {
   x: number;
   z: number;
   r: number;
+  /** World height of its top (the camera boom passes over lower ones). */
+  top: number;
 }
 
 export type InteractKind = 'npc' | 'shrine' | 'lore' | 'tome' | 'page' | 'anvil' | 'dock' | 'fish' | 'ore' | 'trial' | 'loot';
@@ -298,6 +300,8 @@ attribute vec3 aVeg;
 uniform float uTime;
 uniform vec2 uWind;
 varying float vGlow;
+varying float vCamD;
+varying float vLeaf;
 `;
 // Colour: instance tint only where the part asks for it (canopies, petals).
 const VEG_COLOR = /* glsl */ `
@@ -326,6 +330,13 @@ mvPosition.y -= dot(vBend, vBend) * vSw * 0.25;
 mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;
 vGlow = aVeg.z;
+vLeaf = aVeg.y;
+vCamD = length(mvPosition.xyz);
+`;
+
+// Leaves and trunks right in front of the camera dissolve (screen-door) instead of filling the view.
+const VEG_NEAR_FADE = /* glsl */ `
+if (vCamD < 3.4 && fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) > smoothstep(1.0, 3.4, vCamD)) discard;
 `;
 
 type V3 = [number, number, number];
@@ -533,7 +544,7 @@ void main() {
   gl_Position = projectionMatrix * mv;
   float sz = aSize.x * uScale / max(-mv.z, 0.1);
   // Specks stay specks even right in front of the lens; big puffs may grow.
-  gl_PointSize = min(sz, aSize.x < 1.0 ? uScale * 0.022 : 220.0);
+  gl_PointSize = min(sz, uScale * (aSize.x < 1.0 ? 0.022 : 0.4));
   vCol = aCol;
   // Fade what drifts into the lens (big puffs from further away).
   vCol.a *= smoothstep(0.6, 2.0, sz) * smoothstep(0.4, 1.6, -mv.z) * smoothstep(aSize.x * 0.5, aSize.x * 1.6, -mv.z);
@@ -673,7 +684,7 @@ varying float vA;
 void main() {
   float across = 1.0 - abs(vUv.x);
   // Brightest just above the ground, fading up toward the sun.
-  float along = smoothstep(0.03, 0.22, vUv.y) * (1.0 - smoothstep(0.3, 0.95, vUv.y));
+  float along = smoothstep(0.03, 0.25, vUv.y) * (1.0 - smoothstep(0.4, 1.0, vUv.y));
   gl_FragColor = vec4(uColor * across * across * along * vA, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -811,6 +822,8 @@ export class World {
   private time = { value: 0 };
   private wind = { value: new THREE.Vector2(0.2, 0.1) };
   private glow = { value: 0.2 };
+  /** Daylight scattering through leaves and blades, so shaded foliage isn't a black mass. */
+  private leafLift = { value: 0.3 };
   private waterU!: Record<string, THREE.IUniform>;
   private lavaTime = { value: 0 };
   private plantTiles: PlantTile[] = [];
@@ -865,8 +878,8 @@ export class World {
 
   // ------------------------------------------------------------ colliders --
 
-  addCollider(x: number, z: number, r: number) {
-    const c = { x, z, r };
+  addCollider(x: number, z: number, r: number, top = heightAt(x, z) + 8) {
+    const c = { x, z, r, top };
     this.colliders.push(c);
     const cx0 = Math.floor((x - r) / 16), cx1 = Math.floor((x + r) / 16);
     const cz0 = Math.floor((z - r) / 16), cz1 = Math.floor((z + r) / 16);
@@ -897,6 +910,40 @@ export class World {
     const lim = WORLD_HALF - 8;
     pos.x = Math.max(-lim, Math.min(lim, pos.x));
     pos.z = Math.max(-lim, Math.min(lim, pos.z));
+  }
+
+  /**
+   * How far a ray from (ax, ay, az) runs before it enters a collider wider than `minR`
+   * (padded by `pad`). (dx, dz) is a horizontal unit direction, dy the rise per unit of
+   * horizontal travel; distances are horizontal. Returns `len` when clear.
+   */
+  rayHit(ax: number, ay: number, az: number, dx: number, dy: number, dz: number, len: number, pad: number, minR = 0.5): number {
+    let best = len;
+    let lastX = NaN, lastZ = NaN;
+    for (let t = 0; ; t = Math.min(len, t + 4)) {
+      const cx = Math.floor((ax + dx * t) / 16), cz = Math.floor((az + dz * t) / 16);
+      if (cx !== lastX || cz !== lastZ) {
+        lastX = cx;
+        lastZ = cz;
+        const list = this.grid.get(`${cx},${cz}`);
+        if (list) {
+          for (const c of list) {
+            if (c.r < minR) continue;
+            const fx = ax - c.x, fz = az - c.z, R = c.r + pad;
+            const b = fx * dx + fz * dz;
+            const cc = fx * fx + fz * fz - R * R;
+            // Starting inside it, or heading away.
+            if (cc <= 0 || b >= 0) continue;
+            const disc = b * b - cc;
+            if (disc < 0) continue;
+            const hit = -b - Math.sqrt(disc);
+            if (hit < best && ay + dy * hit < c.top + pad) best = hit;
+          }
+        }
+      }
+      if (t >= len) break;
+    }
+    return best;
   }
 
   /** True if a straight line between two points crosses a collider (rough line of sight). */
@@ -1023,18 +1070,22 @@ export class World {
   private buildVegetation() {
     const geos = plantGeometries(this.quality === 'high' ? 1 : 0);
     const plantMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86 });
-    const { time, wind, glow } = this;
+    const { time, wind, glow, leafLift } = this;
+    const near = this.quality !== 'low';
     plantMat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = time;
       shader.uniforms.uWind = wind;
       shader.uniforms.uGlow = glow;
+      shader.uniforms.uLift = leafLift;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${VEG_VERT_PARS}`)
         .replace('#include <color_vertex>', VEG_COLOR)
         .replace('#include <project_vertex>', VEG_PROJECT);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nvarying float vGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vGlow * uGlow;');
+        .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform float uLift;\nvarying float vGlow;\nvarying float vCamD;\nvarying float vLeaf;')
+        // (Not on low: a discard costs phones their early depth test on all that foliage.)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${near ? VEG_NEAR_FADE : ''}`)
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * (vGlow * uGlow + vLeaf * uLift);');
     };
     const rockMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true });
 
@@ -1114,14 +1165,14 @@ export class World {
           } else if (kind === 'rock') {
             const s = 0.6 + this.rand() * this.rand() * 4;
             put('rock', x, z, s, color.setHex(ZONES[zone].rock).multiplyScalar(1.15 + this.rand() * 0.3), 0.35);
-            if (s > 1.8) this.addCollider(x, z, s * 0.85);
+            if (s > 1.8) this.addCollider(x, z, s * 0.85, this.groundY(x, z) + s * 0.8);
           } else if (small || kind === 'bush' || kind === 'crystal') {
             put(kind, x, z, (kind === 'bush' ? 0.8 : 0.7) + this.rand() * 0.6, color, kind === 'crystal' ? 0.1 : 0.05);
             if (kind === 'crystal') this.addCollider(x, z, 0.6);
           } else {
             const s = 0.8 + this.rand() * 0.6;
             put(kind, x, z, s, color);
-            if (tree) this.addCollider(x, z, (kind === 'oak' ? 0.8 : 0.7) * s);
+            if (tree) this.addCollider(x, z, (kind === 'oak' ? 0.8 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
           }
         }
       }
@@ -1206,12 +1257,12 @@ export class World {
     this.addCollider(x, z, Math.max(w, d) * 0.55);
   }
 
-  private barrel(x: number, z: number, stack = false) {
+  private barrel(x: number, z: number) {
     const y = this.groundY(x, z);
     const b = this.batch;
     b.paint(CYL, 0x5a3e24, x, y + 0.5, z, 0, 0.75, 1, 0.75);
-    for (const yy of [0.18, 0.82]) b.paint(CYL, 0x2a2622, x, y + yy, z, 0, 0.79, 0.07, 0.79, false ? 1 : 0, 0, true);
-    if (stack) b.paint(CYL, 0x4a3420, x, y + 1.02, z, 0, 0.6, 0.04, 0.6);
+    for (const yy of [0.18, 0.82]) b.paint(CYL, 0x2a2622, x, y + yy, z, 0, 0.79, 0.07, 0.79, 0, 0, true);
+    b.paint(CYL, 0x4a3420, x, y + 1.0, z, 0, 0.62, 0.03, 0.62);
     this.addCollider(x, z, 0.45);
   }
 
@@ -1715,8 +1766,8 @@ export class World {
     for (let i = 0; i < n; i++) {
       const bx = (this.rand() - 0.5) * 2 * R;
       const bz = (this.rand() - 0.5) * 2 * R;
-      const w = 1.6 + this.rand() * 3;
-      const len = 26 + this.rand() * 18;
+      const w = 2 + this.rand() * 3;
+      const len = 13 + this.rand() * 10;
       const ph = this.rand();
       for (const [px, py] of [[-1, 0], [1, 0], [-1, 1], [1, 1]]) {
         pos.push(px, py, 0);
@@ -1958,6 +2009,7 @@ export class World {
     this.zoneWind += (windWant - this.zoneWind) * k * 0.3;
     this.wind.value.set(0.22, 0.11).multiplyScalar(this.zoneWind);
     this.glow.value = 0.25 + night * 1.6;
+    this.leafLift.value = 0.45 * day;
     if (this.runes) (this.runes.material as THREE.ShaderMaterial).uniforms.uGlow.value = 0.7 + night * 0.9;
     (this.lava.material as THREE.MeshStandardMaterial).emissiveIntensity = 2 + Math.sin(t * 1.3) * 0.4;
     this.eyeMaterial.emissiveIntensity = 0.3 + night * 2.8 + Math.sin(t * 0.7) * 0.15;
@@ -1980,7 +2032,7 @@ export class World {
     // Sunbeams: strongest in the woods and at the golden hour.
     if (this.rays) {
       const ru = (this.rays.material as THREE.ShaderMaterial).uniforms;
-      const zoneRays = zone === 'forest' ? 1 : zone === 'plains' || zone === 'town' ? 0.65 : zone === 'swamp' || zone === 'crossroads' ? 0.55 : zone === 'volcano' ? 0.25 : 0.45;
+      const zoneRays = zone === 'forest' ? 1 : zone === 'plains' || zone === 'town' ? 0.65 : zone === 'swamp' || zone === 'crossroads' ? 0.55 : zone === 'volcano' ? 0.1 : 0.45;
       const strength = smoothstep(0.0, 0.15, sunUp) * zoneRays * (0.55 + golden * 0.8) * 0.32;
       ru.uSun.value.copy(this.sunDir);
       ru.uFocus.value.copy(focus);

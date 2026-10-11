@@ -1,4 +1,4 @@
-// Third-person camera: damped orbit follow, terrain-aware boom, lock-on
+// Third-person camera: damped orbit follow, terrain- and obstacle-aware boom, lock-on
 // framing, shift lock (over-the-shoulder), sprint FOV kick and smooth shake.
 
 import * as THREE from 'three';
@@ -108,6 +108,9 @@ export class CameraRig {
     const back = this.back.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
     const free = this.clearance(pivot, back, len);
     len = Math.min(len, free);
+    // Tree trunks, rocks and walls in the way.
+    const hz = Math.hypot(back.x, back.z);
+    if (hz > 0.05) len = Math.min(len, Math.max(0.8, g.world.rayHit(pivot.x, pivot.y, pivot.z, back.x / hz, back.y / hz, back.z / hz, len * hz, 0.35) / hz));
     // Pull in at once, ease back out.
     this.boom = snap || len < this.boom ? len : this.boom + (len - this.boom) * damp(3.5, dt);
     const pos = cam.position.copy(pivot).addScaledVector(back, this.boom);

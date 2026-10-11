@@ -534,8 +534,8 @@ export class Story {
         `${c.name} wakes beside the shrine of Hearthhold. Far to the north, beyond the smoking peak, the Giant still holds the world in its palm.\n\n` +
           'Orrin, Keeper of the Archive (west side of the square), knows of the six trials. The townsfolk all have work for a hero.\n\n' +
           (touch
-            ? 'Left thumb: move. Right thumb: look. ⚔ attack, ⤿ roll, 🛡 block, ✦ cast, ❂ ability. ☰ for the menu and controls.'
-            : 'WASD to move, mouse to look (click to capture it). Left click attacks, Shift rolls/sprints, Q casts, R uses your ability. Esc for the menu and the full controls.'),
+            ? 'Left thumb: move. Right thumb: look. ⚔ attack, ⤿ roll, 🛡 block, ✦ cast, ❂ ability, 🔒 shift lock. ☰ for the menu and controls.'
+            : 'WASD to move, mouse to look (click to capture it). Left click attacks, C rolls, hold Shift to sprint, tap Shift for shift lock, Q casts, R uses your ability. Esc for the menu and the full controls.'),
       ),
       options: [{ label: 'Begin' }],
     });

@@ -2225,7 +2225,7 @@ function animWitch(c: Ctx) {
       chestX = -0.15 * pull + 0.15 * push;
     }
   }
-  if (tele) S(rig.body, 1 - 0.7 * sstep(0, 0.4, Math.max(0, a.attack)), k(14));
+  if (tele) S(rig.body, 1 - 0.7 * sstep(0, 0.4, Math.max(0, a.attack, a.windup)), k(14));
   else S(rig.body, 1 - 0.3 * dead, k(8));
   if (j.chest) R(j.chest, chestX - 0.05 * fury, chestY, 0, k(10));
   if (right) {

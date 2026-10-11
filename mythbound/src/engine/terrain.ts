@@ -193,14 +193,30 @@ tCol *= mix(1.0, 0.72 + 0.42 * tStrata * (0.7 + 0.6 * tD0.b), tRock);
 tCol *= mix(1.0, 0.65 + 0.35 * smoothstep(0.15, 0.55, tD1.b), tRock * 0.8 + 0.2);
 float tWet = (1.0 - smoothstep(0.05, 1.0, vWPos.y)) * smoothstep(-3.0, -1.5, vWPos.y);
 tCol *= 1.0 - 0.38 * tWet;
+// Cobbles on the town's roads and square, worn through in places, faded out with distance.
+vec2 tTp = vWPos.xz - TOWN_POS;
+float tRoad = (1.0 - smoothstep(2.6, 3.8, min(abs(tTp.x), abs(tTp.y)))) * (1.0 - smoothstep(TOWN_R - 8.0, TOWN_R - 3.0, length(tTp)));
+tRoad = max(tRoad, 1.0 - smoothstep(9.0, 11.5, length(tTp)));
+tRoad *= smoothstep(0.3, 0.5, tD1.a + 0.12) * (1.0 - smoothstep(35.0, 70.0, distance(vWPos, cameraPosition)));
+vec2 tCp = vWPos.xz * vec2(2.1, 2.8);
+tCp.x += floor(tCp.y) * 0.5;
+vec2 tCf = fract(tCp) - 0.5 + (tD0.rg - 0.5) * 0.25;
+vec2 tCa = abs(tCf);
+float tStone = smoothstep(0.5, 0.36, mix(max(tCa.x, tCa.y), length(tCa) * 0.8, 0.6));
+float tCh = fract(sin(dot(floor(tCp), vec2(12.9898, 78.233))) * 43758.5453);
+vec3 tCob = vec3(0.15, 0.135, 0.11) * (0.7 + 0.5 * tCh) * (0.85 + 0.3 * tD0.b) * mix(0.4, 1.0, tStone);
+tCol = mix(tCol, tCob, tRoad);
 diffuseColor.rgb = tCol;
 `;
 const TERRAIN_ROUGH = /* glsl */ `
 roughnessFactor = mix(roughnessFactor, 0.32, tWet * 0.85);
+roughnessFactor = mix(roughnessFactor, 0.7, tRoad * tStone);
 `;
 const TERRAIN_NORMAL = /* glsl */ `
 {
   vec2 tG = (tD1.rg - 0.5) * (0.9 + 1.6 * tRock) + (tD0.rg - 0.5) * 0.7 + (tD2.rg - 0.5) * 0.6;
+  // Rounded cobble tops.
+  tG += tCf * tCf * tCf * 6.0 * tRoad;
   vec3 tP = normalize(tN + vec3(-tG.x, 0.0, -tG.y) * 0.55);
   normal = normalize((viewMatrix * vec4(tP, 0.0)).xyz);
 }
@@ -266,7 +282,8 @@ export function buildTerrainMesh(segments: number, hq = segments > 200): THREE.M
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
-  if (hq) mat.defines = { TERRAIN_HQ: '' };
+  mat.defines = { TOWN_POS: `vec2(${TOWN.x.toFixed(1)}, ${TOWN.z.toFixed(1)})`, TOWN_R: TOWN.radius.toFixed(1) };
+  if (hq) mat.defines.TERRAIN_HQ = '';
   const detail = detailTexture();
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uDetail = { value: detail };

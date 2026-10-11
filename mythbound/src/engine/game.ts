@@ -241,6 +241,7 @@ export class Game {
   }
 
   removeEnemy(e: Enemy) {
+    e.dispose();
     this.scene.remove(e.model.root);
     disposeObject(e.model.root);
     this.enemies = this.enemies.filter((x) => x !== e);
@@ -943,7 +944,6 @@ export class Game {
       n.anim.attack = n.id === 'brann' && d > 8 ? (n.anim.t % 1.4) / 1.4 : -1;
       n.anim.attackStyle = 'overhead';
       animateHumanoid(n.rig, n.anim);
-      n.rig.body.position.y = Math.sin(n.anim.t * 1.5) * 0.015;
     }
   }
 
