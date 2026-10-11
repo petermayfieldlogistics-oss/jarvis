@@ -702,6 +702,8 @@ export class Game {
   start() {
     this.running = true;
     this.last = performance.now();
+    // Name the zone the hero actually starts in (a save can be anywhere).
+    this.zone = this.lastZone = zoneAt(this.player.pos.x, this.player.pos.z);
     this.hud.banner(ZONES[this.zone].name, 'zone');
     const loop = () => {
       if (!this.running) return;
