@@ -35,6 +35,44 @@ export function healthUrl(ws: string): string {
   }
 }
 
+/**
+ * Waits for a free server that may be asleep (it shows a loading page for a
+ * minute or two while it starts). Resolves with what its health check says,
+ * or null if it never answered.
+ */
+export async function wakeServer(wsUrl: string, status: (text: string) => void, limitMs = 150_000): Promise<{ accounts: boolean } | null> {
+  const health = healthUrl(wsUrl);
+  if (!health) return null;
+  const start = Date.now();
+  while (Date.now() - start < limitMs) {
+    const waited = Math.round((Date.now() - start) / 1000);
+    status(waited < 3 ? 'Reaching the server…' : `Waking the server… ${waited} s (it can take a minute or two)`);
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 25_000);
+      const r = await fetch(health, { cache: 'no-store', signal: ctl.signal });
+      clearTimeout(timer);
+      const body = r.ok ? await r.json().catch(() => null) : null;
+      if (body && body.game === 'mythbound') return { accounts: body.accounts === true };
+    } catch {
+      // Asleep, starting up, or the loading page: wait and try again.
+    }
+    await new Promise((res) => setTimeout(res, 3000));
+  }
+  return null;
+}
+
+/** The server's web address (https://…) for its WebSocket address. */
+export function httpBase(ws: string): string {
+  try {
+    const u = new URL(ws);
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    return u.origin;
+  } catch {
+    return '';
+  }
+}
+
 export class Net {
   private ws: WebSocket | null = null;
   /** Called for every message from the server. */
@@ -53,25 +91,8 @@ export class Net {
   async connect(url: string, status: (text: string) => void): Promise<void> {
     this.close();
     if (!/^wss?:\/\//.test(url)) throw new Error('The server address must start with wss://');
-    const health = healthUrl(url);
-    if (health) {
-      status('Waking the server… (up to a minute if it was asleep)');
-      const deadline = Date.now() + 90_000;
-      let awake = false;
-      while (!awake && Date.now() < deadline) {
-        try {
-          const ctl = new AbortController();
-          const timer = setTimeout(() => ctl.abort(), 20_000);
-          const r = await fetch(health, { cache: 'no-store', signal: ctl.signal });
-          clearTimeout(timer);
-          awake = r.ok;
-        } catch {
-          // Asleep, starting up, or blocked: wait and try again.
-        }
-        if (!awake) await new Promise((res) => setTimeout(res, 2500));
-      }
-      if (!awake) throw new Error('The server did not answer. Check the address, or try again in a minute.');
-    }
+    await wakeServer(url, status);
+    // Even without an answer, try the connection itself before giving up.
     status('Connecting…');
     await new Promise<void>((resolve, reject) => {
       let ws: WebSocket;
@@ -84,15 +105,15 @@ export class Net {
       this.ws = ws;
       const timer = setTimeout(() => {
         ws.close();
-        reject(new Error('The connection timed out.'));
-      }, 20_000);
+        reject(new Error('The server is not answering. If this keeps happening, check that it shows "Live" on Render.'));
+      }, 30_000);
       ws.onopen = () => {
         clearTimeout(timer);
         resolve();
       };
       ws.onerror = () => {
         clearTimeout(timer);
-        reject(new Error('Could not connect to the server.'));
+        reject(new Error('Could not connect to the server. It may still be waking up: try again in a minute.'));
       };
       ws.onclose = () => {
         clearTimeout(timer);

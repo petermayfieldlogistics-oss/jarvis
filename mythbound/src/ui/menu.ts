@@ -199,7 +199,7 @@ export class Menu {
 
   private coopName(): string {
     const c = this.g.player.c;
-    return this.g.settings.coopName || c.classId[0].toUpperCase() + c.classId.slice(1);
+    return this.g.settings.coopName || this.g.accountName || c.classId[0].toUpperCase() + c.classId.slice(1);
   }
 
   private coopTab(): string {
