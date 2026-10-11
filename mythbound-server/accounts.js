@@ -269,6 +269,8 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
     const path = (req.url ?? '/').split('?')[0];
     if (!path.startsWith('/api/')) return false;
     if (req.method === 'OPTIONS') {
+      // The browser's permission check before a cross-site request (logged too: if it fails, nothing else arrives).
+      console.log(`api OPTIONS ${path} 204 (asks for ${req.headers['access-control-request-method'] ?? '?'} from ${req.headers.origin ?? '?'})`);
       res.writeHead(204, {
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -279,6 +281,9 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
       return true;
     }
     const ip = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket.remoteAddress || '?';
+    const started = Date.now();
+    // One line per request for the host's logs (never names, passwords or tokens).
+    const log = (status, code = '') => console.log(`api ${req.method} ${path} ${status}${code ? ` ${code}` : ''} ${Date.now() - started}ms`);
     try {
       if (!perIp.hit(ip, now())) throw new HttpError(429, 'slow-down', 'Too many requests. Slow down a little.');
       const slot = /^\/api\/slots\/(\d+)$/.exec(path);
@@ -288,9 +293,13 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await readBody(req);
       const [status, out] = await route(req, body, ip, slot?.[1]);
       send(res, status, out);
+      log(status, out?.error);
     } catch (err) {
-      if (err instanceof HttpError) send(res, err.status, { error: err.code, message: err.message });
-      else {
+      if (err instanceof HttpError) {
+        send(res, err.status, { error: err.code, message: err.message });
+        log(err.status, err.code);
+      } else {
+        log(503, 'error');
         console.error('Accounts error:', err);
         send(res, 503, { error: 'unavailable', message: 'The account service had a problem. Try again in a moment.' });
       }

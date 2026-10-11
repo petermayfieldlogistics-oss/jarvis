@@ -6,6 +6,19 @@ import { ANCIENT_GLYPH, CLASSES, RACES } from '../data/defs';
 import { CloudError, type Cloud, type SlotInfo } from '../engine/cloud';
 import { loadSave, loadUnlocks, saveUnlocks, type SaveData } from '../engine/state';
 
+/** What makes a username or password acceptable, said plainly (the server checks the same). */
+function checkName(name: string): string | null {
+  if (!name) return 'Type a username.';
+  if (/\s/.test(name)) return 'Usernames can\'t have spaces. Use letters, numbers or _ (like Dragon_Slayer).';
+  if (!/^[A-Za-z0-9_]+$/.test(name)) return 'Usernames can only use letters, numbers and _ (no other symbols).';
+  if (name.length < 3) return 'Usernames need at least 3 characters.';
+  return null;
+}
+function checkPassword(pw: string): string | null {
+  if (pw.length < 6) return 'Your password needs at least 6 characters.';
+  return null;
+}
+
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 
 export interface FrontActions {
@@ -91,9 +104,9 @@ function showLogin(root: HTMLElement, a: FrontActions) {
   const el = screen(
     root,
     `<h2 class="atitle">Log in</h2>
-    <form class="acct" autocomplete="on">
-      <label>Username <input name="username" autocomplete="username" maxlength="16" required></label>
-      <label>Password <input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+    <form class="acct" autocomplete="on" novalidate>
+      <label>Username <input name="username" autocomplete="username" maxlength="16" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" maxlength="128"></label>
       <div class="tbtns"><button class="primary" type="submit">Log in</button><button type="button" class="back">Back</button></div>
       <div class="astatus"></div>
       <button type="button" class="link forgot">Forgot your password?</button>
@@ -104,6 +117,8 @@ function showLogin(root: HTMLElement, a: FrontActions) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(form);
+    const problem = checkName(String(f.get('username')).trim()) ?? (String(f.get('password')) ? null : 'Type your password.');
+    if (problem) return st.fail(new Error(problem));
     try {
       await a.cloud.ready((t) => st.busy(t));
       st.busy('Logging in…');
@@ -122,11 +137,11 @@ function showSignup(root: HTMLElement, a: FrontActions) {
   const el = screen(
     root,
     `<h2 class="atitle">Create an account</h2>
-    <form class="acct" autocomplete="on">
-      <label>Username <input name="username" autocomplete="username" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" title="3 to 16 letters, numbers or _" required></label>
-      <label>Password <input name="password" type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
-      <label>Password again <input name="password2" type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
-      <p class="hint">Don't use your real name, or a password you use anywhere else. There's no email: you'll get a recovery code instead.</p>
+    <form class="acct" autocomplete="on" novalidate>
+      <label>Username <input name="username" autocomplete="username" maxlength="16" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label>Password <input name="password" type="password" autocomplete="new-password" maxlength="128"></label>
+      <label>Password again <input name="password2" type="password" autocomplete="new-password" maxlength="128"></label>
+      <p class="hint">Username: 3–16 letters or numbers, no spaces (you can use _). Password: at least 6 characters. Don't use your real name, or a password you use anywhere else. There's no email: you'll get a recovery code instead.</p>
       <div class="tbtns"><button class="primary" type="submit">Create account</button><button type="button" class="back">Back</button></div>
       <div class="astatus"></div>
     </form>`,
@@ -138,7 +153,8 @@ function showSignup(root: HTMLElement, a: FrontActions) {
     const f = new FormData(form);
     const username = String(f.get('username')).trim();
     const password = String(f.get('password'));
-    if (password !== String(f.get('password2'))) return st.fail(new Error('The two passwords are different.'));
+    const problem = checkName(username) ?? checkPassword(password) ?? (password !== String(f.get('password2')) ? 'The two passwords are different.' : null);
+    if (problem) return st.fail(new Error(problem));
     try {
       await a.cloud.ready((t) => st.busy(t));
       st.busy('Creating your account…');
@@ -170,10 +186,10 @@ function showRecover(root: HTMLElement, a: FrontActions) {
   const el = screen(
     root,
     `<h2 class="atitle">Forgot your password?</h2>
-    <form class="acct">
-      <label>Username <input name="username" autocomplete="username" maxlength="16" required></label>
-      <label>Recovery code <input name="recovery" class="codein" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="24" autocomplete="off" required></label>
-      <label>New password <input name="password" type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
+    <form class="acct" novalidate>
+      <label>Username <input name="username" autocomplete="username" maxlength="16" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label>Recovery code <input name="recovery" class="codein" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="24" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label>New password <input name="password" type="password" autocomplete="new-password" maxlength="128"></label>
       <div class="tbtns"><button class="primary" type="submit">Set new password</button><button type="button" class="back">Back</button></div>
       <div class="astatus"></div>
     </form>`,
@@ -183,6 +199,8 @@ function showRecover(root: HTMLElement, a: FrontActions) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(form);
+    const problem = checkName(String(f.get('username')).trim()) ?? (String(f.get('recovery')).replace(/[^A-Za-z0-9]/g, '').length < 16 ? 'Type the whole recovery code (16 letters and numbers).' : null) ?? checkPassword(String(f.get('password')));
+    if (problem) return st.fail(new Error(problem));
     try {
       await a.cloud.ready((t) => st.busy(t));
       st.busy('Checking your code…');
