@@ -17,7 +17,7 @@ import { buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim } from './anim';
 import { Player } from './player';
-import { loadUnlocks, saveUnlocks, writeSave, type Settings, type WorldState } from './state';
+import { loadUnlocks, saveUnlocks, writeSave, type SaveData, type Settings, type WorldState } from './state';
 import { heightAt, zoneAt, WATER_LEVEL } from './terrain';
 import { World, type Interactable } from './world';
 import { Story } from './story';
@@ -126,6 +126,14 @@ export class Game {
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
   onQuit: () => void = () => {};
+  /** Where saves are kept on this device (an account slot has its own copy). */
+  storeKey: string | undefined;
+  /** Called after every save (an account slot uploads it). */
+  onSaved: (data: SaveData) => void = () => {};
+  /** Called when something is unlocked for every hero (an account keeps it too). */
+  onUnlock: () => void = () => {};
+  /** Signed-in username, if any (friends in co-op see it). */
+  accountName = '';
 
   constructor(
     public container: HTMLElement,
@@ -811,8 +819,10 @@ export class Game {
     const p = this.player;
     this.state.pos = this.inTrial || !p.alive ? null : [p.pos.x, Math.max(p.pos.y, heightAt(p.pos.x, p.pos.z)), p.pos.z];
     if (p.sailing || p.flying || p.swimming) this.state.pos = null;
-    const ok = writeSave({ character: p.c, world: this.state });
-    if (!ok) this.hud.toast('Could not save (storage unavailable).', 'warn');
+    const data: SaveData = { character: p.c, world: this.state };
+    const ok = writeSave(data, this.storeKey);
+    if (!ok && !this.storeKey) this.hud.toast('Could not save (storage unavailable).', 'warn');
+    this.onSaved(data);
   }
 
   unlockAncient() {
@@ -820,6 +830,7 @@ export class Game {
     if (!u.ancient) {
       u.ancient = true;
       saveUnlocks(u);
+      this.onUnlock();
       return true;
     }
     return false;

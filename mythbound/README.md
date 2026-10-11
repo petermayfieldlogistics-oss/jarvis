@@ -42,6 +42,20 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 over the shoulder and shows a crosshair, so you can strafe, back-pedal and aim spells and arrows precisely. Tap again to
 release it. Holding Shift still sprints.
 
+## Accounts and hero slots
+
+The front screen offers **Log in**, **Create account** and **Play offline**. An account is a username and a password
+(no email) kept on the co-op server, and holds up to five heroes. Log in on any device (PC, phone, iPad) to play them.
+
+- Creating an account shows a **recovery code** once; it is the only way to set a new password if you forget yours.
+- Saves upload while you play (at most every 20 seconds, and at once when you quit or hide the page). A copy stays on
+  the device, so progress made without internet is offered next time you load that hero there.
+- Two devices can't silently undo each other: if a hero was saved on another device since this one loaded it, this
+  device stops uploading and says so.
+- **Play offline** keeps the original single hero on this device; it can be copied into an empty account slot.
+- Accounts need the server's database (see `../mythbound-server/README.md`); without it the game says so and offline
+  play still works.
+
 ## Co-op (2–4 players)
 
 Open the menu (Esc or ☰) and choose **Co-op**. One player presses **Host a game** and reads out the five-letter room

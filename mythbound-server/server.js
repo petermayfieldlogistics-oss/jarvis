@@ -29,4 +29,11 @@ async function accounts() {
   }
 }
 
-startServer(Number(process.env.PORT) || 8080, { accounts: await accounts() }).then(({ port }) => console.log(`Mythbound relay listening on port ${port}`));
+startServer(Number(process.env.PORT) || 8080, { accounts: await accounts() }).then(
+  ({ port }) => console.log(`Mythbound relay listening on port ${port}`),
+  (err) => {
+    // Without its port the server is useless: stop, so the host starts it again.
+    console.error('Could not start:', err.message);
+    process.exit(1);
+  },
+);

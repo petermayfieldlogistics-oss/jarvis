@@ -63,35 +63,64 @@ function storage(): Storage | null {
   }
 }
 
-export function loadSave(): SaveData | null {
+/** Makes a save read back from JSON (this device or an account) ready to play. */
+export function normalizeSave(data: SaveData): SaveData {
+  // Fill in anything added since the save was written.
+  const fresh = newWorldState();
+  data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
+  // JSON turns Infinity into null.
+  if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
+  return data;
+}
+
+/** The offline save, or a copy of an account slot kept on this device (`key`). */
+export function loadSave(key = SAVE_KEY): SaveData | null {
   try {
-    const raw = storage()?.getItem(SAVE_KEY);
+    const raw = storage()?.getItem(key);
     if (!raw) return null;
-    const data = JSON.parse(raw) as SaveData;
-    // Fill in anything added since the save was written.
-    const fresh = newWorldState();
-    data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
-    // JSON turns Infinity into null.
-    if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
-    return data;
+    return normalizeSave(JSON.parse(raw) as SaveData);
   } catch {
     return null;
   }
 }
 
-export function writeSave(data: SaveData): boolean {
+/** A save as plain JSON-friendly data (Infinity is written as null). */
+export function serializeSave(data: SaveData): SaveData {
+  const c = { ...data.character, lightSealedUntil: data.character.lightSealedUntil === Infinity ? (null as unknown as number) : data.character.lightSealedUntil };
+  return { ...data, character: c };
+}
+
+export function writeSave(data: SaveData, key = SAVE_KEY): boolean {
   try {
-    const c = { ...data.character, lightSealedUntil: data.character.lightSealedUntil === Infinity ? null : data.character.lightSealedUntil };
-    storage()?.setItem(SAVE_KEY, JSON.stringify({ ...data, character: c }));
+    storage()?.setItem(key, JSON.stringify(serializeSave(data)));
     return true;
   } catch {
     return false;
   }
 }
 
-export function deleteSave() {
+export function deleteSave(key = SAVE_KEY) {
   try {
-    storage()?.removeItem(SAVE_KEY);
+    storage()?.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Small values kept on this device (the account sign-in). */
+export function readLocal<T>(key: string): T | null {
+  try {
+    const raw = storage()?.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeLocal(key: string, value: unknown) {
+  try {
+    if (value === null) storage()?.removeItem(key);
+    else storage()?.setItem(key, JSON.stringify(value));
   } catch {
     /* ignore */
   }

@@ -149,7 +149,7 @@ export function showCreator(root: HTMLElement, onDone: (c: Character) => void, o
   render();
 }
 
-export function showTitle(root: HTMLElement, hasSave: boolean, onContinue: () => void, onNew: () => void) {
+export function showTitle(root: HTMLElement, hasSave: boolean, onContinue: () => void, onNew: () => void, onBack?: () => void) {
   const el = document.createElement('div');
   el.className = 'title';
   const unlocks = loadUnlocks();
@@ -161,10 +161,15 @@ export function showTitle(root: HTMLElement, hasSave: boolean, onContinue: () =>
       <div class="tbtns">
         ${hasSave ? '<button class="primary cont">Continue</button>' : ''}
         <button class="${hasSave ? '' : 'primary '}new">New hero</button>
+        ${onBack ? '<button class="back">Back</button>' : ''}
       </div>
-      <p class="hint">Best with keyboard &amp; mouse or a phone in landscape.${hasSave ? ' A new hero replaces your saved one.' : ''}</p>
+      <p class="hint">Offline: one hero, saved on this device only.${hasSave ? ' A new hero replaces it.' : ''} Best with keyboard &amp; mouse or a phone in landscape.</p>
     </div>`;
   root.appendChild(el);
+  el.querySelector('.back')?.addEventListener('click', () => {
+    el.remove();
+    onBack?.();
+  });
   el.querySelector('.cont')?.addEventListener('click', () => {
     el.remove();
     onContinue();
@@ -181,7 +186,7 @@ export function showTitle(root: HTMLElement, hasSave: boolean, onContinue: () =>
     btns.querySelector('.yes')!.addEventListener('click', begin);
     btns.querySelector('.no')!.addEventListener('click', () => {
       el.remove();
-      showTitle(root, hasSave, onContinue, onNew);
+      showTitle(root, hasSave, onContinue, onNew, onBack);
     });
   });
 }

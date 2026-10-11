@@ -133,6 +133,51 @@ button:not(:disabled):active { transform: translateY(1px); }
 .loading div::after { content: ''; display: block; width: 260px; margin: 10px auto 0; height: 16px; background: var(--orn-diamond) center / 16px 16px no-repeat, var(--rule) center / 100% 1px no-repeat; }
 @keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
 
+/* --------------------------------------------------------- accounts -- */
+/* Scrolls when taller than the screen (phones), centred otherwise. */
+.title { overflow-y: auto; display: flex; flex-direction: column; }
+.title > .tinner { margin: auto; }
+.title .tinner:has(.slotgrid) { max-width: min(1080px, 100%); width: 100%; }
+.title .who { margin: -12px 0 18px; color: var(--ink-dim); font-size: 17px; }
+.title .who b { color: #9fe0ff; font-weight: 600; }
+button.link { background: none; border: none; box-shadow: none; color: var(--ink-dim); text-decoration: underline; text-underline-offset: 3px; font-size: 15px; padding: 6px 8px; margin-top: 10px; cursor: pointer; }
+button.link:not(:disabled):hover { color: var(--gold-hi); box-shadow: none; }
+button.danger { border-color: #a03020 !important; color: #ffb8a8 !important; }
+.atitle { font-family: var(--display); font-weight: 600; color: var(--gold-hi); letter-spacing: 0.08em; margin: 14px 0 16px; font-size: 22px; }
+form.acct { display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: min(420px, 82vw); margin: 0 auto; text-align: left; }
+form.acct label { display: flex; flex-direction: column; gap: 4px; color: var(--ink-dim); font-size: 15px; }
+form.acct input { background: #17130f; color: var(--ink); border: 1px solid var(--line); padding: 9px 10px; font-family: var(--serif); font-size: 17px; border-radius: 2px; }
+form.acct input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 10px rgba(216, 180, 104, 0.3); }
+form.acct input.codein { font-family: var(--display); letter-spacing: 0.12em; text-transform: uppercase; }
+form.acct .hint { margin: 2px 0 4px; font-size: 14px; }
+form.acct .tbtns { margin-top: 6px; }
+form.acct .link { align-self: center; }
+.astatus { min-height: 1.4em; margin: 10px auto 0; max-width: 520px; font-size: 15px; color: var(--ink-dim); text-align: center; }
+.astatus.busy { animation: pulse 0.9s infinite alternate; color: var(--gold); }
+.astatus.bad { color: #ff9a80; }
+.rcode { font: 600 clamp(20px, 4.4vw, 32px)/1.2 var(--display); letter-spacing: 0.14em; color: #9fe0ff; text-shadow: 0 0 14px rgba(120, 200, 255, 0.35); margin: 6px 0 12px; padding: 12px 16px; border: 1px dashed rgba(159, 224, 255, 0.4); user-select: all; }
+.title p.warn { color: #e8c8a0; }
+.slotgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; width: 100%; margin: 0 auto 6px; }
+.slotcard { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 12px; border: 1px solid rgba(216, 180, 104, 0.35); background: linear-gradient(rgba(34, 27, 18, 0.85), rgba(10, 8, 6, 0.85)); box-shadow: inset 0 1px 0 rgba(255, 230, 170, 0.08); min-height: 150px; justify-content: center; }
+.slotcard.empty { border-style: dashed; opacity: 0.92; }
+.slotcard .sname { font-family: var(--display); font-size: 19px; color: #f2dca0; }
+.slotcard.empty .sname { color: var(--ink-dim); font-size: 16px; }
+.slotcard .sinfo { font-size: 15px; }
+.slotcard .smeta { font-size: 13px; color: var(--ink-dim); margin-bottom: 4px; }
+.slotcard .warn { font-size: 14px; margin: 0; }
+.slotcard button { width: 100%; }
+.slotcard button:not(.link) { padding: 8px 10px; font-size: 15px; background: linear-gradient(#2e271d, #18140f 58%, #110e0a); color: var(--ink); border: 1px solid rgba(216, 180, 104, 0.42); border-radius: 2px; }
+.slotcard button.primary { border-color: var(--gold); color: #fff3d6; background: linear-gradient(#5a4526, #2c2112 52%, #1a130b); }
+.slotcard button small { display: block; font-size: 12px; }
+.slotcard button.link { margin-top: 0; width: auto; }
+@media (max-height: 500px) {
+  .title .tinner { padding: 16px 20px 14px; }
+  .title .logo { font-size: clamp(30px, 6vw, 48px); }
+  .title .atitle { margin: 8px 0 10px; font-size: 19px; }
+  .title .tag { margin: 6px 0 14px; }
+  .slotcard { min-height: 0; padding: 10px; }
+}
+
 /* ---------------------------------------------------------- creator -- */
 .creator {
   position: fixed;

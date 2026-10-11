@@ -1,16 +1,42 @@
 import './styles.css';
 import { Game } from './engine/game';
 import { heightAt } from './engine/terrain';
-import { deleteSave, loadSave, loadSettings, newWorldState, writeSave, type WorldState } from './engine/state';
+import { Cloud, SlotSync } from './engine/cloud';
+import { deleteSave, loadSave, loadSettings, loadUnlocks, newWorldState, writeSave, type WorldState } from './engine/state';
 import type { Character } from './rules/character';
+import { showFront } from './ui/account';
 import { showCreator, showTitle } from './ui/creator';
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
+/** Uploads the hero's saves when playing from an account slot. */
+let sync: SlotSync | null = null;
+const cloud = new Cloud(() => loadSettings().coopServer);
 
-function title() {
+function stopGame() {
+  sync?.dispose();
+  sync = null;
   game?.stop();
   game = null;
+}
+
+/** The front screen: log in, your account's heroes, or play offline. */
+function title() {
+  stopGame();
+  app.innerHTML = '';
+  showFront(app, {
+    cloud,
+    offline: offlineTitle,
+    play: (slot, save, version) => start(save.character, save.world, false, { slot, version }),
+    create: (slot) => {
+      app.innerHTML = '';
+      showCreator(app, (c) => start(c, newWorldState(), true, { slot, version: 0 }), title);
+    },
+  });
+}
+
+/** The single hero kept on this device without an account. */
+function offlineTitle() {
   app.innerHTML = '';
   const save = loadSave();
   showTitle(
@@ -22,11 +48,12 @@ function title() {
       const world = newWorldState();
       writeSave({ character: c, world });
       start(c, world, true);
-    }, title),
+    }, offlineTitle),
+    title,
   );
 }
 
-function start(character: Character, world: WorldState, fresh = false) {
+function start(character: Character, world: WorldState, fresh = false, slot?: { slot: number; version: number }) {
   const loading = document.createElement('div');
   loading.className = 'loading';
   loading.innerHTML = '<div>Forging the world…</div>';
@@ -36,12 +63,22 @@ function start(character: Character, world: WorldState, fresh = false) {
     const host = document.createElement('div');
     host.className = 'game';
     app.appendChild(host);
-    game = new Game(host, character, world, loadSettings());
-    game.onQuit = title;
+    const g = new Game(host, character, world, loadSettings());
+    game = g;
+    g.onQuit = title;
+    if (slot && cloud.session) {
+      g.storeKey = cloud.localKey(slot.slot);
+      g.accountName = cloud.session.username;
+      sync = new SlotSync(cloud, slot.slot, slot.version, (text, kind) => g.hud.toast(text, kind));
+      g.onSaved = (data) => sync?.push(data);
+      g.onUnlock = () => void cloud.setProfile({ unlocks: loadUnlocks() }).catch(() => {});
+      // A new hero claims its slot at once.
+      if (fresh) g.save();
+    }
     loading.remove();
-    game.audio.unlock();
-    game.start();
-    if (fresh) game.story.intro();
+    g.audio.unlock();
+    g.start();
+    if (fresh) g.story.intro();
   }, 50);
 }
 
@@ -50,9 +87,9 @@ window.addEventListener('pointerdown', () => game?.audio.unlock(), { once: false
 
 declare global {
   interface Window {
-    mythbound?: { game: () => Game | null; height: (x: number, z: number) => number };
+    mythbound?: { game: () => Game | null; height: (x: number, z: number) => number; cloud: Cloud };
   }
 }
-window.mythbound = { game: () => game, height: heightAt };
+window.mythbound = { game: () => game, height: heightAt, cloud };
 
 title();

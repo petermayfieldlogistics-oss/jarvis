@@ -150,6 +150,8 @@ export function startServer(port = Number(process.env.PORT) || 8080, options = {
   });
 
   const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: MAX_MESSAGE_BYTES });
+  // The HTTP server's errors are passed on here too; startServer reports them.
+  wss.on('error', () => {});
   /** @type {Map<import('ws').WebSocket, Player>} */
   const connections = new Map();
 
@@ -194,7 +196,8 @@ export function startServer(port = Number(process.env.PORT) || 8080, options = {
   }, 25_000);
   wss.on('close', () => clearInterval(heartbeat));
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    http.once('error', reject);
     http.listen(port, () => {
       resolve({
         port: /** @type {import('node:net').AddressInfo} */ (http.address()).port,
