@@ -44,6 +44,10 @@ export class Cloud {
   session: { username: string; token: string } | null = readLocal(SESSION_KEY);
   /** Set once the server has answered (accounts on or off). */
   private awake: { accounts: boolean } | null = null;
+  /** A wake-up in progress, shared by everyone waiting for it. */
+  private waking: Promise<{ accounts: boolean } | null> | null = null;
+  /** Who hears how the wake-up is going (the form on screen). */
+  private wakeStatus: (text: string) => void = () => {};
 
   constructor(private server: () => string) {}
 
@@ -60,19 +64,41 @@ export class Cloud {
     return `mythbound.cloud.${this.session?.username.toLowerCase() ?? 'none'}.${slot}`;
   }
 
+  /**
+   * Starts waking the server in the background (a free server naps when
+   * nobody plays and takes a minute to start), so it is usually up by the
+   * time a name and password are typed.
+   */
+  warm() {
+    if (this.awake || this.waking) return this.waking;
+    this.waking = wakeServer(this.server() || DEFAULT_SERVER, (t) => this.wakeStatus(t)).then((r) => {
+      this.awake = r;
+      this.waking = null;
+      return r;
+    });
+    return this.waking;
+  }
+
   /** Wakes the server if needed and checks that accounts are on. */
   async ready(status: (text: string) => void) {
     if (this.awake?.accounts) return;
-    this.awake = await wakeServer(this.server() || DEFAULT_SERVER, status);
+    this.wakeStatus = status;
+    // Ask again if it last said accounts were off (the database may be back).
+    if (this.awake && !this.awake.accounts) this.awake = null;
+    if (!this.awake) await this.warm();
+    this.wakeStatus = () => {};
     if (!this.awake) {
       const sandboxed = !/github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
       throw new CloudError('offline', sandboxed ? `This copy of the game can't go online. Accounts work at ${PAGES_URL}` : 'The server did not answer. Check your internet, or try again in a minute.');
     }
-    if (!this.awake.accounts) throw new CloudError('no-accounts', 'Accounts are not switched on yet: the server needs its database (see the Neon steps). You can play offline meanwhile.');
+    if (!this.awake.accounts) throw new CloudError('no-accounts', 'Accounts are not available on the server right now (its database is missing or down). You can play offline meanwhile.');
   }
 
   private async call<T>(method: string, path: string, body?: unknown, o: { keepalive?: boolean } = {}): Promise<T> {
     let res: Response;
+    // Never wait forever: a request the server hasn't answered in 40 s has failed.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 40_000);
     try {
       res = await fetch(this.base + path, {
         method,
@@ -80,9 +106,15 @@ export class Cloud {
         body: body === undefined ? undefined : JSON.stringify(body),
         cache: 'no-store',
         keepalive: o.keepalive,
+        signal: ctl.signal,
       });
     } catch {
+      // It may be asleep again: wake it before the next try.
+      this.awake = null;
+      if (ctl.signal.aborted) throw new CloudError('timeout', 'The server took too long to answer. Try again in a moment.');
       throw new CloudError('network', 'Could not reach the server. Check your internet connection.');
+    } finally {
+      clearTimeout(timer);
     }
     const out = (await res.json().catch(() => ({}))) as T & { error?: string; message?: string };
     if (!res.ok) {

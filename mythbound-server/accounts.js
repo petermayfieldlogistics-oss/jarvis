@@ -1,7 +1,8 @@
 // Player accounts: a username and password (no email), a recovery code for a
 // forgotten password, and up to MAX_SLOTS saved heroes that follow the player
-// to any device. Passwords and recovery codes are only ever stored as scrypt
-// hashes; sign-ins hand out a random token, stored only as its SHA-256.
+// to any device. Passwords are stored as scrypt hashes and recovery codes as
+// SHA-256 (they are random); sign-ins hand out a random token, stored only as
+// its SHA-256.
 
 import { createHash, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -24,8 +25,20 @@ async function hashSecret(secret) {
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64')}$${key.toString('base64')}`;
 }
 
+/**
+ * Recovery codes carry 80 random bits, far too many to guess, so a plain
+ * SHA-256 keeps them safe without the slow hashing passwords need (the free
+ * server has a small share of one CPU).
+ */
+const hashCode = (code) => `sha256$${createHash('sha256').update(code).digest('hex')}`;
+
 async function checkSecret(secret, stored) {
   const [kind, N, r, p, salt, key] = String(stored).split('$');
+  if (kind === 'sha256' && N) {
+    const want = Buffer.from(N, 'hex');
+    const got = createHash('sha256').update(secret).digest();
+    return got.length === want.length && timingSafeEqual(got, want);
+  }
   if (kind !== 'scrypt' || !key) return false;
   const want = Buffer.from(key, 'base64');
   const got = /** @type {Buffer} */ (await scrypt(secret, Buffer.from(salt, 'base64'), want.length, { N: Number(N), r: Number(r), p: Number(p) }));
@@ -93,7 +106,8 @@ class Limiter {
 export function accountsApi(store, { now = () => Date.now() } = {}) {
   const perIp = new Limiter(240, 60_000);
   const authPerIp = new Limiter(30, 10 * 60_000);
-  const signupPerIp = new Limiter(6, 60 * 60_000);
+  // Families and friends often share one address: room for a few accounts each.
+  const signupPerIp = new Limiter(20, 60 * 60_000);
   const failsPerUser = new Limiter(8, 10 * 60_000);
 
   async function auth(req) {
@@ -130,8 +144,8 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
       if (password.length < 6 || password.length > 128) throw new HttpError(400, 'password', 'Passwords need at least 6 characters.');
       if (!signupPerIp.hit(ip, now())) throw new HttpError(429, 'slow-down', 'Too many new accounts from here. Try again later.');
       const recovery = newRecoveryCode();
-      const id = await store.createUser({ username, passHash: await hashSecret(password), recoveryHash: await hashSecret(normCode(recovery)) });
-      if (id === null) throw new HttpError(409, 'taken', 'That username is taken. Try another.');
+      const id = await store.createUser({ username, passHash: await hashSecret(password), recoveryHash: hashCode(normCode(recovery)) });
+      if (id === null) throw new HttpError(409, 'taken', 'That username is taken. If you just made it, use Log in instead; otherwise try another name.');
       return [201, { token: await newSession(id), username, recovery }];
     },
 
@@ -163,7 +177,7 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
       failsPerUser.clear(key);
       // A fresh code replaces the used one, and every old sign-in ends.
       const recovery = newRecoveryCode();
-      await store.setSecrets(user.id, await hashSecret(password), await hashSecret(normCode(recovery)));
+      await store.setSecrets(user.id, await hashSecret(password), hashCode(normCode(recovery)));
       await store.deleteSessions(user.id);
       return [200, { token: await newSession(user.id), username: user.username, recovery }];
     },

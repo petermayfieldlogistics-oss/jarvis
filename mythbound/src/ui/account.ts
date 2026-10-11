@@ -59,6 +59,8 @@ function statusLine(el: HTMLElement) {
 
 export function showFront(root: HTMLElement, a: FrontActions) {
   const signed = a.cloud.session;
+  // Start waking the server now, while the player reads and types.
+  void a.cloud.warm();
   const unlocks = loadUnlocks();
   const el = screen(
     root,
