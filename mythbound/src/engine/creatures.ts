@@ -61,6 +61,8 @@ export interface CreatureJoints {
   pupil?: THREE.Group;
   stalks?: THREE.Group[];
   wisps?: THREE.Sprite[];
+  /** The Reaper's cold halo, so its dark robe reads against the night. */
+  halo?: THREE.Sprite;
   /** A boss's own glow material, pulsed with fury and spellcasting. */
   glow?: THREE.MeshStandardMaterial;
   /** The Leviathan's coils that arch out of the sea, and the root of its tail (moved for the tail slam). */
@@ -615,6 +617,7 @@ function cloneRig(t: CreatureRig): CreatureRig {
     pupil: tj.pupil && m(tj.pupil),
     stalks: tj.stalks?.map(m),
     wisps: tj.wisps?.map(m),
+    halo: tj.halo && m(tj.halo),
     coils: tj.coils?.map(m),
     tailRoot: tj.tailRoot && m(tj.tailRoot),
     fangs: tj.fangs?.map(m),
@@ -2011,7 +2014,7 @@ export function buildReaper(color: number, scale: number): CreatureRig {
   sk.add('ghost', ghost, tube([V(0, 3.1, -0.24), V(0, 3.17, -0.1), V(0, 3.13, 0.06), V(0, 3.05, 0.2)], [[0.08, 0.08], [0.24, 0.26], [0.26, 0.27], [0.23, 0.25]], 12, { open: true }), head);
   sk.add('ghost', ghost, spike(V(0, 3.24, -0.18), V(0, 3.2, -0.5), 0.1, 6), head);
   sk.add('fur', 0x020203, ell(V(0, 3.02, 0.05), 0.19, 0.21, 0.15, 8, 6), head);
-  for (const s of [-1, 1]) sk.add('glow', 0x90ffc0, ell(V(s * 0.06, 3.05, 0.17), 0.026, 0.016, 0.012, 5, 3), head, undefined, 4);
+  for (const s of [-1, 1]) sk.add('glow', 0x90ffc0, ell(V(s * 0.065, 3.05, 0.17), 0.036, 0.022, 0.014, 5, 3), head, undefined, 4);
   sk.add('fur', tint(boneC, 0.55), tube([V(0, 2.9, 0.12), V(0, 2.87, 0.17)], [[0.06, 0.02], [0.045, 0.018]], 6), head);
   const arms: Limb[] = [];
   for (const s of [-1, 1]) {
@@ -2061,7 +2064,10 @@ export function buildReaper(color: number, scale: number): CreatureRig {
     body.add(w);
     wisps.push(w);
   }
-  const j: CreatureJoints = { chest, arms, strands, wisps };
+  const halo = glowSprite(soul, 3.6, 0.22);
+  halo.position.copy(V(0, 2.1, -0.3)).sub(body.userData.w as V3);
+  body.add(halo);
+  const j: CreatureJoints = { chest, arms, strands, wisps, halo };
   return finish(sk, 'reaper', body, head, j, 3.4, scale, true);
 }
 
@@ -3366,6 +3372,10 @@ function animReaper(c: Ctx) {
     const sc = (0.3 + 0.08 * Math.sin(t * 5 + i) + 0.2 * glow) * (1 - dead);
     w.scale.set(sc, sc, sc);
   });
+  if (j.halo) {
+    const sc = 3.6 * (1 + 0.06 * Math.sin(t * 1.7) + 0.3 * glow) * (1 - dead);
+    j.halo.scale.set(sc, sc, sc);
+  }
 }
 
 /**

@@ -1280,7 +1280,7 @@ export class Boss extends Enemy {
         g.sfx.magicCircle(feet, this.color, 4.5, w + s * 0.5);
         break;
       case 'summon':
-        g.sfx.magicCircle(feet, this.color, 5, w + s);
+        this.summonFx(feet, w + s, g);
         break;
       case 'strikes': {
         g.sfx.magicCircle(feet, 0x80b0ff, 4, w + s);
@@ -1482,8 +1482,7 @@ export class Boss extends Enemy {
               e.aware = true;
               e.state = 'chase';
               e.attackCd = 1 + Math.random();
-              g.sfx.magicCircle(e.pos, this.color, 1.6, 1.2);
-              g.sfx.emit(e.center(), { color: 0xa070ff, count: 25, speed: 4, life: 0.6 });
+              this.arrivalFx(e, g);
             }
           }
           g.sfx.shake(this.pos, 0.25);
@@ -1521,6 +1520,17 @@ export class Boss extends Enemy {
         this.cooldown = 1;
         return [0, 0, 0];
     }
+  }
+
+  /** A summoning's sign: a rune circle under the boss. */
+  protected summonFx(at: THREE.Vector3, seconds: number, g: Game) {
+    g.sfx.magicCircle(at, this.color, 5, seconds);
+  }
+
+  /** A summoned minion arrives. */
+  protected arrivalFx(e: Enemy, g: Game) {
+    g.sfx.magicCircle(e.pos, this.color, 1.6, 1.2);
+    g.sfx.emit(e.center(), { color: 0xa070ff, count: 25, speed: 4, life: 0.6 });
   }
 
   /** Vanish, reappear behind the hero and strike at once. */

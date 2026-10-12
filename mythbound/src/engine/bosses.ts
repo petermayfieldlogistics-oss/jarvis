@@ -11,7 +11,7 @@ import { BOSSES, LAIRS, TRIALS, type BossAttack, type BossDef, type BossId, type
 import { RELICS, type RelicId } from '../data/defs';
 import { bossHealthScale, inCone, inLine, lairOpen, LAIR_RESPAWN, nextSurface, surfaceAngles, waveHits, wrapAngle, yawTo, type WaveSpec } from '../rules/boss';
 import { BREATH_SPAN, breathSweep, FLIGHT, LANDS } from './anim';
-import { Boss, elementOf } from './entities';
+import { Boss, elementOf, type Enemy } from './entities';
 import { compact, glowSprite, mat } from './models';
 import { heightAt, WATER_LEVEL, waterDepth } from './terrain';
 import type { Game } from './game';
@@ -863,6 +863,26 @@ export class GreatBoss extends Boss {
     this.begin(queen ? 'trident' : 'reap', g, this.phase === 2 ? 0.4 : 0.55);
     this.last = 'teleport';
     return [0, 0, 0];
+  }
+
+  /** The spider's brood hatches from silk, the drowned rise through a spring; the Reaper keeps its runes. */
+  protected summonFx(at: THREE.Vector3, seconds: number, g: Game) {
+    if (this.bdef.model === 'spider') {
+      // Egg sacs split open round her: silk and dust, no runes.
+      g.sfx.dust(at, 26, 0xe8e4d4);
+      g.sfx.emit(_v.copy(at).add(_q.set(0, 1, 0)), { color: 0xe8e2cc, count: 24, speed: 4, life: 0.7, up: 1.5 });
+      g.sfx.sound('throw', at);
+    } else super.summonFx(at, seconds, g);
+  }
+
+  protected arrivalFx(e: Enemy, g: Game) {
+    if (this.bdef.model === 'spider') {
+      g.sfx.emit(e.center(_w), { color: 0xe8e2cc, count: 18, speed: 3, life: 0.5, up: 1 });
+      g.sfx.dust(e.pos, 8, 0xd8d4c0);
+    } else if (this.bdef.model === 'siren') {
+      g.sfx.spikes(e.pos.x, e.pos.z, 0x60c0ff, 6, 1.6);
+      g.sfx.emit(e.center(_w), { color: 0x80e0ff, count: 20, speed: 3, life: 0.6, up: 2 });
+    } else super.arrivalFx(e, g);
   }
 
   private poisonHero(h: Hero, g: Game) {
