@@ -198,6 +198,10 @@ export class Player {
   anim = newAnim();
   boat: THREE.Object3D | null = null;
   private weaponMesh: THREE.Object3D | null = null;
+  /** The Master Bolt is in flight (the hand is empty until it comes back). */
+  boltOut = false;
+  private boltOutT = 0;
+  private boltV = new THREE.Vector3();
   private shieldMesh: THREE.Object3D | null = null;
   private now = 0;
   private rollTime = 0;
@@ -277,6 +281,8 @@ export class Player {
 
   /** Re-attaches the main weapon (and a warrior's shield) to the model. */
   equip() {
+    // A new weapon in hand: whatever was thrown no longer counts as away.
+    this.boltOut = false;
     for (const old of [this.weaponMesh, this.shieldMesh]) {
       if (!old) continue;
       old.removeFromParent();
@@ -317,6 +323,8 @@ export class Player {
     this.now += dt;
     const input = g.input;
     const c = this.c;
+    // A thunderbolt that never finds its way home comes back to the hand anyway.
+    if (this.boltOut && (this.boltOutT += dt) > 6) this.catchBolt(g, false);
     if (!this.alive) {
       this.anim.dead += dt;
       this.anim.t += dt;
@@ -724,11 +732,14 @@ export class Player {
     if (cur && cur.t < cur.chainAt) return;
     // Out of stamina: keep the press (it expires after BUFFER) until some is back.
     if (this.stamina <= 0) return;
+    // The thunderbolt is still out: a press just before it lands in the hand throws again at once.
+    if (kind === 'bolt' && this.boltOut) return;
     const heavy = this.queued === 'heavy';
     this.queued = null;
 
     if (kind === 'bolt') {
-      this.startAttack('throw', 'throw', 0.75);
+      this.spend(8);
+      this.startAttack('throw', 'throw', 0.5);
     } else if (kind === 'knives' && this.c.knives > 0) {
       // Quick throws; a heavy looses a fan of three in quick succession.
       if (heavy && this.c.knives > 1) {
@@ -1138,7 +1149,11 @@ export class Player {
     const to = g.aimPoint(def.kind === 'bolt' ? 60 : 30);
     if (def.kind === 'bolt') {
       const check = canWield(this.c, w.id);
-      g.spawnProjectile({ from, to, speed: 70, kind: 'bolt', owner: 'player', damage: weaponDamage(w), element: 'lightning', gravity: 0, source: null, explode: 3 });
+      // It strikes, then flies back to the hand (hitting again on the way).
+      g.spawnProjectile({ from, to, speed: 70, kind: 'bolt', owner: 'player', damage: weaponDamage(w), element: 'lightning', gravity: 0, source: null, explode: 3, boomerang: true, home: () => this.boltHome() });
+      this.boltOut = true;
+      this.boltOutT = 0;
+      if (this.weaponMesh) this.weaponMesh.visible = false;
       if (check.partial) {
         g.damagePlayer(5, 'lightning', null, true);
         g.hud.toast('The Master Bolt bites your hand.', 'warn');
@@ -1147,6 +1162,22 @@ export class Player {
       g.spawnProjectile({ from, to, speed: 30, kind: 'axe', owner: 'player', damage: weaponDamage(w) * 1.4, element: 'physical', gravity: 4, source: null, rune: w.rune });
     }
     g.audio.play('throw');
+  }
+
+  /** Where a returning thunderbolt flies to: the throwing hand (none once the hero is down). */
+  private boltHome(): THREE.Vector3 | null {
+    if (!this.alive) return null;
+    return this.rig.handR.getWorldPosition(this.boltV);
+  }
+
+  /** The thunderbolt is back in hand (or lost, and returns quietly). */
+  catchBolt(g: Game, caught: boolean) {
+    if (!this.boltOut) return;
+    this.boltOut = false;
+    if (this.weaponMesh) this.weaponMesh.visible = true;
+    if (!caught) return;
+    g.audio.play('zap');
+    g.fx.emit(this.rig.handR.getWorldPosition(this.boltV), { color: 0xbfe0ff, count: 10, speed: 3, life: 0.3, size: 0.4 });
   }
 
   /** One throwing knife, `turn` radians off the aim (a volley fans out). */

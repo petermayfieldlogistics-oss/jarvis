@@ -1654,7 +1654,7 @@ interface State {
   shoulder: boolean;
   shield: boolean;
   leftTwist: number;
-  /** How a charge carries the weapon: 0 arms swept back, 1 a blade cocked high, 2 a heavy weapon in both hands, 3 a spear levelled. */
+  /** How a run carries the weapon: 0/1 held in one hand as the arms pump, 2 a heavy weapon in both hands, 3 a spear levelled. */
   carry: number;
 }
 
@@ -1678,11 +1678,11 @@ function blend(o: Float32Array, pose: Float32Array, w: number, upperOnly = false
 /** One stride of the walk/run cycle at phase p, added to `o`. */
 function stride(o: Float32Array, p: number, run: number, sprint: number, crouch: number, robe: number, legs: number, arms: number, armsR: number) {
   const sp = Math.sin(p);
-  const amp = lerp(0.4, 0.8, run) * (1 - 0.35 * crouch) * (1 - 0.3 * robe) * (1 + 0.12 * sprint);
+  const amp = lerp(0.4, 0.86, run) * (1 - 0.35 * crouch) * (1 - 0.3 * robe) * (1 + 0.12 * sprint);
   const bias = -0.2 * run;
   const lift = (q: number) => Math.pow(Math.max(0, Math.cos(q + 0.5 - 0.15 * run)), 1.4);
   const load = (q: number) => Math.pow(Math.max(0, Math.cos(q - 2.1)), 2);
-  const kSw = lerp(1.0, 1.95, run) * (1 - 0.3 * robe);
+  const kSw = lerp(1.0, 2.05, run) * (1 - 0.3 * robe);
   const kSt = lerp(0.12, 0.42, run);
   const swL = lift(p);
   const swR = lift(p + PI);
@@ -1859,7 +1859,7 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   if (s.upright) g[WLX] = PI / 2;
   blend(g, CROUCH, s.crouch);
   // Running leans into the stride; acceleration and turns lean the body.
-  g[SPX] += s.mv * (0.14 * s.run + 0.14 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
+  g[SPX] += s.mv * (0.2 * s.run + 0.16 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
   g[HDX] -= s.mv * 0.1 * s.run;
   g[BRZ] -= s.yawRate * 0.03 * s.mv * (0.3 + s.run);
   g[HIY] += s.hipYaw;
@@ -1870,10 +1870,11 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const fall = smooth(0.25, 0.6, s.airT);
     for (let c = 0; c < NCH; c++) g[c] += (lerp(AIR_UP[c], AIR_DOWN[c], fall) - g[c]) * s.air;
   }
-  // Running with a sword, dagger, axe or hammer carries it ready to strike.
-  const chargeW = s.carry ? s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.run : 0;
+  // Running with an axe, hammer or spear carries it in both hands, ready to
+  // strike. (A sword or dagger is held low at the hip instead; see the hold.)
+  const chargeW = s.carry >= 2 ? s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.run : 0;
   if (chargeW > 0.001) {
-    const p = s.carry === 1 ? CHARGE_BLADE : s.carry === 3 ? CHARGE_SPEAR : CHARGE_HEAVY;
+    const p = s.carry === 3 ? CHARGE_SPEAR : CHARGE_HEAVY;
     for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : p[c]) - g[c]) * chargeW;
     g[SPY] += (p[SPY] - g[SPY]) * chargeW;
     g[CHY] += (p[CHY] - g[CHY]) * chargeW;
@@ -2047,29 +2048,12 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const arms = w * armsFree;
     // A weapon arm swings less and stays straighter.
     const armsR = s.weaponLen > 0 ? 0.55 : 1;
-    // Charging: running flat out, the body drives forward and both arms sweep
-    // back behind it (halfway at a run, fully at a sprint), barely pumping.
-    // A sword, axe or hammer is carried ready instead (see the target pose).
-    const charge = arms * (1 - s.back) * (1 - s.crouch) * (1 - prof.robe * 0.5) * clamp01(0.5 * s.run + 0.5 * s.sprint);
-    const pump = 1 - (s.carry ? 0.9 : 0.75) * charge;
+    // Both arms pump with the stride, elbows bent. A two-handed carry (see
+    // the target pose) holds the weapon still instead.
+    const carry2 = s.carry >= 2 ? arms * (1 - s.back) * (1 - s.crouch) * clamp01(0.5 * s.run + 0.5 * s.sprint) : 0;
+    const pump = 1 - 0.9 * carry2;
     if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), arms * (1 - s.back) * pump, arms * armsR * (1 - s.back) * pump);
     if (s.back > 0.001) stride(o, -a.phase, s.run * 0.6, 0, s.crouch, prof.robe, legs * s.back, arms * s.back, arms * armsR * s.back);
-    if (charge > 0.001) {
-      o[SPX] += charge * (0.36 + 0.03 * Math.cos(a.phase * 2));
-      o[CHX] += charge * 0.16;
-      o[HDX] -= charge * 0.42;
-    }
-    if (charge > 0.001 && !s.carry) {
-      const bob = Math.sin(a.phase * 2) * 0.06;
-      o[ALX] += charge * (0.78 + bob);
-      o[ARX] += charge * (0.78 - bob);
-      o[ALZ] += charge * 0.12;
-      o[ARZ] -= charge * 0.12;
-      o[ALY] += charge * 0.3;
-      o[ARY] -= charge * 0.3;
-      o[FLX] += charge * 0.95;
-      o[FRX] += charge * 0.95;
-    }
   }
   // Breathing, weight shift and a wandering gaze when idle.
   const idle = (1 - s.mv) * (1 - s.act) * (dead ? 0 : 1);
@@ -2121,16 +2105,19 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   const flatR = planted * (1 - smooth(0.02, 0.12, lowR - low)) * 0.9;
   o[TLX] = lerp(o[TLX] + 0.25 * (1 - planted), -(o[HIX] + o[LLX] + o[KLX]), flatL);
   o[TRX] = lerp(o[TRX] + 0.25 * (1 - planted), -(o[HIX] + o[LRX] + o[KRX]), flatR);
-  // On the move the weapon is held steady against the arm swing: blades
-  // trail low behind at a run, staves and spears angle forward.
-  // A charge holds the weapon in its own pose.
-  const carried = s.carry ? (1 - s.back) * (1 - s.crouch) * s.run : 0;
+  // On the move the weapon is held steady against the arm swing: a blade
+  // low at the hip, pointing forward; staves angle forward and up.
+  // A two-handed carry holds the weapon in its own pose.
+  const carried = s.carry >= 2 ? (1 - s.back) * (1 - s.crouch) * s.run : 0;
   // (A shouldered two-hander just sways with the arm at a walk.)
   const hold = s.mv * armsFree * (s.weaponLen > 0 && !s.shoulder ? 1 : 0) * (1 - carried);
   if (hold > 0.001) {
-    const fore = -(o[ARX] + o[FRX]);
-    const want = s.weaponLen >= 1.45 ? 2.55 : lerp(0.95, -1.05, s.run);
+    // Counter the arm swing and the body's lean, so the blade keeps its pitch.
+    const fore = -(o[HIX] + o[SPX] + o[CHX] + o[ARX] + o[FRX]);
+    const want = s.weaponLen >= 1.45 ? 2.55 : lerp(0.95, 1.5, s.run);
     o[WRX] = lerp(o[WRX], PI / 2 - want + fore, hold);
+    // A blade angles a little outward, clear of the legs (and in view from behind).
+    if (s.weaponLen < 1.45) o[WRY] -= 0.3 * s.run * hold;
   }
   // Keep elbows and knees bending the right way.
   o[FLX] = Math.min(o[FLX], 0.05);
@@ -2179,15 +2166,14 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
 const AIM_REST_P = poseOf(AIM_REST, NEUTRAL);
 const GUARD_LP = poseOf(GUARD_L, READY);
 const LEFT_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
-// Charging with a weapon ready. A sword or dagger is cocked high beside the
-// head, the shield (or free hand) thrust out in front. An axe or hammer is
-// carried in both hands low at the right hip, its head angled up over the
-// shoulder, the chest turned into it (a shield arm stays out in front).
+// Charging with a weapon ready. An axe or hammer is carried in both hands
+// low at the right hip, its head angled up over the shoulder, the chest
+// turned into it (a shield arm stays out in front, as CHARGE_BLADE's left).
 const CHARGE_BLADE = poseOf({ ...armR('CH_R'), ...armL('CH_L') });
 const CHARGE_HEAVY = poseOf({ [SPY]: -0.15, [CHY]: -0.3, ...armR('CH_HR'), ...armL('CH_HL') });
 // A spear is carried low and angled forward in both hands, ready to thrust.
 const CHARGE_SPEAR = poseOf({ [SPY]: -0.3, [CHY]: -0.3, ...armR('SPC_R'), ...armL('SPC_L') });
-/** How each weapon is carried at a run: 1 a blade cocked high, 2 a heavy weapon in both hands, 3 a spear levelled. */
+/** How each weapon is carried at a run: 1 a blade low at the hip, 2 a heavy weapon in both hands, 3 a spear levelled. */
 const CARRY: Record<string, number> = { sword: 1, dagger: 1, longsword: 1, knives: 1, axe: 2, hammer: 2, greatsword: 2, battleaxe: 2, spear: 3 };
 const REST_SHOULDER = [-1.9, 0.35];
 const CHARGE_ARMS = [ALX, ALY, ALZ, FLX, FLY, WLX, WLY, WLZ, ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
