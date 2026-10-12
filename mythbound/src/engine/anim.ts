@@ -6,6 +6,8 @@ export type AttackStyle =
   // Hero and humanoid weapon moves. slash/slash2/slash3 are a three-hit combo.
   | 'slash' | 'slash2' | 'slash3' | 'overhead' | 'thrust' | 'spin' | 'heavy'
   | 'cast' | 'bow' | 'throw' | 'roar'
+  // Two-handed backhand sweep; playing a lyre (a strum, a whole song) or a war horn.
+  | 'cleave' | 'strum' | 'song' | 'blow'
   // Monster and boss moves.
   | 'bite' | 'claw' | 'sting' | 'sweep' | 'charge' | 'slam' | 'leap' | 'stomp' | 'volley' | 'ring' | 'summon' | 'teleport' | 'strikes' | 'combo';
 

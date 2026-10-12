@@ -174,9 +174,11 @@ export interface Status {
   stun: number;
   fear: number;
   marked: number;
+  /** From a venom rune. */
+  poison: number;
 }
 
-export const newStatus = (): Status => ({ bleed: 0, burn: 0, wet: 0, slow: 0, root: 0, stun: 0, fear: 0, marked: 0 });
+export const newStatus = (): Status => ({ bleed: 0, burn: 0, wet: 0, slow: 0, root: 0, stun: 0, fear: 0, marked: 0, poison: 0 });
 export const STATUS_KEYS = Object.keys(newStatus()) as (keyof Status)[];
 
 const _v = new THREE.Vector3();
@@ -913,6 +915,7 @@ export class Enemy extends Actor {
     for (const k of STATUS_KEYS) s[k] = Math.max(0, s[k] - dt);
     if (s.bleed > 0) g.damageEnemy(this, Math.max(1.5, this.maxHp * 0.025) * dt, 'true', { dot: true });
     if (s.burn > 0) g.damageEnemy(this, 4 * dt * (this.affinity === 'fire' ? 0 : 1), 'fire', { dot: true });
+    if (s.poison > 0) g.damageEnemy(this, Math.max(2, this.maxHp * 0.01) * dt, 'true', { dot: true });
   }
 }
 
@@ -1037,6 +1040,7 @@ export class Boss extends Enemy {
     for (const k of STATUS_KEYS) this.status[k] = Math.max(0, this.status[k] - dt);
     if (this.status.bleed > 0) g.damageEnemy(this, 6 * dt, 'true', { dot: true });
     if (this.status.burn > 0 && this.affinity !== 'fire') g.damageEnemy(this, 6 * dt, 'fire', { dot: true });
+    if (this.status.poison > 0) g.damageEnemy(this, 6 * dt, 'true', { dot: true });
     this.checkPoise(dt, g);
 
     if (this.phase === 1 && this.hp < this.maxHp * 0.5) {

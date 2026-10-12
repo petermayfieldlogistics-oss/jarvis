@@ -13,7 +13,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const vec = (v: THREE.Vector3): V3 => [r2(v.x), r2(v.y), r2(v.z)];
 const num = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
 const str = (x: unknown) => (typeof x === 'string' ? x : '');
-const SOUNDS = new Set<Sfx>(['swing', 'hit', 'bow', 'draw', 'spell', 'holy', 'devil', 'roar', 'slam', 'windup', 'roll', 'pickup', 'levelup', 'death', 'drink', 'throw', 'hurt', 'block', 'victory']);
+const SOUNDS = new Set<Sfx>(['swing', 'hit', 'bow', 'draw', 'spell', 'holy', 'devil', 'roar', 'slam', 'windup', 'roll', 'pickup', 'levelup', 'death', 'drink', 'throw', 'hurt', 'block', 'victory', 'zap', 'rune', 'strum', 'song', 'horn']);
 
 export class SharedFx {
   private a = new THREE.Vector3();

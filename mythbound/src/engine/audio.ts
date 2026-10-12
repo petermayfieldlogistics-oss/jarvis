@@ -2,7 +2,8 @@
 
 export type Sfx =
   | 'swing' | 'hit' | 'bow' | 'draw' | 'spell' | 'holy' | 'devil' | 'roar' | 'slam' | 'windup' | 'roll'
-  | 'pickup' | 'levelup' | 'death' | 'drink' | 'throw' | 'hurt' | 'block' | 'victory';
+  | 'pickup' | 'levelup' | 'death' | 'drink' | 'throw' | 'hurt' | 'block' | 'victory'
+  | 'zap' | 'rune' | 'strum' | 'song' | 'horn';
 
 export class Audio {
   private ctx: AudioContext | null = null;
@@ -97,6 +98,12 @@ export class Audio {
       case 'death': return this.tone('sawtooth', 220, 40, 2.5, 0.25);
       case 'drink': return this.tone('sine', 400, 200, 0.3, 0.15);
       case 'hurt': return this.tone('square', 220, 110, 0.15, 0.15);
+      case 'zap': this.tone('sine', 900, 1800, 0.12, 0.12); return this.hiss(0.1, 3000, 2, 0.05);
+      case 'rune': this.tone('sine', 220, 110, 0.5, 0.15); [660, 990, 1320].forEach((f, i) => this.tone('triangle', f, f, 0.35, 0.08, i * 0.05)); return;
+      // A plucked G-major chord, low to high.
+      case 'strum': [196, 247, 294, 392, 494].forEach((f, i) => this.tone('triangle', f, f * 0.995, 0.7, 0.12, i * 0.035)); return;
+      case 'song': [392, 494, 587, 784, 587, 784, 988].forEach((f, i) => this.tone('triangle', f, f, 0.55, 0.11, i * 0.11)); return;
+      case 'horn': this.tone('sawtooth', 110, 104, 1.1, 0.12); this.tone('triangle', 165, 160, 1.1, 0.22); return this.hiss(0.9, 380, 1, 0.07, 'lowpass');
     }
   }
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SPELLS, WEAPONS, type ClassId, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
+import { RUNES, SPELLS, WEAPONS, type ClassId, type DamageElement, type RuneId, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
   dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, manaRegen, maxHp, maxMana, maxStamina, maxTamed, moveSpeed, rank,
   tameableKinds, weaponDamage, type Character,
@@ -9,6 +9,9 @@ import {
   hasBloodsteal, immuneToBleed, mainWeapon, newFury, onMeleeLanded, onMeleeMissed, powerShot, retribution, spellCost, spellPowerMultiplier, strikeDevilDeal,
   type FuryState,
 } from '../rules/combat';
+import {
+  KNIFE_VOLLEY, RUNE_EFFECT, RUNE_SEAL, RUNE_TRAP, SONG, SONGS, STORM_CHAIN, WAND, isOffhand, isTwoHanded, meleeReach, songOf, swingArc, type SongId,
+} from '../rules/weapons';
 import { buildShield, buildWeapon, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim, type AnimState, type AttackStyle } from './anim';
@@ -16,7 +19,8 @@ import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { Ally, Boss, Enemy } from './entities';
 import type { Game } from './game';
 
-type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar';
+// zap: a wand bolt; rune: a rune trap or seal; play: a lyre or war horn.
+type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar' | 'zap' | 'rune' | 'play';
 
 interface Attack {
   kind: AttackKind;
@@ -43,6 +47,10 @@ interface Attack {
   aim: number;
   /** Where the animation starts (a bow loose begins at the release). */
   anim0: number;
+  /** The heavy version of a zap, rune or play. */
+  big: boolean;
+  /** Knives thrown so far in a volley. */
+  shots: number;
 }
 
 /**
@@ -61,7 +69,18 @@ export const TIMING: Partial<Record<AttackStyle, { hit: number; from: number; to
   cast: { hit: 0.4, from: 0, to: 0.7, step: 0 },
   bow: { hit: 0, from: 0, to: 0, step: 0 },
   roar: { hit: 0.36, from: 0, to: 1, step: 0 },
+  cleave: { hit: 0.5, from: 0.4, to: 0.72, step: 0.5 },
+  slam: { hit: 0.62, from: 0.52, to: 0.72, step: 0.7 },
+  sweep: { hit: 0.55, from: 0.45, to: 0.74, step: 0.3 },
+  volley: { hit: 0.5, from: 0.4, to: 0.5, step: 0 },
+  summon: { hit: 0.55, from: 0, to: 0.8, step: 0 },
+  strum: { hit: 0.45, from: 0, to: 0.6, step: 0 },
+  song: { hit: 0.72, from: 0, to: 0.85, step: 0 },
+  blow: { hit: 0.42, from: 0, to: 0.8, step: 0 },
 };
+
+/** When each knife of a volley leaves the hand (the volley move's three throws). */
+const VOLLEY_AT = [0.5, 0.66, 0.82];
 
 /** The next light swing may follow this long after the last one ended. */
 const COMBO_WINDOW = 0.6;
@@ -73,6 +92,8 @@ const BACKSTEP = { time: 0.42, dist: 2.3, iFrom: 0.05, iTo: 0.26 };
 /** The part of the weapon that leaves a trail, along its local +Y from the grip: [start, tip]. */
 export const BLADE: Record<WeaponKind, [number, number]> = {
   sword: [0.55, 1.2], axe: [0.6, 1.0], hammer: [0.8, 1.2], dagger: [0.2, 0.5], trident: [1.35, 2.0], staff: [1.1, 1.6], bolt: [0.4, 1.0], bow: [0, 0],
+  greatsword: [0.75, 1.8], longsword: [0.6, 1.34], spear: [1.3, 1.82], battleaxe: [0.72, 1.14], knives: [0.08, 0.27], wand: [0.3, 0.45],
+  runecircle: [0, 0], lyre: [0, 0], horn: [0, 0],
 };
 
 export const ELEMENT_COLOR: Record<DamageElement, number> = {
@@ -89,10 +110,22 @@ const smooth01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
 /** The light combo for each weapon: three steps, the last a finisher. */
 function lightStyle(kind: WeaponKind, step: number): AttackStyle {
-  if (kind === 'dagger') return step === 1 ? 'slash2' : 'thrust';
+  if (kind === 'dagger' || kind === 'knives') return step === 1 ? 'slash2' : 'thrust';
   if (kind === 'trident') return step === 2 ? 'slash3' : 'thrust';
+  // Jab, jab, lunge.
+  if (kind === 'spear') return 'thrust';
+  // Big two-handed sweeps one way, then back, then down.
+  if (kind === 'greatsword' || kind === 'battleaxe') return step === 0 ? 'heavy' : step === 1 ? 'cleave' : 'overhead';
   if (step === 2) return kind === 'axe' || kind === 'hammer' ? 'overhead' : 'slash3';
   return step === 1 ? 'slash2' : 'slash';
+}
+
+/** The heavy blow for each weapon (warrior subclasses may replace it). */
+function heavyStyle(kind: WeaponKind): AttackStyle {
+  if (kind === 'axe' || kind === 'hammer') return 'overhead';
+  if (kind === 'greatsword') return 'slam';
+  if (kind === 'spear') return 'sweep';
+  return 'heavy';
 }
 
 export class Player {
@@ -147,6 +180,9 @@ export class Player {
   thunderCd = 0;
   waterHurt = 0;
   drown = 0;
+  /** A song from a lyre or war horn (this hero's or a friend's) and its seconds left. */
+  song: SongId | null = null;
+  songLeft = 0;
   rig: Rig;
   anim = newAnim();
   boat: THREE.Object3D | null = null;
@@ -162,6 +198,7 @@ export class Player {
   private lastKind: AttackKind | null = null;
   private rageAura: { stop(): void } | null = null;
   private shotAura: { stop(): void } | null = null;
+  private songAura: { stop(): void } | null = null;
   private tv = new THREE.Vector3();
   private tv2 = new THREE.Vector3();
 
@@ -233,7 +270,8 @@ export class Player {
       old.removeFromParent();
       disposeObject(old);
     }
-    const gear = attachGear(this.rig, this.c.classId, mainWeapon(this.c).id);
+    const w = mainWeapon(this.c);
+    const gear = attachGear(this.rig, this.c.classId, w.id, w.rune);
     this.weaponMesh = gear.weapon;
     this.shieldMesh = gear.shield;
   }
@@ -286,6 +324,11 @@ export class Player {
     this.stoneSkin = Math.max(0, this.stoneSkin - dt);
     this.aegis = Math.max(0, this.aegis - dt);
     this.moonveil = Math.max(0, this.moonveil - dt);
+    if (this.song) {
+      this.songLeft -= dt;
+      this.heal(SONGS[this.song].regen * dt);
+      if (this.songLeft <= 0) this.song = null;
+    }
     if (this.fury.bloodrageActive && this.now > this.bloodrageUntil) {
       this.fury.bloodrageActive = false;
       this.fury.stacks = 0;
@@ -336,7 +379,7 @@ export class Player {
     let wantZ = fz * my + fx * mx;
     const wantLen = Math.hypot(wantX, wantZ);
     const sprint = input.held.has('sprint') && wantLen > 0.1 && !this.exhausted && this.stamina > 0 && !this.swimming && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack;
-    let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1);
+    let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1) * (this.song ? SONGS[this.song].speed : 1);
     if (this.blocking || this.drawing > 0) speed *= 0.45;
     const atk = this.attack;
     if (atk && atk.kind !== 'cast') speed *= atk.kind === 'roar' ? 0 : atk.t < atk.chainAt ? 0.2 : 0.45;
@@ -593,6 +636,12 @@ export class Player {
       this.rageAura.stop();
       this.rageAura = null;
     }
+    const song = this.alive && !!this.song;
+    if (song && !this.songAura) this.songAura = g.fx.aura(this.rig.root, SONGS[this.song!].color, Infinity);
+    else if (!song && this.songAura) {
+      this.songAura.stop();
+      this.songAura = null;
+    }
     const shot = this.alive && this.powerShotArmed;
     if (shot && !this.shotAura) this.shotAura = g.fx.aura(this.rig.root, 0xffd060, Infinity);
     else if (!shot && this.shotAura) {
@@ -654,6 +703,36 @@ export class Player {
 
     if (kind === 'bolt') {
       this.startAttack('throw', 'throw', 0.75);
+    } else if (kind === 'knives' && this.c.knives > 0) {
+      // Quick throws; a heavy looses a fan of three in quick succession.
+      if (heavy && this.c.knives > 1) {
+        this.spend(16);
+        this.startAttack('throw', 'volley', 0.95, { step: 0 });
+      } else {
+        this.spend(6);
+        this.startAttack('throw', 'throw', 0.5, { step: 0 });
+      }
+    } else if (kind === 'wand' || kind === 'runecircle') {
+      const wand = kind === 'wand';
+      const cost = wand ? (heavy ? WAND.heavyMana : WAND.mana) : heavy ? RUNE_SEAL.mana : RUNE_TRAP.mana;
+      if (this.mana < cost && !this.soulOrPower) {
+        g.hud.toast('Not enough mana.');
+        return;
+      }
+      if (!this.soulOrPower) this.mana -= cost;
+      if (wand) this.startAttack('zap', heavy ? 'cast' : 'thrust', heavy ? 0.7 : 0.4, { big: heavy, step: 0 });
+      else this.startAttack('rune', heavy ? 'summon' : 'cast', heavy ? 1.0 : 0.7, { big: heavy, step: 0 });
+    } else if (kind === 'lyre' || kind === 'horn') {
+      // The heavy plays a song for everyone near; it needs a breath between songs.
+      let song = heavy;
+      if (song && !this.ready('song')) {
+        g.hud.toast(`Your next song is ready in ${Math.ceil(this.cooldownLeft('song'))}s.`);
+        song = false;
+      }
+      const w = WEAPONS[mainWeapon(this.c).id];
+      this.spend(song ? 20 : 10);
+      const style = kind === 'horn' ? 'blow' : song ? 'song' : 'strum';
+      this.startAttack('play', style, (song ? 1.5 : 0.7) / Math.sqrt(w.speed), { big: song, step: 0 });
     } else {
       const w = WEAPONS[mainWeapon(this.c).id];
       const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
@@ -673,9 +752,12 @@ export class Player {
           g.hud.toast('Spinner Flourish!', 'skill');
         } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
           this.startAttack('throw', 'throw', 0.7);
+        } else if (kind === 'battleaxe') {
+          // The battle axe whirls all the way round.
+          this.startAttack('spin', 'spin', dur * 1.35);
         } else {
           // A lunge carries the heavy blow several steps forward.
-          this.startAttack('heavy', kind === 'axe' || kind === 'hammer' ? 'overhead' : 'heavy', dur * 1.6, { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
+          this.startAttack('heavy', heavyStyle(kind), dur * 1.6, { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
         }
       }
     }
@@ -705,7 +787,7 @@ export class Player {
     return best;
   }
 
-  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number } = {}) {
+  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number; big?: boolean } = {}) {
     const tm = TIMING[style] ?? TIMING.slash!;
     if (this.attack) this.finishAttack();
     const fixed = kind === 'roar';
@@ -727,6 +809,8 @@ export class Player {
       finisher: !!o.finisher,
       aim: this.yaw,
       anim0: kind === 'bow' ? 0.62 : 0,
+      big: !!o.big,
+      shots: 0,
     };
     this.crouching = this.crouching && this.c.roleId === 'assassin';
   }
@@ -742,6 +826,14 @@ export class Player {
   private updateAttack(dt: number, g: Game) {
     const a = this.attack!;
     a.t += dt;
+    if (a.style === 'volley') {
+      // Each knife of the fan leaves the hand on its own throw.
+      while (a.shots < KNIFE_VOLLEY && a.t >= VOLLEY_AT[a.shots] * a.duration) {
+        this.throwKnife(g, (a.shots - 1) * 0.12);
+        a.shots++;
+      }
+      a.done = a.shots > 0;
+    }
     if (!a.done && a.t >= a.hitAt) {
       a.done = true;
       if (a.kind === 'light' || a.kind === 'heavy' || a.kind === 'spin') {
@@ -756,6 +848,12 @@ export class Player {
         this.throwWeapon(g);
       } else if (a.kind === 'roar') {
         this.roarFx(g);
+      } else if (a.kind === 'zap') {
+        this.wandBolt(g, a.big);
+      } else if (a.kind === 'rune') {
+        this.drawRune(g, a.big);
+      } else if (a.kind === 'play') {
+        this.play(g, a.big);
       }
       if (a.landed && this.c.subclassId === 'axeman' && a.kind === 'heavy' && !this.grounded && rank(this.c, 'earthsplitter')) {
         g.sfx.ring(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 5, 0xc8a070);
@@ -786,8 +884,9 @@ export class Player {
   private meleeHit(g: Game, a: Attack): boolean {
     const w = mainWeapon(this.c);
     const def = WEAPONS[w.id];
-    const reach = def.range + (a.kind === 'spin' ? 0.8 + 0.3 * rank(this.c, 'wide-flourish') * def.range : 0);
-    const arc = a.kind === 'spin' ? -1.01 : rank(this.c, 'cleave') ? -0.2 : 0.25;
+    const range = meleeReach(def);
+    const reach = range + (a.kind === 'spin' ? 0.8 + 0.3 * rank(this.c, 'wide-flourish') * range : 0);
+    const arc = swingArc(def.kind, a.kind === 'spin' ? 'spin' : a.kind === 'heavy' ? 'heavy' : 'light', rank(this.c, 'cleave') > 0);
     let base = weaponDamage(w) * (a.kind === 'heavy' ? 1.8 : a.kind === 'spin' ? 1.3 * (1 + 0.2 * rank(this.c, 'wide-flourish')) : 1);
     if (a.finisher && a.kind === 'light') base *= 1.35;
     let landed = false;
@@ -805,6 +904,7 @@ export class Player {
       if (e.bleeds && Math.random() < bleedChance(this.c)) e.status.bleed = 4;
       if (def.legendary === 'hammer-of-hephaestus' || def.legendary === 'sword-of-mars') e.status.burn = 3;
       if (def.element !== 'physical') g.sfx.impact(e.center(this.tv), ELEMENT_COLOR[def.element], 0.7);
+      if (w.rune) this.applyRune(g, e, base, w.rune);
     }
     if (landed) {
       // Hit-stop and shake scaled to the blow.
@@ -827,7 +927,7 @@ export class Player {
       g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.12, this.pos.z), reach + 0.8, this.trailColor(), 0.32);
       return;
     }
-    if ((a.kind !== 'heavy' && !a.finisher) || !this.weaponMesh) return;
+    if ((a.kind !== 'heavy' && !a.finisher) || !this.weaponMesh || !BLADE[this.weaponKind][1]) return;
     // A blade driven into the ground kicks up dirt.
     this.weaponMesh.updateWorldMatrix(true, false);
     const tip = this.weaponMesh.localToWorld(this.tv.set(0, BLADE[this.weaponKind][1], 0));
@@ -837,6 +937,12 @@ export class Player {
       g.sfx.dust(tip, a.kind === 'heavy' ? 14 : 8);
       g.sfx.impact(tip.setY(tip.y + 0.15), 0xffd8a0, a.kind === 'heavy' ? 0.5 : 0.3);
       if (a.kind === 'heavy') g.shake(0.18);
+      // A greatsword's slam sends a shock along the ground.
+      if (a.style === 'slam') {
+        g.sfx.shockwave(tip, 4, this.trailColor(), 0.4);
+        g.sfx.dust(tip, 10);
+        g.shake(0.25);
+      }
     }
   }
 
@@ -853,7 +959,9 @@ export class Player {
 
   private trailColor(): number {
     if (this.fury.bloodrageActive) return RAGE_RED;
-    const def = WEAPONS[mainWeapon(this.c).id];
+    const w = mainWeapon(this.c);
+    if (w.rune) return RUNES[w.rune].color;
+    const def = WEAPONS[w.id];
     return def.element === 'physical' && def.legendary ? 0xffd27a : ELEMENT_COLOR[def.element];
   }
 
@@ -866,6 +974,7 @@ export class Player {
     if (kind === 'bow') return;
     if (a.t < a.from - 0.04 * a.duration || a.t > (a.kind === 'throw' ? a.hitAt : a.to)) return;
     const [b0, b1] = BLADE[kind];
+    if (!b1) return;
     w.updateWorldMatrix(true, false);
     const base = w.localToWorld(this.tv.set(0, b0, 0));
     const tip = w.localToWorld(this.tv2.set(0, b1, 0));
@@ -895,7 +1004,7 @@ export class Player {
     const artemis = def.legendary === 'bow-of-artemis';
     const pierce = (rank(this.c, 'piercing-shot') ? 1 : 0) + (artemis ? 2 : 0);
     const shoot = (dest: THREE.Vector3) =>
-      g.spawnProjectile({ from, to: dest, speed: 50 + 30 * draw, kind: 'arrow', owner: 'player', damage: base, element: def.element, gravity: 9 * (1.2 - draw), draw, pierce, powerShot: ps ?? undefined, source: null });
+      g.spawnProjectile({ from, to: dest, speed: 50 + 30 * draw, kind: 'arrow', owner: 'player', damage: base, element: def.element, gravity: 9 * (1.2 - draw), draw, pierce, powerShot: ps ?? undefined, source: null, rune: w.rune });
     shoot(to);
     if (draw >= 1 && rank(this.c, 'volley')) {
       for (const s of [-0.08, 0.08]) shoot(to.clone().sub(from).applyAxisAngle(UP, s).add(from));
@@ -906,6 +1015,7 @@ export class Player {
   private throwWeapon(g: Game) {
     const w = mainWeapon(this.c);
     const def = WEAPONS[w.id];
+    if (def.kind === 'knives') return this.throwKnife(g, 0);
     const from = this.center().add(new THREE.Vector3(0, 0.6, 0));
     const to = g.aimPoint(def.kind === 'bolt' ? 60 : 30);
     if (def.kind === 'bolt') {
@@ -916,9 +1026,165 @@ export class Player {
         g.hud.toast('The Master Bolt bites your hand.', 'warn');
       }
     } else {
-      g.spawnProjectile({ from, to, speed: 30, kind: 'axe', owner: 'player', damage: weaponDamage(w) * 1.4, element: 'physical', gravity: 4, source: null });
+      g.spawnProjectile({ from, to, speed: 30, kind: 'axe', owner: 'player', damage: weaponDamage(w) * 1.4, element: 'physical', gravity: 4, source: null, rune: w.rune });
     }
     g.audio.play('throw');
+  }
+
+  /** One throwing knife, `turn` radians off the aim (a volley fans out). */
+  private throwKnife(g: Game, turn: number) {
+    const c = this.c;
+    if (c.knives <= 0) return;
+    c.knives--;
+    const w = mainWeapon(c);
+    const from = this.center().add(this.tv.set(Math.sin(this.yaw) * 0.4, 0.45, Math.cos(this.yaw) * 0.4));
+    const to = g.aimPoint(WEAPONS[w.id].range);
+    if (turn) to.sub(from).applyAxisAngle(UP, turn).add(from);
+    g.spawnProjectile({ from, to, speed: 46, kind: 'knife', owner: 'player', damage: weaponDamage(w), element: 'physical', gravity: 5, source: null, rune: w.rune });
+    g.audio.play('throw');
+    if (c.knives === 0) g.hud.toast('Out of knives! Pick them up, or rest at a shrine.', 'warn');
+  }
+
+  /** A wand's bolt: quick and cheap, or (heavy) a bolt that bursts. */
+  private wandBolt(g: Game, big: boolean) {
+    const w = mainWeapon(this.c);
+    const fx = w.rune ? RUNE_EFFECT[w.rune] : null;
+    const element: DamageElement = fx ? fx.element : 'physical';
+    const color = w.rune ? RUNES[w.rune].color : 0xb070ff;
+    const power = weaponDamage(w) * spellPowerMultiplier(this.c, element) * this.songDamage() * (big ? 2.2 : 1);
+    const tip = this.weaponTip(this.tv2);
+    const from = tip ?? this.center().add(this.tv.set(Math.sin(this.yaw) * 0.6, 0.4, Math.cos(this.yaw) * 0.6));
+    g.spawnProjectile({ from: from.clone(), to: g.aimPoint(WEAPONS[w.id].range), speed: big ? 38 : 60, kind: 'wand', owner: 'player', damage: power, element, gravity: 0, source: null, explode: big ? 2.6 : undefined, rune: w.rune, color });
+    g.sfx.emit(from, { color, count: big ? 14 : 6, speed: 2, life: 0.3, size: 0.3 });
+    g.audio.play(big ? 'spell' : 'zap');
+  }
+
+  /** The rune circle: a trap drawn where the hero aims, or (heavy) a binding seal all around. */
+  private drawRune(g: Game, big: boolean) {
+    const w = mainWeapon(this.c);
+    const fx = w.rune ? RUNE_EFFECT[w.rune] : null;
+    const element: DamageElement = fx ? fx.element : 'physical';
+    const color = w.rune ? RUNES[w.rune].color : 0x46f0c8;
+    const power = weaponDamage(w) * spellPowerMultiplier(this.c, element) * this.songDamage();
+    if (big) {
+      g.armory.addTrap(g, { x: this.pos.x, z: this.pos.z, radius: RUNE_SEAL.radius, seconds: RUNE_SEAL.seconds, damage: power * 0.25, element, color, slow: 0, root: RUNE_SEAL.root, rune: w.rune });
+      // It snaps shut on everything inside at once.
+      for (const e of g.enemies) {
+        if (!e.alive || e.pos.distanceTo(this.pos) > RUNE_SEAL.radius + e.radius) continue;
+        g.damageEnemy(e, power * 1.2, element, { source: 'spell' });
+        e.status.root = Math.max(e.status.root, RUNE_SEAL.root);
+      }
+      g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.15, this.pos.z), RUNE_SEAL.radius, color, 0.45);
+      g.sfx.flash(this.center(this.tv), color, 16, 10);
+      g.shake(0.15);
+    } else {
+      // Drawn on the ground where the hero aims, no farther than the circle reaches.
+      const at = g.aimPoint(WEAPONS[w.id].range);
+      const dx = at.x - this.pos.x, dz = at.z - this.pos.z;
+      const d = Math.hypot(dx, dz);
+      const k = d > WEAPONS[w.id].range ? WEAPONS[w.id].range / d : 1;
+      g.armory.addTrap(g, { x: this.pos.x + dx * k, z: this.pos.z + dz * k, radius: RUNE_TRAP.radius, seconds: RUNE_TRAP.seconds, damage: power * 0.35, element, color, slow: RUNE_TRAP.slow, root: 0, rune: w.rune });
+    }
+    g.sfx.sound('rune', this.pos);
+  }
+
+  /** A lyre's chord or a war horn's blast at the foes in front; the heavy plays a song for everyone near. */
+  private play(g: Game, song: boolean) {
+    const w = mainWeapon(this.c);
+    const def = WEAPONS[w.id];
+    const horn = def.kind === 'horn';
+    const at = this.center(this.tv2);
+    const fwdX = Math.sin(this.yaw), fwdZ = Math.cos(this.yaw);
+    const color = w.rune ? RUNES[w.rune].color : horn ? 0xffb070 : 0xffe08a;
+    if (song) {
+      const id = songOf(def.kind)!;
+      const sd = SONGS[id];
+      this.cooldowns.set('song', this.now + SONG.cooldown);
+      this.applySong(g, id);
+      g.coop.shareSong(id, this.pos);
+      for (const e of g.enemies) {
+        if (!e.alive || e.pos.distanceTo(this.pos) > SONG.foeRadius + e.radius) continue;
+        e.status[sd.foe] = Math.max(e.status[sd.foe], sd.foeSeconds);
+        g.damageEnemy(e, weaponDamage(w) * 0.6 * this.songDamage(), 'physical', { source: 'player' });
+        if (w.rune) this.applyRune(g, e, weaponDamage(w), w.rune);
+      }
+      g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.15, this.pos.z), SONG.radius, sd.color, 0.7);
+      g.sfx.shockwave(this.tv, SONG.foeRadius, color, 0.45);
+      g.sfx.emit(at, { color: sd.color, count: 40, speed: 5, life: 1, size: 0.45, up: 2, drag: 1.5 });
+      g.sfx.flash(at, sd.color, 20, 14);
+      g.sfx.damageNumber(this.tv.set(this.pos.x, this.pos.y + 2.4, this.pos.z), horn ? 'WAR CRY!' : '♪ ♫ ♪', 'song');
+      g.sfx.sound(horn ? 'horn' : 'song', this.pos, 80);
+      g.hud.toast(`${sd.name}!`, 'skill');
+      g.shake(0.2);
+      return;
+    }
+    // Ripples of sound roll out ahead; foes caught in them are dazed (lyre) or flee (horn).
+    const range = def.range;
+    let landed = false;
+    for (const e of g.enemies) {
+      if (!e.alive || Math.abs(e.pos.y - this.pos.y) > 3 + e.height) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > range + e.radius || (dx * fwdX + dz * fwdZ) / (d || 1) < 0.35) continue;
+      g.hitEnemyWithWeapon(e, weaponDamage(w) * (1.2 - 0.5 * (d / range)), 'melee', def.element, { fury: this.fury });
+      if (horn) e.status.fear = Math.max(e.status.fear, 2.5);
+      else e.status.stun = Math.max(e.status.stun, 0.9);
+      if (w.rune) this.applyRune(g, e, weaponDamage(w), w.rune);
+      landed = true;
+    }
+    for (let i = 1; i <= 3; i++) {
+      const d = i * range * 0.28;
+      g.sfx.shockwave(this.tv.set(this.pos.x + fwdX * d, this.pos.y + 0.9, this.pos.z + fwdZ * d), 0.6 + i * 0.55, color, 0.25 + i * 0.08);
+    }
+    g.sfx.emit(at.addScaledVector(this.tv.set(fwdX, 0, fwdZ), 0.6), { color, count: 16, speed: 3, life: 0.7, size: 0.35, up: 1, drift: this.tv.set(fwdX * 5, 0.6, fwdZ * 5) });
+    if (!horn) g.sfx.damageNumber(at.setY(at.y + 0.9), '♪ ♫', 'song');
+    g.sfx.sound(horn ? 'horn' : 'strum', this.pos);
+    if (landed) {
+      g.hitStop(0.05);
+      g.shake(0.12);
+    }
+  }
+
+  /** A song takes hold: harder blows (and more) for its length. */
+  applySong(g: Game, id: SongId, from?: string) {
+    const sd = SONGS[id];
+    this.song = id;
+    this.songLeft = SONG.seconds;
+    if (from) g.hud.toast(`${from} plays the ${sd.name}! You strike harder${sd.speed > 1 ? ' and run faster' : ''}.`, 'skill');
+  }
+
+  /** Damage multiplier from a song. */
+  songDamage() {
+    return this.song ? SONGS[this.song].damage : 1;
+  }
+
+  /** A runed weapon's hit: burn, frost, poison, or lightning leaping to foes nearby. */
+  applyRune(g: Game, e: Enemy, base: number, rune: RuneId) {
+    const fx = RUNE_EFFECT[rune];
+    const color = RUNES[rune].color;
+    if (fx.status) e.status[fx.status] = Math.max(e.status[fx.status], fx.seconds);
+    if (fx.chain) {
+      const from = e.center();
+      let n = 0;
+      for (const o of g.enemies) {
+        if (n >= fx.chain) break;
+        if (o === e || !o.alive || o.pos.distanceTo(e.pos) > STORM_CHAIN.range) continue;
+        g.sfx.lightning(from, o.center(this.tv), color);
+        g.damageEnemy(o, base * STORM_CHAIN.share, 'lightning', { source: 'player' });
+        o.status.stun = Math.max(o.status.stun, 0.3);
+        n++;
+      }
+    }
+    g.fx.impact(e.center(this.tv), color, 0.5);
+  }
+
+  /** Where the main weapon's tip is in the world (null when nothing is in hand). */
+  private weaponTip(out: THREE.Vector3): THREE.Vector3 | null {
+    const m = this.weaponMesh;
+    const tip = BLADE[this.weaponKind][1];
+    if (!m || !tip) return null;
+    m.updateWorldMatrix(true, false);
+    return m.localToWorld(out.set(0, tip, 0));
   }
 
   // --------------------------------------------------------------- ability --
@@ -1422,14 +1688,17 @@ function rotateTowards(from: number, to: number, dt: number, rate: number, maxSp
   return from + turn;
 }
 
-/** Puts a weapon in the right hand (a bow in the left) and, for a warrior, a shield on the arm. */
-export function attachGear(rig: Rig, classId: ClassId, weaponId: string): { weapon: THREE.Object3D; shield: THREE.Object3D | null } {
+/**
+ * Puts a weapon in the right hand (a bow, lyre or rune circle in the left)
+ * and, for a warrior with a hand free, a shield on the arm.
+ */
+export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: RuneId): { weapon: THREE.Object3D; shield: THREE.Object3D | null } {
   const w = WEAPONS[weaponId];
-  const weapon = compact(buildWeapon(w.kind, !!w.legendary));
-  if (w.kind === 'bow') rig.handL.add(weapon);
+  const weapon = compact(buildWeapon(w.kind, !!w.legendary, rune));
+  if (isOffhand(w.kind)) rig.handL.add(weapon);
   else rig.handR.add(weapon);
   let shield: THREE.Object3D | null = null;
-  if (classId === 'warrior' && w.kind !== 'bow') {
+  if (classId === 'warrior' && !isOffhand(w.kind) && !isTwoHanded(w.kind)) {
     shield = buildShield();
     shield.position.set(-0.08, 0, 0.1);
     shield.rotation.y = -Math.PI / 2;

@@ -1,5 +1,6 @@
 // World progress and saving.
 
+import { RUNES } from '../data/defs';
 import { QUESTS, type QuestId } from '../data/world';
 import type { Character } from '../rules/character';
 
@@ -70,6 +71,10 @@ export function normalizeSave(data: SaveData): SaveData {
   data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
+  // Throwing knives and runes came later.
+  const c = data.character;
+  if (typeof c.knives !== 'number') c.knives = 0;
+  for (const w of c.weapons) if (w.rune !== undefined && !Object.hasOwn(RUNES, w.rune)) delete w.rune;
   return data;
 }
 

@@ -1,7 +1,7 @@
 // The world of Mythbound: zones, places, people, monsters and stories.
 // Coordinates are world units; north is -z.
 
-import { ANCIENT_GLYPH, type CreatureKind, type SpellId } from './defs';
+import { ANCIENT_GLYPH, RUNES, runeItem, type CreatureKind, type SpellId } from './defs';
 
 export const WORLD_HALF = 450;
 
@@ -440,4 +440,6 @@ export const ITEMS: Record<string, { name: string; description: string; heal?: n
   'golden-fish': { name: 'Golden Fish', description: 'Restores 90 HP.', heal: 90 },
   'ember-ore': { name: 'Ember Ore', description: 'Glowing ore from Molten Peak. Used to upgrade weapons.' },
   'free-upgrade': { name: "Brann's Token", description: 'One free weapon upgrade at any anvil.' },
+  // Uninscribed runes, waiting for an anvil.
+  ...Object.fromEntries(Object.values(RUNES).map((r) => [runeItem(r.id), { name: r.name, description: `${r.description} Inscribe it on a weapon at an anvil.` }])),
 };

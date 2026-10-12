@@ -1,9 +1,10 @@
 // Conversations and everything the hero can interact with.
 
-import { ANCIENT_GLYPH, CLASSES, RACES, ROLES, SPELLS, WEAPONS, type SpellId } from '../data/defs';
+import { ANCIENT_GLYPH, CLASSES, RACES, ROLES, RUNES, SPELLS, WEAPONS, type RuneId, type ShopId, type SpellId } from '../data/defs';
 import { BOSSES, ITEMS, LORE, PAGES, QUESTS, SHRINES, TOMES, TRIALS, type QuestId } from '../data/world';
 import { canLearnSpell, dracoFlightHours, learnSpell, MAX_WEAPON_LEVEL, upgradeCost } from '../rules/character';
 import { canWield, isLightSealed } from '../rules/combat';
+import { MAX_KNIVES, buyRune, buyWeapon, canBearRune, inscribe, ownsKnives, refillKnives, runesHeld, shopStock } from '../rules/weapons';
 import type { DialogOption, DialogSpec } from '../ui/dialog';
 import type { Game } from './game';
 import type { Interactable } from './world';
@@ -212,6 +213,7 @@ export class Story {
             : "Need an edge? I can improve your weapons, for embers and Ember Ore. A blacksmith would do it for half, mind.",
           options: opts([
             { label: 'Upgrade my weapons', action: () => this.forge(true) },
+            { label: 'Show me your steel (buy weapons and runes)', action: () => this.shop('brann') },
             this.questOption('ore', 'Need anything?', 'Here is your Ember Ore.', 'Ember Ore'),
           ]),
         });
@@ -246,6 +248,7 @@ export class Story {
           subtitle: 'Merchant',
           text: `Embers for goods, goods for embers. You have ${c.gold} embers.`,
           options: opts([
+            { label: 'Any curios? (wands, runes, instruments)', action: () => this.shop('quill') },
             this.buy('20 arrows', 30, () => (c.arrows.wood += 20)),
             this.buy('2 fish', 25, () => (c.items.fish = (c.items.fish ?? 0) + 2)),
             c.flasksMax < 6 ? this.buy(`Flask upgrade (+1 flask, now ${c.flasksMax})`, flaskCost, () => (c.flasksMax++, (c.flasks = c.flasksMax))) : null,
@@ -339,6 +342,7 @@ export class Story {
     p.mana = p.maxMana;
     p.refillStamina();
     p.c.flasks = p.c.flasksMax;
+    refillKnives(p.c);
     if (p.soulOrPower) {
       p.soulOrPower = false;
       g.hud.toast('Your soul is your own again. What you lost stays lost.');
@@ -456,6 +460,7 @@ export class Story {
         },
       };
     });
+    if (runesHeld(c).length) options.push({ label: 'Inscribe a rune on a weapon', action: () => this.inscribeWhich(npc) });
     options.push({ label: 'Done' });
     this.open({
       title: npc ? "Brann's Forge" : 'Anvil',
@@ -463,6 +468,123 @@ export class Story {
       text: `Embers: ${c.gold}   Ember Ore: ${c.items['ember-ore'] ?? 0}`,
       options,
     });
+  }
+
+  /** Brann's steel (and runes) or Quill's curios. */
+  private shop(id: ShopId) {
+    const c = this.c;
+    const g = this.g;
+    const options: DialogOption[] = shopStock(id).map((w) => {
+      const owned = c.weapons.some((x) => x.id === w.id);
+      const check = canWield(c, w.id);
+      return {
+        label: owned ? `${w.name} (yours)` : `${w.name}: ${w.price} embers${check.ok ? '' : ' (not for your class)'}`,
+        disabled: owned,
+        action: () => this.offer(id, w.id),
+      };
+    });
+    if (id === 'brann') {
+      for (const r of Object.values(RUNES)) {
+        options.push({
+          label: `${r.name}: ${r.price} embers (${r.description.toLowerCase().replace(/\.$/, '')})`,
+          disabled: c.gold < r.price,
+          action: () => {
+            if (buyRune(c, r.id)) {
+              g.audio.play('pickup');
+              g.hud.toast(`${r.name} bought. Inscribe it on a weapon at an anvil.`);
+            }
+            this.shop(id);
+          },
+        });
+      }
+      if (ownsKnives(c) && c.knives < MAX_KNIVES) {
+        options.push({
+          label: `Refill your throwing knives (25 embers)`,
+          disabled: c.gold < 25,
+          action: () => ((c.gold -= 25), (c.knives = MAX_KNIVES), g.audio.play('pickup'), this.shop(id)),
+        });
+      }
+    }
+    options.push({ label: 'Back', action: () => this.talk(id) });
+    this.open({
+      title: id === 'brann' ? "Brann's Steel" : "Quill's Curios",
+      subtitle: `You have ${c.gold} embers`,
+      text: id === 'brann'
+        ? 'Greatswords, spears, axes for two hands, knives for throwing. And runes: carve one into a blade at the anvil and it bites with fire, frost, storm or venom.'
+        : 'Odd things from far roads. A wand for a mage, a ring of runes, and music: a lyre to lift your friends, a horn to scatter your foes.',
+      options,
+    });
+  }
+
+  private offer(shop: ShopId, id: string) {
+    const c = this.c;
+    const g = this.g;
+    const w = WEAPONS[id];
+    const check = canWield(c, id);
+    this.open({
+      title: w.name,
+      subtitle: `${w.price} embers · ${w.damage} damage`,
+      text: `${w.description ?? ''}${check.ok ? '' : `\n\n${check.reason}`}`,
+      options: [
+        {
+          label: `Buy it (${w.price} embers)`,
+          disabled: c.gold < (w.price ?? 0),
+          action: () => {
+            const err = buyWeapon(c, id);
+            if (err) return g.hud.toast(err, 'warn');
+            g.audio.play('pickup');
+            g.save();
+            this.open({
+              title: w.name,
+              subtitle: 'Bought',
+              text: check.ok ? 'It is yours. Wield it now?' : 'It is yours, though it will not answer to you. It rests in your pack.',
+              options: check.ok
+                ? [{ label: 'Wield it', action: () => ((c.mainHand = c.weapons.length - 1), g.player.equip()) }, { label: 'Keep shopping', action: () => this.shop(shop) }]
+                : [{ label: 'Keep shopping', action: () => this.shop(shop) }],
+            });
+          },
+        },
+        { label: 'Back', action: () => this.shop(shop) },
+      ],
+    });
+  }
+
+  /** At an anvil: which weapon takes the rune… */
+  private inscribeWhich(npc: boolean) {
+    const c = this.c;
+    const options: DialogOption[] = c.weapons.map((w, i) => {
+      const def = WEAPONS[w.id];
+      return {
+        label: `${def.name}${w.rune ? ` (bears the ${RUNES[w.rune].name})` : ''}`,
+        disabled: !canBearRune(w.id),
+        action: () => this.inscribeWith(npc, i),
+      };
+    });
+    options.push({ label: 'Back', action: () => this.forge(npc) });
+    this.open({ title: 'Inscribe a rune', subtitle: 'Choose a weapon', text: 'A rune carved into a weapon glows on it and adds its power to every hit. A rune already there comes back to your pack. Legendary weapons will not take one.', options });
+  }
+
+  /** …and which rune. */
+  private inscribeWith(npc: boolean, index: number) {
+    const c = this.c;
+    const g = this.g;
+    const w = c.weapons[index];
+    const options: DialogOption[] = runesHeld(c).map(([id, n]) => ({
+      label: `${RUNES[id].name} ×${n}: ${RUNES[id].description}`,
+      disabled: w.rune === id,
+      action: () => {
+        if (!inscribe(c, index, id as RuneId)) return;
+        if (index === c.mainHand) g.player.equip();
+        g.audio.play('slam');
+        g.audio.play('rune');
+        g.fx.emit(g.player.center(), { color: RUNES[id].color, count: 40, speed: 5, life: 0.6 });
+        g.hud.toast(`The ${WEAPONS[w.id].name} now bears the ${RUNES[id].name}.`, 'skill');
+        g.save();
+        this.forge(npc);
+      },
+    }));
+    options.push({ label: 'Back', action: () => this.inscribeWhich(npc) });
+    this.open({ title: WEAPONS[w.id].name, subtitle: 'Choose a rune', text: 'Fire burns, frost slows, storm leaps to foes nearby, venom poisons.', options });
   }
 
   private async fish() {

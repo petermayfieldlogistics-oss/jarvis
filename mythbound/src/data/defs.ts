@@ -237,9 +237,14 @@ export const ROLES: Record<RoleId, RoleDef> = {
 
 // ---------------------------------------------------------------- weapons --
 
-export type WeaponKind = 'sword' | 'axe' | 'bow' | 'staff' | 'dagger' | 'hammer' | 'trident' | 'bolt';
+export type WeaponKind =
+  | 'sword' | 'axe' | 'bow' | 'staff' | 'dagger' | 'hammer' | 'trident' | 'bolt'
+  | 'greatsword' | 'longsword' | 'spear' | 'battleaxe' | 'knives' | 'wand' | 'runecircle' | 'lyre' | 'horn';
 
 export type LegendaryId = 'sword-of-mars' | 'bow-of-artemis' | 'master-bolt' | 'staff-of-hecate' | 'hammer-of-hephaestus' | 'trident-of-poseidon';
+
+/** Who sells a weapon (or rune): Brann the smith or Quill the merchant. */
+export type ShopId = 'brann' | 'quill';
 
 export interface WeaponDef {
   id: string;
@@ -252,6 +257,11 @@ export interface WeaponDef {
   element: DamageElement;
   legendary?: LegendaryId;
   description?: string;
+  /** Only these classes can wield it. */
+  classes?: ClassId[];
+  /** Sold in town for this many embers. */
+  price?: number;
+  shop?: ShopId;
 }
 
 export const WEAPONS: Record<string, WeaponDef> = {
@@ -286,11 +296,74 @@ export const WEAPONS: Record<string, WeaponDef> = {
     id: 'trident-of-poseidon', name: "Poseidon's Trident", kind: 'trident', damage: 28, speed: 1.3, range: 3.6, element: 'water', legendary: 'trident-of-poseidon',
     description: 'Commands the sea. Sailors only; lets you walk on water.',
   },
+  // Sold in Hearthhold: steel at Brann's forge, curios at Quill's stall.
+  'steel-longsword': {
+    id: 'steel-longsword', name: 'Steel Longsword', kind: 'longsword', damage: 15, speed: 1.35, range: 2.9, element: 'physical', price: 140, shop: 'brann',
+    description: 'A hand-and-a-half blade: longer reach than a sword, and its heavy swing takes both hands.',
+  },
+  'iron-greatsword': {
+    id: 'iron-greatsword', name: 'Iron Greatsword', kind: 'greatsword', damage: 25, speed: 0.8, range: 3.3, element: 'physical', classes: ['warrior'], price: 260, shop: 'brann',
+    description: 'Huge and slow. Wide sweeps hit everything in front; the heavy slam shakes the ground. Two hands, no shield.',
+  },
+  'ash-spear': {
+    id: 'ash-spear', name: 'Ash Spear', kind: 'spear', damage: 13, speed: 1.3, range: 3.9, element: 'physical', price: 120, shop: 'brann',
+    description: 'Thrusts that reach farther than any blade, and a wide heavy sweep that clears the ground around you.',
+  },
+  'battle-axe': {
+    id: 'battle-axe', name: 'Battle Axe', kind: 'battleaxe', damage: 23, speed: 0.85, range: 3, element: 'physical', classes: ['warrior'], price: 240, shop: 'brann',
+    description: 'Double-bitted and two-handed. Cleaving sweeps; the heavy whirls it all the way round. Foes bleed.',
+  },
+  'throwing-knives': {
+    id: 'throwing-knives', name: 'Throwing Knives', kind: 'knives', damage: 8, speed: 2.4, range: 32, element: 'physical', price: 110, shop: 'brann',
+    description: 'Thrown in quick volleys (heavy: three at once). Pick them back up where they land; resting at a shrine refills them.',
+  },
+  'willow-wand': {
+    id: 'willow-wand', name: 'Willow Wand', kind: 'wand', damage: 7, speed: 2.4, range: 40, element: 'physical', classes: ['mage'], price: 150, shop: 'quill',
+    description: 'Quick arcane bolts for 2 mana (heavy: a bursting bolt for 7). Your spells hit 15% harder while it is in hand. Mages only.',
+  },
+  'rune-circle': {
+    id: 'rune-circle', name: 'Circle of Runes', kind: 'runecircle', damage: 10, speed: 1.1, range: 24, element: 'physical', classes: ['mage'], price: 190, shop: 'quill',
+    description: 'A ring of runes orbits your hand. Draw rune traps on the ground that burn and slow foes inside (heavy: a binding seal around you). Mages only.',
+  },
+  'bards-lyre': {
+    id: 'bards-lyre', name: "Bard's Lyre", kind: 'lyre', damage: 9, speed: 1.3, range: 8, element: 'physical', price: 160, shop: 'quill',
+    description: 'Strum a chord that dazes foes in front. Heavy: Song of Valor. Friends nearby hit harder and heal; foes are stunned.',
+  },
+  'war-horn': {
+    id: 'war-horn', name: 'War Horn', kind: 'horn', damage: 11, speed: 1, range: 9, element: 'physical', price: 160, shop: 'quill',
+    description: 'A blast that sends foes fleeing. Heavy: War Cry. Friends nearby run faster and strike harder; foes cower.',
+  },
 };
+
+// -------------------------------------------------------------------- runes --
+
+export type RuneId = 'fire' | 'frost' | 'storm' | 'venom';
+
+export interface RuneDef {
+  id: RuneId;
+  name: string;
+  /** Glow on the weapon, its trail and its hits. */
+  color: number;
+  description: string;
+  price: number;
+}
+
+/** Runes are inscribed on a weapon at an anvil and add their effect to its hits. */
+export const RUNES: Record<RuneId, RuneDef> = {
+  fire: { id: 'fire', name: 'Ember Rune', color: 0xff6a1a, description: 'Hits set foes burning.', price: 160 },
+  frost: { id: 'frost', name: 'Frost Rune', color: 0x7fdcff, description: 'Hits slow foes with frost.', price: 160 },
+  storm: { id: 'storm', name: 'Storm Rune', color: 0xb8a8ff, description: 'Hits arc lightning to two foes nearby.', price: 180 },
+  venom: { id: 'venom', name: 'Venom Rune', color: 0x7cff3a, description: 'Hits poison foes for a while.', price: 160 },
+};
+
+/** The inventory item that holds an uninscribed rune. */
+export const runeItem = (id: RuneId) => `rune-${id}`;
 
 export interface WeaponInstance {
   id: string;
   level: number;
+  /** A rune inscribed at an anvil. */
+  rune?: RuneId;
 }
 
 // ------------------------------------------------------------------ spells --

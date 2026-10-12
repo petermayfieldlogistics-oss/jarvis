@@ -1228,6 +1228,28 @@ const ARM: Record<string, number[]> = {
   CH_L: [0.28, -1.19, 2.16, -1.62, 1.07, 0],
   CH_HR: [-0.63, 0.91, -0.1, -1.34, -0.81, -1.08],
   CH_HL: [-0.93, -1.13, 0.06, -0.79, -0.23, 0],
+  // Two-handed backhand sweep (greatsword, battle axe): the left hand just below the right on the grip.
+  CL_W: [-2.06, 0.54, 1.1, -1.11, -0.3, 1.75],
+  CL_M: [-1.14, 0.6, 0.29, -0.81, -1.7, 1.07],
+  CL_H: [-1.55, 0.61, 0.51, -0.14, -1.24, 1.08],
+  CL_F: [-1.36, 0.73, 0.4, -0.25, -1.7, 0.83],
+  CLL_W: [-1.23, -0.91, -0.12, -2.18, -0.18, 0],
+  CLL_M: [-1.06, -1.06, -0.25, -1.15, -0.19, 0],
+  CLL_H: [-0.92, -0.72, -0.28, -0.98, -0.04, 0],
+  CLL_F: [-0.77, -0.62, -0.33, -0.92, -0.04, 0],
+  // A spear carried at a run: low at the right hip, the left hand forward on the shaft.
+  SPC_R: [0.01, 0.6, -0.03, -0.93, 0.1, 0.75],
+  SPC_L: [-0.93, -0.4, -0.16, -0.01, -0.22, 0],
+  // A lyre held up before the chest (raised higher for a song), strummed from above to below.
+  LY_L: [-0.25, 1.05, -0.51, 0.02, 1.7, 0.88],
+  LY_L2: [-0.15, 1.23, -0.76, 0.02, 1.65, 0.47],
+  STR_A: [-1.25, 0.67, 0.31, -0.87, 0.14, 0.56],
+  STR_B: [-1.17, 0.55, 0.54, 0, 0.27, 0.42],
+  STR_A2: [-1.67, 0.36, 0.42, -0.05, 0.29, 0.31],
+  STR_B2: [-1.31, 0.54, 0.54, -0.02, 0.16, 0.23],
+  // A war horn raised before the chest, then to the lips, bell forward and up.
+  BL_W: [-0.02, 0.52, -0.38, -1.41, -1.42, 0.82],
+  BL_H: [-1.24, -0.18, 1.24, -1.52, -1.7, 0.77],
 };
 const armR = (k: string): Pose => {
   const v = ARM[k];
@@ -1264,6 +1286,16 @@ const CROSSED: Pose = { ...armR('C_G'), ...armL('CL_G') };
 const AIM_REST: Pose = { [HIY]: -0.55, ...torso(0, -0.3, 0, -0.3), [HDY]: 1.05, [HDX]: -0.05, ...armL('BOW_L'), ...armR('BOW_RR'), ...legs(-0.2, 0.2, 0.15, 0.2), [LLZ]: 0.1, [LRZ]: -0.1 };
 const AIM_DRAWN: Pose = { ...AIM_REST, ...armR('BOW_RD') };
 const AIM_LOOSE: Pose = { ...AIM_REST, ...armR('BOW_RD'), [ARY]: ARM.BOW_RD[1] - 0.5, [FRX]: -1.2 };
+const CLEAVE_WIND: Pose = { ...torso(0.05, 0.45, 0, 0.5), [HDY]: -0.7, ...armR('CL_W'), ...armL('CLL_W'), ...legs(-0.25, 0.35, 0.2, 0.3) };
+const CLEAVE_MID: Pose = { ...torso(0.15, 0.05, 0, 0.05), [HDY]: -0.05, ...armR('CL_M'), ...armL('CLL_M'), ...legs(-0.4, 0.5, 0.25, 0.35, 0.06) };
+const CLEAVE_HIT: Pose = { ...torso(0.15, -0.3, 0, -0.35), [HDY]: 0.5, ...armR('CL_H'), ...armL('CLL_H'), ...legs(-0.5, 0.6, 0.3, 0.4, 0.12) };
+const CLEAVE_FOLLOW: Pose = { ...torso(0.15, -0.4, 0, -0.45), [HDY]: 0.6, ...armR('CL_F'), ...armL('CLL_F'), ...legs(-0.5, 0.6, 0.3, 0.4, 0.12) };
+const LYRE_UP: Pose = { ...torso(0.05, 0, 0, 0.1), [HDX]: 0.15, [HDY]: -0.1, ...armL('LY_L'), ...armR('STR_A'), ...legs(-0.15, 0.2, 0.1, 0.2) };
+const LYRE_DOWN: Pose = { ...LYRE_UP, [CHX]: 0.05, ...armR('STR_B') };
+const SONG_UP: Pose = { ...torso(-0.1, 0, -0.1, 0.1), [HDX]: -0.2, ...armL('LY_L2'), ...armR('STR_A2'), ...legs(-0.1, 0.15, 0.1, 0.15), [LLZ]: 0.08, [LRZ]: -0.08 };
+const SONG_DOWN: Pose = { ...SONG_UP, [CHX]: -0.05, ...armR('STR_B2') };
+const HORN_UP: Pose = { ...torso(-0.15, 0, -0.15, 0), [HDX]: -0.1, ...armR('BL_W'), ...balance(-0.3, 0.35, -0.8), ...legs(-0.1, 0.2, 0.1, 0.2) };
+const HORN_BLOW: Pose = { ...torso(0.05, 0, 0, 0), [HDX]: -0.05, ...armR('BL_H'), ...balance(-0.5, 0.55, -0.5), ...legs(-0.35, 0.4, 0.2, 0.3, 0.06), [LLZ]: 0.06, [LRZ]: -0.06 };
 
 const MOVES: Partial<Record<AttackStyle, Move>> = {
   slash: move(0.28, [[0, {}], [0.28, SLASH_WIND], [0.38, SLASH_MID, E_IN], [0.46, SLASH_HIT, E_OUT], [0.62, SLASH_FOLLOW, E_OUT], [1, {}]]),
@@ -1315,6 +1347,13 @@ const MOVES: Partial<Record<AttackStyle, Move>> = {
     [1, {}],
   ]),
   bow: move(0.62, [[0, {}], [0.4, AIM_DRAWN], [0.64, AIM_DRAWN], [0.7, AIM_LOOSE, E_OUT], [1, AIM_REST]]),
+  cleave: move(0.3, [[0, {}], [0.3, CLEAVE_WIND], [0.42, CLEAVE_MID, E_IN], [0.5, CLEAVE_HIT, E_OUT], [0.72, CLEAVE_FOLLOW, E_OUT], [1, {}]], { twoHand: true }),
+  strum: move(0.3, [[0, {}], [0.3, LYRE_UP], [0.45, LYRE_DOWN, E_OUT], [0.7, LYRE_DOWN], [1, {}]]),
+  // Three strums, the lyre held high, the last one ringing out.
+  song: move(0.25, [
+    [0, {}], [0.25, SONG_UP], [0.36, SONG_DOWN, E_OUT], [0.45, SONG_UP], [0.56, SONG_DOWN, E_OUT], [0.63, SONG_UP], [0.72, SONG_DOWN, E_OUT], [0.9, SONG_DOWN], [1, {}],
+  ]),
+  blow: move(0.3, [[0, {}], [0.3, HORN_UP], [0.42, HORN_BLOW, E_OUT], [0.84, HORN_BLOW], [1, {}]]),
   // Boss moves: a readable anticipation (driven by windup) then the strike.
   sweep: move(0.45, [
     [0, {}],
@@ -1438,9 +1477,15 @@ interface State {
   weaponLen: number;
   left: O3 | undefined;
   bow: boolean;
+  /** The left hand's item stands upright (a bow or lyre). */
+  upright: boolean;
+  /** A rune circle's ring, spun about the wrist. */
+  orbit: O3 | undefined;
+  /** A big two-hander rests on the shoulder. */
+  shoulder: boolean;
   shield: boolean;
   leftTwist: number;
-  /** How a charge carries the weapon: 0 arms swept back, 1 a blade cocked high, 2 a heavy weapon in both hands. */
+  /** How a charge carries the weapon: 0 arms swept back, 1 a blade cocked high, 2 a heavy weapon in both hands, 3 a spear levelled. */
   carry: number;
 }
 
@@ -1451,7 +1496,7 @@ function newState(j: Joints, prof: Profile): State {
     j, prof, cur: NEUTRAL.slice(), tgt: new Float32Array(NCH), out: new Float32Array(NCH), tmp: new Float32Array(NCH), t: 0, fresh: true,
     mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
     act: 0, spin: 0, roll: 0, tuck: 0, latched: false, lastStyle: '', lastAttack: -1, lastWindup: 0, lastDraw: 0, lastHurt: 0, hurtSide: 1, deadSide: 1,
-    cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, shield: false, leftTwist: 0, carry: 0,
+    cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, upright: false, orbit: undefined, shoulder: false, shield: false, leftTwist: 0, carry: 0,
   };
 }
 
@@ -1561,13 +1606,17 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     });
     s.weaponLen = len;
     const kind = weapon?.userData.kind;
-    s.carry = kind === 'sword' || kind === 'dagger' ? 1 : kind === 'axe' || kind === 'hammer' ? 2 : 0;
+    s.carry = CARRY[kind] ?? 0;
+    s.shoulder = kind === 'greatsword' || kind === 'battleaxe';
   }
   const left = j.handL.children[0];
   if (left !== s.left) {
     s.left = left;
     s.bow = !!left && left.userData.bow !== undefined;
-    s.shield = !!left && !s.bow;
+    // A lyre stands upright in the hand like a bow; a rune circle orbits the wrist.
+    s.upright = s.bow || left?.userData.kind === 'lyre';
+    s.orbit = left?.userData.orbit;
+    s.shield = !!left && !s.bow && !left.userData.offhand;
     // Turn a shield so its face looks outward at rest and forward in a block,
     // whichever way it was attached.
     s.leftTwist = 0;
@@ -1635,9 +1684,10 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   const g = s.tgt;
   g.set(NEUTRAL);
   // Swords rest pointing forward and down; staves and tridents stand upright.
-  g[WRX] = s.weaponLen >= 1.45 ? -1.25 : s.weaponLen > 0 ? 0.6 : 0;
-  g[WRZ] = s.weaponLen >= 1.45 ? 0.22 : s.weaponLen > 0 ? 0.12 : 0;
-  if (s.bow) g[WLX] = PI / 2;
+  // Greatswords and battle axes lean back against the shoulder.
+  g[WRX] = s.shoulder ? REST_SHOULDER[0] : s.weaponLen >= 1.45 ? -1.25 : s.weaponLen > 0 ? 0.6 : 0;
+  g[WRZ] = s.shoulder ? REST_SHOULDER[1] : s.weaponLen >= 1.45 ? 0.22 : s.weaponLen > 0 ? 0.12 : 0;
+  if (s.upright) g[WLX] = PI / 2;
   blend(g, CROUCH, s.crouch);
   // Running leans into the stride; acceleration and turns lean the body.
   g[SPX] += s.mv * (0.14 * s.run + 0.14 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
@@ -1654,7 +1704,7 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   // Running with a sword, dagger, axe or hammer carries it ready to strike.
   const chargeW = s.carry ? s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.run : 0;
   if (chargeW > 0.001) {
-    const p = s.carry === 1 ? CHARGE_BLADE : CHARGE_HEAVY;
+    const p = s.carry === 1 ? CHARGE_BLADE : s.carry === 3 ? CHARGE_SPEAR : CHARGE_HEAVY;
     for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : p[c]) - g[c]) * chargeW;
     g[SPY] += (p[SPY] - g[SPY]) * chargeW;
     g[CHY] += (p[CHY] - g[CHY]) * chargeW;
@@ -1682,6 +1732,12 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     for (let c = 0; c < NCH; c++) {
       if (isUpper(c)) g[c] = p[c];
       else g[c] += (p[c] - g[c]) * legsK;
+    }
+    if (style === 'blow' && v > 0.42 && v < 0.84) {
+      // The whole body shakes with the blast.
+      const q = Math.sin(t * 53) * 0.012;
+      g[CHX] += q;
+      g[HDX] += q;
     }
     if (style === 'roar' && v > 0.36 && v < 0.82) {
       const q = Math.sin(t * 47) * 0.025;
@@ -1889,7 +1945,8 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   // trail low behind at a run, staves and spears angle forward.
   // A charge holds the weapon in its own pose.
   const carried = s.carry ? (1 - s.back) * (1 - s.crouch) * s.run : 0;
-  const hold = s.mv * armsFree * (s.weaponLen > 0 ? 1 : 0) * (1 - carried);
+  // (A shouldered two-hander just sways with the arm at a walk.)
+  const hold = s.mv * armsFree * (s.weaponLen > 0 && !s.shoulder ? 1 : 0) * (1 - carried);
   if (hold > 0.001) {
     const fore = -(o[ARX] + o[FRX]);
     const want = s.weaponLen >= 1.45 ? 2.55 : lerp(0.95, -1.05, s.run);
@@ -1930,6 +1987,11 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   j.legR.rotation.set(o[LRX], o[LRY], o[LRZ]);
   j.shinR.rotation.x = o[KRX];
   j.footR.rotation.x = o[TRX];
+  // A rune circle turns about the wrist, faster while it works.
+  if (s.orbit) {
+    s.orbit.rotation.y = wrap(s.orbit.rotation.y + dt * (1.6 + 5 * s.act));
+    s.orbit.position.y = -0.06 + 0.012 * Math.sin(t * 2.3);
+  }
 
   secondary(s, a, o, dt, snap, rollW, fall);
 }
@@ -1943,6 +2005,11 @@ const LEFT_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
 // shoulder, the chest turned into it (a shield arm stays out in front).
 const CHARGE_BLADE = poseOf({ ...armR('CH_R'), ...armL('CH_L') });
 const CHARGE_HEAVY = poseOf({ [SPY]: -0.15, [CHY]: -0.3, ...armR('CH_HR'), ...armL('CH_HL') });
+// A spear is carried low and angled forward in both hands, ready to thrust.
+const CHARGE_SPEAR = poseOf({ [SPY]: -0.3, [CHY]: -0.3, ...armR('SPC_R'), ...armL('SPC_L') });
+/** How each weapon is carried at a run: 1 a blade cocked high, 2 a heavy weapon in both hands, 3 a spear levelled. */
+const CARRY: Record<string, number> = { sword: 1, dagger: 1, longsword: 1, knives: 1, axe: 2, hammer: 2, greatsword: 2, battleaxe: 2, spear: 3 };
+const REST_SHOULDER = [-1.9, 0.35];
 const CHARGE_ARMS = [ALX, ALY, ALZ, FLX, FLY, WLX, WLY, WLZ, ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
 const AIM_DRAWN_P = poseOf(AIM_DRAWN, NEUTRAL);
 
