@@ -437,10 +437,44 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       break;
     }
     case 'bolt': {
-      const m = mat(0xfff2a0, { emissive: 0xffe060, emissiveIntensity: 2.5 });
-      part(box(0.06, 0.45, 0.06), m, 0, 0.25, 0, g).rotation.z = 0.3;
-      part(box(0.06, 0.45, 0.06), m, 0.06, 0.65, 0, g).rotation.z = -0.4;
-      part(cone(0.07, 0.3), m, 0.0, 1.0, 0, g);
+      // Zeus' thunderbolt: a gold grip in the hand, with forked lightning
+      // flaring out of both ends, a white-hot core inside a blue glow.
+      const core = mat(0xfff1a8, { emissive: 0xffd650, emissiveIntensity: 2.6 });
+      const aura = mat(0x5ab0ff, { emissive: 0x2f86ff, emissiveIntensity: 2, transparent: 0.42 });
+      const gold = mat(0xd8b050, { rough: 0.3, metal: 0.6 });
+      part(cyl(0.032, 0.032, 0.24, 8), wrap, 0, 0, 0, g);
+      cord(0.035, [-0.08, 0, 0.08], gold);
+      /** One jagged stroke of lightning through 2D points (x, y), thinning toward its tip. */
+      const stroke = (pts: [number, number][], w0: number, w1: number, glow: boolean) => {
+        for (let i = 1; i < pts.length; i++) {
+          const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+          const len = Math.hypot(bx - ax, by - ay);
+          const w = w0 + (w1 - w0) * ((i - 0.5) / (pts.length - 1));
+          const seg = part(box(w, len + w * 0.6, w * 0.7), core, (ax + bx) / 2, (ay + by) / 2, 0, g);
+          seg.rotation.z = Math.atan2(ax - bx, by - ay);
+          if (glow) {
+            const halo = part(box(w * 2.2, len + w, w * 1.8), aura, (ax + bx) / 2, (ay + by) / 2, 0, g);
+            halo.rotation.z = seg.rotation.z;
+            halo.castShadow = false;
+          }
+        }
+        const [px, py] = pts[pts.length - 2], [tx, ty] = pts[pts.length - 1];
+        const tip = part(cone(w1 * 1.4, 0.12, 4), core, tx + (tx - px) * 0.25, ty + (ty - py) * 0.25, 0, g);
+        tip.rotation.z = Math.atan2(px - tx, ty - py);
+      };
+      for (const s of [-1, 1]) {
+        // A gold collar flares from each end of the grip.
+        part(new THREE.TorusGeometry(0.045, 0.012, 4, 10), gold, 0, s * 0.125, 0, g).rotation.x = PI / 2;
+        part(cone(0.075, 0.1, 8), gold, 0, s * 0.18, 0, g).rotation.x = s > 0 ? 0 : PI;
+        // The main bolt, mirrored through the grip so the two ends twist opposite ways.
+        const main: [number, number][] = [[0, 0.22], [0.075, 0.38], [-0.05, 0.52], [0.065, 0.66], [-0.02, 0.8]];
+        stroke(main.map(([x, y]) => [x * s, y * s]), 0.07, 0.035, true);
+        // Two forks branch off to the sides.
+        for (const side of [-1, 1]) {
+          const fork: [number, number][] = [[0.05 * side, 0.22], [0.13 * side, 0.32], [0.1 * side, 0.4], [0.2 * side, 0.53]];
+          stroke(fork.map(([x, y]) => [x * s, y * s]), 0.045, 0.022, false);
+        }
+      }
       break;
     }
     case 'bow': {
