@@ -104,6 +104,10 @@ export class Player {
   hp: number;
   mana: number;
   stamina: number;
+  /** Seconds until stamina starts coming back after it was spent. */
+  staminaWait = 0;
+  /** Ran dry: no sprinting or blocking until a third of it is back. */
+  exhausted = false;
   alive = true;
   fury: FuryState = newFury();
   bloodrageUntil = 0;
@@ -184,6 +188,23 @@ export class Player {
   }
   get maxStamina() {
     return maxStamina(this.c);
+  }
+
+  /** Pays for an action. Spending pauses regen briefly; running dry leaves the hero winded. */
+  spend(n: number, wait = 0.4) {
+    this.stamina = Math.max(0, this.stamina - n);
+    if (this.stamina <= 0) {
+      this.exhausted = true;
+      wait = 1;
+    }
+    this.staminaWait = Math.max(this.staminaWait, wait);
+  }
+
+  /** Full stamina (resting, respawning, levelling up). */
+  refillStamina() {
+    this.stamina = this.maxStamina;
+    this.staminaWait = 0;
+    this.exhausted = false;
   }
   get weaponKind(): WeaponKind {
     return WEAPONS[mainWeapon(this.c).id].kind;
@@ -314,7 +335,7 @@ export class Player {
     let wantX = fx * my - fz * mx;
     let wantZ = fz * my + fx * mx;
     const wantLen = Math.hypot(wantX, wantZ);
-    const sprint = input.held.has('sprint') && wantLen > 0.1 && this.stamina > 1 && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack;
+    const sprint = input.held.has('sprint') && wantLen > 0.1 && !this.exhausted && this.stamina > 0 && !this.swimming && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack;
     let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1);
     if (this.blocking || this.drawing > 0) speed *= 0.45;
     const atk = this.attack;
@@ -353,7 +374,7 @@ export class Player {
 
     // Rolling: buffered, and allowed to cut a swing's recovery short.
     if (input.pressed.has('roll')) this.rollQueuedAt = this.now;
-    if (this.now - this.rollQueuedAt < BUFFER && canAct && !this.swimming && !this.flying && this.grounded && this.stamina >= 10 && (!this.attack || this.attack.t >= this.attack.cancelAt)) {
+    if (this.now - this.rollQueuedAt < BUFFER && canAct && !this.swimming && !this.flying && this.grounded && this.stamina > 0 && (!this.attack || this.attack.t >= this.attack.cancelAt)) {
       this.rollQueuedAt = -9;
       this.startRoll(g, wantX, wantZ, wantLen);
     }
@@ -445,7 +466,7 @@ export class Player {
         this.vel.y = 8.5;
         this.grounded = false;
         this.crouching = false;
-        this.stamina -= 6;
+        this.spend(6);
       }
       this.vel.y -= 24 * dt;
       this.pos.y += this.vel.y * dt;
@@ -481,16 +502,18 @@ export class Player {
       }
     }
 
-    // Stamina and mana.
-    const spending = sprint || this.blocking || this.attack || this.rollT >= 0 || this.drawing > 0;
-    if (sprint) this.stamina -= 14 * dt;
-    if (!spending && !(this.swimming && c.roleId !== 'sailor')) this.stamina = Math.min(this.maxStamina, this.stamina + 38 * dt);
-    this.stamina = Math.max(0, this.stamina);
+    // Stamina and mana. Regen waits a moment after spending (a beat longer
+    // when run dry) and trickles while guarding.
+    const spending = sprint || this.attack || this.rollT >= 0 || this.drawing > 0;
+    if (sprint) this.spend(14 * dt);
+    if (!spending) this.staminaWait = Math.max(0, this.staminaWait - dt);
+    if (!spending && this.staminaWait <= 0 && !(this.swimming && c.roleId !== 'sailor')) this.stamina = Math.min(this.maxStamina, this.stamina + 38 * dt * (this.blocking ? 0.4 : 1));
+    if (this.exhausted && this.stamina >= this.maxStamina * 0.3) this.exhausted = false;
     if (!this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + manaRegen(c) * dt);
     else this.mana = 0;
 
     // Blocking.
-    this.blocking = input.held.has('block') && canAct && !this.attack && !this.swimming && !this.flying && this.weaponKind !== 'bow' && this.stamina > 0;
+    this.blocking = input.held.has('block') && canAct && !this.attack && !this.swimming && !this.flying && this.weaponKind !== 'bow' && !this.exhausted && this.stamina > 0;
 
     // Attacks.
     if (canAct && !this.swimming) this.handleAttack(dt, g, wantX, wantZ, wantLen);
@@ -530,7 +553,7 @@ export class Player {
     this.backstep = wantLen <= 0.1;
     this.rollT = 0;
     this.rollTime = 0;
-    this.stamina -= this.backstep ? 12 : 18;
+    this.spend(this.backstep ? 12 : 18);
     if (this.attack) this.finishAttack();
     this.queued = null;
     this.drawing = 0;
@@ -593,7 +616,7 @@ export class Player {
         if (loosing) this.attack = null;
         const drawTime = 0.9 * drawTimeMultiplier(this.c);
         this.drawing = Math.min(1, this.drawing + dt / drawTime);
-        this.stamina -= 4 * dt;
+        this.spend(4 * dt);
         if (this.drawing > 0 && this.drawing < 0.05) g.audio.play('draw');
       }
       if (input.released.has('attack') && this.drawing > 0) {
@@ -624,9 +647,10 @@ export class Player {
     const cur = this.attack;
     // Wait for the current move to reach the point where the next may follow.
     if (cur && cur.t < cur.chainAt) return;
+    // Out of stamina: keep the press (it expires after BUFFER) until some is back.
+    if (this.stamina <= 0) return;
     const heavy = this.queued === 'heavy';
     this.queued = null;
-    if (this.stamina <= 0) return;
 
     if (kind === 'bolt') {
       this.startAttack('throw', 'throw', 0.75);
@@ -638,11 +662,11 @@ export class Player {
       if (!heavy) {
         const chained = cur ? cur.kind === 'light' : this.lastKind === 'light' && this.now - this.lastSwingEnd < COMBO_WINDOW;
         this.comboStep = chained ? (this.comboStep + 1) % 3 : 0;
-        this.stamina -= 12 * thrift;
+        this.spend(12 * thrift);
         const finisher = this.comboStep === 2;
         this.startAttack('light', lightStyle(kind, this.comboStep), dur * (finisher ? 1.25 : 1), { finisher });
       } else {
-        this.stamina -= 25 * thrift;
+        this.spend(25 * thrift);
         this.comboStep = 0;
         if (this.c.subclassId === 'swordsman') {
           this.startAttack('spin', 'spin', dur * 1.5);
@@ -1293,7 +1317,7 @@ export class Player {
     this.boat = boat;
     this.crouching = false;
     this.pos.set(boat.position.x, WATER_LEVEL + 0.4, boat.position.z);
-    g.hud.toast('You take the helm. (F or Jump to step ashore)');
+    g.hud.toast(g.input.touch ? 'You take the helm. (tap ✋ or ⤒ to step ashore)' : 'You take the helm. (F or Jump to step ashore)');
   }
 
   private disembark(g: Game) {

@@ -242,10 +242,14 @@ export class Input {
           const l = Math.hypot(dx, dy);
           if (l > 50) (dx *= 50 / l), (dy *= 50 / l);
           knob.style.transform = `translate(${dx}px, ${dy}px)`;
-          this.move.x = dx / 50;
-          this.move.y = -dy / 50;
-          if (l > 48) this.held.add('sprint');
-          else this.held.delete('sprint');
+          // Full running speed well inside the ring; sprinting only when the
+          // thumb is pushed past it (with a gap so it doesn't flicker).
+          const k = Math.min(1, l / 40) / Math.max(1e-6, Math.min(l, 50));
+          this.move.x = dx * k;
+          this.move.y = -dy * k;
+          if (l > 62) this.held.add('sprint');
+          else if (l < 46) this.held.delete('sprint');
+          stick.classList.toggle('sprint', this.held.has('sprint'));
         } else if (t.identifier === this.lookTouch.id) {
           this.look.dx += (t.clientX - this.lookTouch.x) * 0.006 * this.sensitivity;
           this.look.dy += (t.clientY - this.lookTouch.y) * 0.006 * this.sensitivity * (this.invertY ? -1 : 1);
@@ -262,7 +266,7 @@ export class Input {
           this.move.x = this.move.y = 0;
           this.held.delete('sprint');
           knob.style.transform = '';
-          stick.classList.remove('active');
+          stick.classList.remove('active', 'sprint');
         } else if (t.identifier === this.lookTouch.id) this.lookTouch.id = -1;
       }
     };
@@ -280,12 +284,17 @@ export class Input {
     if (this.touchRoot) this.touchRoot.style.display = v ? '' : 'none';
   }
 
+  private interactLabel: string | null | undefined;
   /** Shows the interact button only when there is something to interact with. */
   setInteract(label: string | null) {
+    if (label === this.interactLabel) return;
+    this.interactLabel = label;
     const b = this.touchRoot?.querySelector<HTMLElement>('.tinteract');
     if (!b) return;
-    b.style.display = label ? '' : 'none';
-    b.textContent = label ? '✋' : 'F';
+    // The stylesheet hides it by default, so it has to be shown explicitly.
+    b.classList.toggle('show', !!label);
+    b.textContent = '✋';
+    b.title = label ?? '';
   }
 
   /** Hides touch buttons the hero can't use. */

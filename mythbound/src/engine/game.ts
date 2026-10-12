@@ -549,6 +549,7 @@ export class Game {
     if (gained > 0) {
       this.player.hp = this.player.maxHp;
       this.player.mana = this.player.maxMana;
+      this.player.refillStamina();
       this.player.flightLeft = dracoFlightHours(this.player.c) * 60;
       this.hud.banner(`LEVEL ${this.player.c.level}`, 'level', 'Skill point gained');
       this.audio.play('levelup');
@@ -577,19 +578,24 @@ export class Game {
       const facing = Math.cos(Math.atan2(source.pos.x - p.pos.x, source.pos.z - p.pos.z) - p.yaw);
       if (facing > 0.1) blocking = true;
     }
-    if (blocking && p.c.classId === 'warrior') {
-      p.stamina -= 10 + amount * 0.4;
+    if (blocking) {
+      // Every blocked blow costs stamina (a shield takes it better). The blow
+      // that breaks the guard staggers the hero and half of it gets through.
+      const warrior = p.c.classId === 'warrior';
+      p.spend(warrior ? 10 + amount * 0.4 : 5 + amount * 0.3, 0.6);
       this.audio.play('block');
       this.fx.emit(p.center().add(new THREE.Vector3(Math.sin(p.yaw) * 0.6, 0.2, Math.cos(p.yaw) * 0.6)), { color: 0xffe0a0, count: 14, speed: 5, life: 0.3 });
-      this.fx.damageNumber(p.center(), 'BLOCKED', 'info');
       if (p.stamina <= 0) {
-        p.stamina = 0;
         p.stagger = 1;
+        p.blocking = false;
+        blocking = false;
+        amount *= 0.5;
         this.hud.toast('Guard broken!', 'warn');
-      } else if (source instanceof Enemy && !(source instanceof Boss) && p.c.skills.riposte) {
-        source.status.stun = 1.2;
+      } else if (warrior) {
+        this.fx.damageNumber(p.center(), 'BLOCKED', 'info');
+        if (source instanceof Enemy && !(source instanceof Boss) && p.c.skills.riposte) source.status.stun = 1.2;
+        return;
       }
-      return;
     }
     let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0 });
     if (p.c.elfMystery && p.c.mysteryRevealed && element === 'dark') dmg *= 1.2;
@@ -649,7 +655,7 @@ export class Game {
     p.c.flasks = p.c.flasksMax;
     p.hp = p.maxHp;
     p.mana = p.maxMana;
-    p.stamina = p.maxStamina;
+    p.refillStamina();
     p.soulOrPower = false;
     p.sailing = false;
     p.flying = false;
@@ -809,7 +815,8 @@ export class Game {
     this.nearest = best;
     const label = best ? this.story.label(best) : null;
     this.hud.prompt(label);
-    this.input.setInteract(label);
+    // While sailing the interact button steps ashore (the player handles it).
+    this.input.setInteract(label ?? (this.player.sailing ? 'Step ashore' : null));
     if (best && this.input.pressed.has('interact')) this.story.interact(best);
   }
 

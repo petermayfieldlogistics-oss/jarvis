@@ -14,7 +14,10 @@ export class Audio {
 
   /** Must be called from a user gesture. */
   unlock() {
-    if (this.ctx) return void this.ctx.resume();
+    if (this.ctx) {
+      if (this.ctx.state !== 'running') void this.ctx.resume();
+      return;
+    }
     try {
       this.ctx = new AudioContext();
     } catch {
