@@ -90,6 +90,7 @@ export class Menu {
     if (c.raceId === 'elf') lines.push(c.elfMystery ? (c.mysteryRevealed ? 'Eye-Touched (the ****** has woken).' : '******') : 'Not ******. (Probably.)');
     if (c.wizardElement) lines.push(`Elemental Wizard of ${c.wizardElement}.`);
     if (dracoFlightHours(c)) lines.push(`Wings: ${dracoFlightHours(c)} hour(s) of flight.`);
+    if (c.raceId === 'zombie') lines.push(c.riseSpent ? 'Not Dead Yet: spent. Rest at a shrine to cheat death again.' : 'Not Dead Yet: ready.');
     if (c.devilDeals) lines.push(`Deals with the Devil: ${c.devilDeals}/4.${isLightSealed(c, this.g.gameMinutes) ? ' Light sealed.' : ''}`);
     if (c.hpLost) lines.push(`Max HP lost to Soul or Power: ${Math.round(c.hpLost)}.`);
     if (c.tamed.length) lines.push(`Tamed: ${c.tamed.join(', ')}.`);

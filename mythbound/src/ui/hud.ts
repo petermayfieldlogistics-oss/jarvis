@@ -334,6 +334,9 @@ export class Hud {
     if (p.moonveil > 0) chips.push('<b>Moonveil</b>');
     if (p.crouching) chips.push('<b>Sneaking</b>');
     if (dracoFlightHours(c) > 0) chips.push(`<b>Wings ${Math.floor(p.flightLeft / 60)}h ${Math.floor(p.flightLeft % 60)}m</b>`);
+    if (c.raceId === 'zombie' && !c.riseSpent) chips.push('<b class="skill">Not Dead Yet</b>');
+    if (p.warCry > 0) chips.push(`<b class="rage">War Cry ${Math.ceil(p.warCry)}s</b>`);
+    if (p.gliding) chips.push('<b>Gliding</b>');
     if (c.elfMystery && c.mysteryRevealed) chips.push('<b class="devil">Eye-Touched</b>');
     put(this.status, 'html', chips.join(''));
 

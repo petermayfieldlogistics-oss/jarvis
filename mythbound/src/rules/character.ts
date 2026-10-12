@@ -29,6 +29,8 @@ export interface CharacterChoice {
   expansion: boolean;
   /** Elemental wizards pick theirs. */
   wizardElement?: Element;
+  /** Zombies may shamble (the default) or stand upright. */
+  hunched?: boolean;
 }
 
 export interface Character extends CharacterChoice {
@@ -43,6 +45,8 @@ export interface Character extends CharacterChoice {
   mysteryRevealed: boolean;
   /** Max HP lost forever to Soul or Power. */
   hpLost: number;
+  /** Zombie: Not Dead Yet has saved them since they last rested. */
+  riseSpent: boolean;
   gold: number;
   flasks: number;
   flasksMax: number;
@@ -136,6 +140,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     elfMystery,
     mysteryRevealed: false,
     hpLost: 0,
+    riseSpent: false,
     gold: 50,
     flasks: 3,
     flasksMax: 3,
@@ -160,6 +165,7 @@ export function startingSpells(c: Pick<Character, 'classId' | 'raceId' | 'roleId
   if (c.classId === 'ranger') spells.push('wrath-of-thor', 'way-of-the-wind');
   if (c.raceId === 'elf') spells.push('deal-with-the-devil', 'imp-familiar');
   if (c.roleId === 'knight') spells.push('holy-smite', 'radiant-heal', 'aegis-of-light');
+  if (c.raceId === 'angelic') spells.push('holy-smite');
   return [...new Set(spells)];
 }
 
@@ -179,7 +185,7 @@ export function learnSpell(c: Character, spell: SpellId): boolean {
 export function canLearnSpell(c: Pick<Character, 'classId' | 'raceId' | 'roleId'>, spell: SpellId): boolean {
   const school = SPELLS[spell].school;
   if (c.classId === 'mage') return true;
-  if (school === 'light' && c.roleId === 'knight' && spell !== 'power-of-the-light') return true;
+  if (school === 'light' && (c.roleId === 'knight' || c.raceId === 'angelic') && spell !== 'power-of-the-light') return true;
   if (school === 'devil' && c.raceId === 'elf') return true;
   if (c.classId === 'ranger') return school === 'sky';
   return false;
@@ -205,7 +211,7 @@ export const rank = (c: Character, node: string) => c.skills[node] ?? 0;
 export function maxHp(c: Character): number {
   const perLevel = c.classId === 'warrior' ? 12 : c.classId === 'ranger' ? 9 : 7;
   const base = CLASSES[c.classId].hp + perLevel * (c.level - 1);
-  return Math.max(1, base - c.hpLost);
+  return Math.max(1, Math.round(base * (c.raceId === 'orc' ? ORC.hp : 1)) - c.hpLost);
 }
 
 export function maxMana(c: Character): number {
@@ -231,7 +237,7 @@ export function moveSpeed(c: Character): number {
 
 export function manaRegen(c: Character): number {
   const base = c.classId === 'mage' ? 2.2 : c.classId === 'ranger' ? 1.3 : 0.8;
-  return base * (1 + 0.3 * rank(c, 'flow'));
+  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1);
 }
 
 /** Quick Draw: rangers draw every weapon faster. Multiplies draw/ready times. */
@@ -273,6 +279,38 @@ export function dracoFlightHours(c: Character): number {
 export function dracoFireRegen(c: Character): number {
   return c.raceId === 'draco' && c.level >= 10 ? 10 : 0;
 }
+
+/** Zombie numbers: what a kill gives back, how the grave lets go once per rest, and the costs of being dead. */
+export const ZOMBIE = { killHeal: 0.08, riseHp: 0.3, riseIframes: 2, fireTaken: 1.5, lightHeal: 0.5, prices: 1.25 };
+
+/** Angelic numbers: wing flaps per jump, the glide, the Halo of Mercy, light and dark. */
+export const ANGELIC = { flaps: 2, flapSpeed: 7.5, flapStamina: 14, glideFall: 2.2, glideSpeed: 1.25, haloRadius: 8, haloHeal: 0.02, lightPower: 1.25, darkTaken: 1.3 };
+
+/** Orc numbers: hide, muscle, a thick skull, and the War Cry when badly hurt. */
+export const ORC = {
+  hp: 1.2, melee: 1.15, manaRegen: 0.65, spellPower: 0.85,
+  warCry: { below: 0.35, duration: 8, cooldown: 60, radius: 6, stun: 1.5, damage: 1.25 },
+};
+
+/** Draco wings (from level 6) and angel wings (always) are out and can open. */
+export function wingsGrown(c: Pick<Character, 'raceId' | 'level'>): boolean {
+  return c.raceId === 'angelic' || (c.raceId === 'draco' && c.level >= 6);
+}
+
+/** Extra wing beats an angel gets per jump. */
+export const airFlaps = (c: Pick<Character, 'raceId'>) => (c.raceId === 'angelic' ? ANGELIC.flaps : 0);
+
+/** Zombies have no breath to lose. */
+export const drowns = (c: Pick<Character, 'raceId'>) => c.raceId !== 'zombie';
+
+/** Share of max HP a kill gives back (the Hungry Dead). */
+export const killHeal = (c: Pick<Character, 'raceId'>) => (c.raceId === 'zombie' ? ZOMBIE.killHeal : 0);
+
+/** How well light magic and prayers mend the hero. */
+export const lightHealMultiplier = (c: Pick<Character, 'raceId'>) => (c.raceId === 'zombie' ? ZOMBIE.lightHeal : 1);
+
+/** What a merchant asks of this hero for something worth `cost`. */
+export const shopPrice = (c: Pick<Character, 'raceId'>, cost: number) => Math.round(cost * (c.raceId === 'zombie' ? ZOMBIE.prices : 1));
 
 export function tameableKinds(c: Character): CreatureKind[] {
   if (c.subclassId !== 'trainer') return [];

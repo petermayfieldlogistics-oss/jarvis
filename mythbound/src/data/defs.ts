@@ -3,7 +3,7 @@
 
 export type ClassId = 'warrior' | 'ranger' | 'mage';
 export type SubclassId = 'swordsman' | 'axeman' | 'bowman' | 'trainer' | 'elemental';
-export type RaceId = 'elf' | 'draco' | 'human' | 'ancient';
+export type RaceId = 'elf' | 'draco' | 'human' | 'zombie' | 'angelic' | 'orc' | 'ancient';
 export type RoleId = 'historian' | 'blacksmith' | 'sailor' | 'darkslayer' | 'knight' | 'assassin';
 export type Element = 'fire' | 'water' | 'wind' | 'earth';
 export type DamageElement = Element | 'physical' | 'lightning' | 'dark' | 'light' | 'true';
@@ -161,6 +161,41 @@ export const RACES: Record<RaceId, RaceDef> = {
     name: 'Human',
     blurb: "Well, they're just… human.",
     traits: ['No buffs', 'No downsides either'],
+  },
+  zombie: {
+    id: 'zombie',
+    name: 'Zombie',
+    blurb: 'Dead, but not done. Stitched back together, and hungry.',
+    traits: [
+      'Not Dead Yet: once per rest, a killing blow leaves you standing at 30% HP',
+      'Hungry Dead: every kill you take part in heals 8% of your max HP',
+      'No breath, no blood: never drowns and never bleeds',
+      'Dry old bones: fire hurts 50% more',
+      'Light magic and prayers heal you only half as much',
+      'Merchants hold their noses: prices +25%',
+    ],
+  },
+  angelic: {
+    id: 'angelic',
+    name: 'Angelic',
+    blurb: 'A halo, white wings, and a light that mends your friends.',
+    traits: [
+      'Wings of Light: jump again in the air to flap (twice), hold Jump to glide',
+      'Radiant: +25% light damage, and knows Holy Smite',
+      'Halo of Mercy: co-op friends (and tamed beasts) within 8 m heal 2% of their max HP a second',
+      'Dark damage hurts 30% more',
+    ],
+  },
+  orc: {
+    id: 'orc',
+    name: 'Orc',
+    blurb: 'Big, green and loud. Hits like a falling tree.',
+    traits: [
+      'Thick hide: +20% max HP',
+      'Brute strength: +15% melee damage',
+      'War Cry: below 35% HP you roar, stunning foes nearby and dealing +25% damage for 8 s (once a minute)',
+      'Thick skull: mana comes back 35% slower and spells hit 15% softer',
+    ],
   },
   ancient: {
     id: 'ancient',
