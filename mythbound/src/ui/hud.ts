@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { SPELLS, WEAPONS, type SpellId, type WeaponKind } from '../data/defs';
+import { RUNES, SPELLS, WEAPONS, type SpellId, type WeaponKind } from '../data/defs';
+import { SONGS } from '../rules/weapons';
 import { EYES_RUINS, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
@@ -23,6 +24,7 @@ const SPELL_ICON: Record<string, string> = {
 
 const WEAPON_ICON: Record<WeaponKind, string> = {
   sword: '⚔', axe: '⚔', bow: '➶', staff: '⚚', dagger: '🗡', hammer: '⚒', trident: 'Ψ', bolt: 'ϟ',
+  greatsword: '⚔', longsword: '⚔', spear: '↟', battleaxe: '🪓', knives: '✦', wand: '✧', runecircle: '◎', lyre: '♪', horn: '📯',
 };
 
 /** The HUD runs every frame, so writes go through here and only reach the DOM when a value changes. */
@@ -37,6 +39,8 @@ function put(el: HTMLElement, key: 'text' | 'html' | 'class' | string, value: st
   else if (key === 'class') el.className = value;
   else el.style.setProperty(key, value);
 }
+
+const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
 /** Fill widths in 0.1% steps. */
 const pct = (k: number) => `${Math.round(Math.max(0, Math.min(1, k)) * 1000) / 10}%`;
@@ -379,6 +383,7 @@ export class Hud {
     if (g.cam.shiftLock) chips.push(`<b class="sl">Shift lock${!g.input.touch && !g.input.pointerLocked ? ' · click to aim' : ''}</b>`);
     if (p.fury.bloodrageActive) chips.push(`<b class="rage">BloodRage ×${(1 + 0.25 * (p.fury.stacks + 1)).toFixed(2)}${p.hasBloodsteal() ? ' · Bloodsteal' : ''}</b>`);
     if (p.powerShotArmed) chips.push('<b class="skill">Power Shot armed</b>');
+    if (p.song) chips.push(`<b class="skill" style="color:${hex(SONGS[p.song].color)}">♪ ${SONGS[p.song].name} ${Math.ceil(p.songLeft)}s</b>`);
     if (p.combineMode) {
       const a = p.spell, b = c.spellSlots[(p.selected + 1) % 4];
       const combo = a && b ? comboFor(a, b) : null;
@@ -399,11 +404,15 @@ export class Hud {
     put(this.status, 'html', chips.join(''));
 
     // Info: flasks, fish, embers, weapon and ammo.
-    const w = WEAPONS[mainWeapon(c).id];
+    const mw = mainWeapon(c);
+    const w = WEAPONS[mw.id];
+    // Knives left and the weapon's rune.
+    const extra = (w.kind === 'knives' ? ` <small>·</small> ${c.knives} knives` : '')
+      + (mw.rune ? ` <small style="color:${hex(RUNES[mw.rune].color)}">ᚱ ${RUNES[mw.rune].name}</small>` : '');
     const fish = (c.items.fish ?? 0) + (c.items['golden-fish'] ?? 0);
     put(this.info, 'html', `<div><span class="ico">⚗</span>${c.flasks}/${c.flasksMax}${fish ? `<span class="ico fish">🐟</span>${fish}` : ''}</div>
       <div class="embers"><span class="ico">✦</span>${c.gold}</div>
-      <div><span class="ico">${WEAPON_ICON[w.kind] ?? '⚔'}</span>${esc(w.name)} <small>Lv ${mainWeapon(c).level}</small>${w.kind === 'bow' ? ` <small>·</small> ${c.arrows.steel ? `${c.arrows.steel} steel + ` : ''}${c.arrows.wood} arrows` : ''}</div>`);
+      <div><span class="ico">${WEAPON_ICON[w.kind] ?? '⚔'}</span>${esc(w.name)} <small>Lv ${mainWeapon(c).level}</small>${w.kind === 'bow' ? ` <small>·</small> ${c.arrows.steel ? `${c.arrows.steel} steel + ` : ''}${c.arrows.wood} arrows` : ''}${extra}</div>`);
 
     this.updateSpells();
     this.partyT -= dt;
@@ -453,7 +462,8 @@ export class Hud {
       put(this.reticle, 'display', 'block');
       this.reticle.style.transform = `translate(${this.v.x}px, ${this.v.y}px) translate(-50%, -50%)`;
     } else put(this.reticle, 'display', 'none');
-    const aim = !t && (g.cam.shiftLock || p.drawing > 0 || p.weaponKind === 'bow' || p.weaponKind === 'bolt');
+    const ranged = p.weaponKind === 'bow' || p.weaponKind === 'bolt' || p.weaponKind === 'wand' || p.weaponKind === 'runecircle' || (p.weaponKind === 'knives' && p.c.knives > 0);
+    const aim = !t && (g.cam.shiftLock || p.drawing > 0 || ranged);
     put(this.crosshair, 'display', aim ? 'block' : 'none');
     if (aim) {
       put(this.crosshair, 'class', g.cam.shiftLock ? 'crosshair sl' : 'crosshair');

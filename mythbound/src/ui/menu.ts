@@ -1,10 +1,11 @@
-import { CLASSES, COMBOS, RACES, ROLES, SPELLS, SUBCLASSES, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
+import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
 import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
 import { rewardName } from '../engine/bosses';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treeFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCost, type NodeView } from '../rules/skills';
 import { questLines, trackedId } from '../engine/questlog';
+import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { heightAt } from '../engine/terrain';
@@ -129,7 +130,7 @@ export class Menu {
       const def = WEAPONS[w.id];
       const check = canWield(c, w.id);
       return `<div class="row${i === c.mainHand ? ' on' : ''}">
-        <div><b class="${def.legendary ? 'legend' : ''}">${esc(def.name)}</b> <small>Lv ${w.level} · ${def.kind} · ${def.damage + 4 * (w.level - 1)} dmg${def.element !== 'physical' ? ` · ${def.element}` : ''}</small>
+        <div><b class="${def.legendary ? 'legend' : ''}">${esc(def.name)}</b> <small>Lv ${w.level} · ${def.kind} · ${def.damage + 4 * (w.level - 1)} dmg${def.element !== 'physical' ? ` · ${def.element}` : ''}</small>${w.rune ? ` <small style="color:#${RUNES[w.rune].color.toString(16).padStart(6, '0')}">ᚱ ${esc(RUNES[w.rune].name)}: ${esc(RUNES[w.rune].description)}</small>` : ''}
         ${def.description ? `<div class="desc">${esc(def.description)}</div>` : ''}
         ${check.reason ? `<div class="desc warn">${esc(check.reason)}</div>` : ''}</div>
         ${i === c.mainHand ? '<span class="tag">Equipped</span>' : `<button data-equip="${i}" ${check.ok ? '' : 'disabled'}>Equip</button>`}
@@ -139,6 +140,7 @@ export class Menu {
     return `<h3>Weapons</h3>${weapons.join('')}
       <h3>Supplies</h3>
       <div class="row"><div><b>Flasks</b> ${c.flasks}/${c.flasksMax} <div class="desc">Restore half your health. Refilled at shrines.</div></div></div>
+      ${ownsKnives(c) ? `<div class="row"><div><b>Throwing knives</b> ${c.knives}/${MAX_KNIVES} <div class="desc">Pick them up where they land. Refilled at shrines.</div></div></div>` : ''}
       ${c.arrows.wood + c.arrows.steel ? `<div class="row"><div><b>Arrows</b> ${c.arrows.wood} wood, ${c.arrows.steel} steel <div class="desc">Steel arrows hit 30% harder and are used first.</div></div></div>` : ''}
       ${items.join('') || ''}`;
   }

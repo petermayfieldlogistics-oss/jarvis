@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { ANCIENT_GLYPH, WEAPONS, type DamageElement } from '../data/defs';
+import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type DamageElement, type RuneId } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
+import { runeDrop } from '../rules/weapons';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
@@ -15,7 +16,8 @@ import type { Hero } from './hero';
 import { SharedFx } from './sharedfx';
 import { Fx } from './fx';
 import { Input } from './input';
-import { buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
+import { buildThrowingKnife, buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
+import { Armory } from './armory';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim } from './anim';
 import { Player } from './player';
@@ -27,7 +29,7 @@ import { Hud } from '../ui/hud';
 import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
 
-export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe';
+export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand';
 
 export interface ProjectileSpec {
   from: THREE.Vector3;
@@ -45,6 +47,10 @@ export interface ProjectileSpec {
   powerShot?: { multiplier: number; splashFraction: number; radius: number };
   explode?: number;
   burn?: boolean;
+  /** A rune on the weapon that loosed it: its effect lands with the hit. */
+  rune?: RuneId;
+  /** Glow of a wand bolt. */
+  color?: number;
 }
 
 interface Projectile extends ProjectileSpec {
@@ -100,6 +106,8 @@ export class Game {
   npcs: Npc[] = [];
   projectiles: Projectile[] = [];
   tornados: Tornado[] = [];
+  /** Knives on the ground and rune traps. */
+  armory: Armory;
   state: WorldState;
   mode: Mode = 'play';
   zone: ZoneId = 'town';
@@ -185,6 +193,7 @@ export class Game {
 
     this.world = new World(this.scene, q);
     this.fx = new Fx(this.scene, this.camera, this.hud.numberLayer, q === 'low');
+    this.armory = new Armory(this.scene);
     this.story = new Story(this);
     this.spawner = new Spawner(this);
     this.lairs = new Lairs(this);
@@ -410,8 +419,13 @@ export class Game {
     const vel = dir.multiplyScalar(spec.speed);
     // Aim up a little to make arcing shots land where intended.
     if (spec.gravity > 0) vel.y += (spec.gravity * dist) / spec.speed / 2;
-    const mesh = projectileMesh(spec.kind);
+    const mesh = projectileMesh(spec.kind, spec.color, spec.rune);
     mesh.position.copy(spec.from);
+    if (spec.kind === 'knife') {
+      // Tumbles end over end in the plane of its flight.
+      mesh.rotation.order = 'YXZ';
+      mesh.rotation.y = Math.atan2(vel.x, vel.z);
+    }
     this.scene.add(mesh);
     this.projectiles.push({ ...spec, pos: spec.from.clone(), vel, life: 4, mesh, hit: new Set() });
   }
@@ -445,7 +459,7 @@ export class Game {
   hitEnemyWithWeapon(e: Enemy, base: number, kind: 'melee' | 'bow' | 'thrown', element: DamageElement, o: { fromBehind?: boolean; fury?: FuryState; draw?: number }) {
     const c = this.player.c;
     const r = outgoingDamage(c, {
-      base,
+      base: base * this.player.songDamage(),
       kind,
       element,
       targetDark: e.dark,
@@ -558,6 +572,12 @@ export class Game {
           this.hud.toast(`+1 ${def.drop.item === 'ember-ore' ? 'Ember Ore' : def.drop.item}`);
           if (def.drop.item === 'ember-ore') this.questProgress('ore', 0);
         }
+      }
+      // Now and then a rune (always from a boss), matched to what the foe was made of.
+      const rune = runeDrop(bossDef ? bossDef.affinity : def!.affinity, !!bossDef, Math.random(), Math.random());
+      if (rune) {
+        c.items[runeItem(rune)] = (c.items[runeItem(rune)] ?? 0) + 1;
+        this.hud.toast(`Found a ${RUNES[rune].name}! Inscribe it on a weapon at an anvil.`, 'quest');
       }
     }
     // A hunted foe has no fog: those who fought it share the spoils.
@@ -1018,6 +1038,7 @@ export class Game {
 
       this.player.update(gdt, this);
       updateHazards(this, gdt);
+      this.armory.update(gdt, this);
       if (this.bleedTimer > 0) {
         this.bleedTimer -= dt;
         if (this.player.immuneToBleed()) this.bleedTimer = 0;
@@ -1089,7 +1110,11 @@ export class Game {
       pr.pos.addScaledVector(pr.vel, dt);
       pr.mesh.position.copy(pr.pos);
       if (pr.kind === 'arrow' || pr.kind === 'bolt') pr.mesh.lookAt(pr.pos.clone().add(pr.vel));
-      if (pr.kind === 'axe') pr.mesh.rotation.x += dt * 20;
+      if (pr.kind === 'axe' || pr.kind === 'knife') pr.mesh.rotation.x += dt * (pr.kind === 'knife' ? 28 : 20);
+      if (pr.kind === 'wand') {
+        pr.mesh.lookAt(pr.pos.clone().add(pr.vel));
+        if (Math.random() < 0.6) this.fx.emit(pr.pos, { color: pr.color ?? 0xb070ff, count: 1, speed: 0.4, life: 0.3, size: 0.35 });
+      }
       if (pr.kind === 'fireball' && Math.random() < 0.6) this.fx.emit(pr.pos, { color: 0xff6020, count: 1, speed: 0.5, life: 0.4, size: 0.8 });
       if (pr.kind === 'orb' && Math.random() < 0.5) this.fx.emit(pr.pos, { color: 0xa070ff, count: 1, speed: 0.5, life: 0.4, size: 0.6 });
       let impact = false;
@@ -1122,15 +1147,18 @@ export class Game {
       }
       if (impact) {
         if (pr.explode) {
-          this.fx.ring(pr.pos.clone(), pr.explode, pr.element === 'lightning' ? 0xd8e8ff : 0xff6020, 0.45);
+          this.fx.ring(pr.pos.clone(), pr.explode, pr.color ?? (pr.element === 'lightning' ? 0xd8e8ff : 0xff6020), 0.45);
           if (pr.owner !== 'remote') for (const e of this.enemies) if (e.alive && !pr.hit.has(e) && e.center().distanceTo(pr.pos) < pr.explode + e.radius) {
             this.damageEnemy(e, pr.damage * 0.7, pr.element, { source: 'spell' });
             if (pr.burn) e.status.burn = 3;
           }
           if (pr.owner !== 'remote') this.shake(0.15);
         } else {
-          this.fx.emit(pr.pos, { color: pr.kind === 'fireball' ? 0xff6020 : pr.kind === 'orb' ? 0xa070ff : pr.kind === 'water' ? 0x60b0ff : 0xc0b090, count: 10, speed: 3, life: 0.35 });
+          const color = pr.kind === 'wand' ? (pr.color ?? 0xb070ff) : pr.kind === 'fireball' ? 0xff6020 : pr.kind === 'orb' ? 0xa070ff : pr.kind === 'water' ? 0x60b0ff : 0xc0b090;
+          this.fx.emit(pr.pos, { color, count: 10, speed: 3, life: 0.35 });
         }
+        // Our thrown knives wait where they fell to be picked up again.
+        if (pr.kind === 'knife' && pr.owner === 'player') this.armory.dropKnife(pr.pos, pr.rune);
         this.scene.remove(pr.mesh);
         disposeObject(pr.mesh);
         this.projectiles.splice(i, 1);
@@ -1143,7 +1171,7 @@ export class Game {
       this.damageEnemy(e, pr.damage, pr.element, { source: 'ally' });
       return;
     }
-    const kind = pr.kind === 'arrow' ? 'bow' : pr.kind === 'fireball' || pr.kind === 'orb' || pr.kind === 'water' ? null : 'thrown';
+    const kind = pr.kind === 'arrow' ? 'bow' : pr.kind === 'fireball' || pr.kind === 'orb' || pr.kind === 'water' || pr.kind === 'wand' ? null : 'thrown';
     if (pr.powerShot && !e.aware) {
       // Power Shot: 6x damage while undetected, and 0.5 NDP to everything nearby.
       const p = this.player;
@@ -1158,6 +1186,7 @@ export class Game {
     else this.damageEnemy(e, pr.damage, pr.element, { source: 'spell' });
     if (pr.burn) e.status.burn = 3;
     if (pr.element === 'lightning') e.status.stun = Math.max(e.status.stun, 0.4);
+    if (pr.rune) this.player.applyRune(this, e, pr.damage, pr.rune);
   }
 
   private updateTornados(dt: number) {
@@ -1328,9 +1357,24 @@ export class Game {
   }
 }
 
-function projectileMesh(kind: ProjectileKind): THREE.Object3D {
+function projectileMesh(kind: ProjectileKind, color = 0xb070ff, rune?: RuneId): THREE.Object3D {
   const g = new THREE.Group();
   switch (kind) {
+    case 'knife': {
+      // Tumbling end over end about its local x.
+      const k = buildThrowingKnife(rune);
+      k.position.y = -0.1;
+      g.add(k);
+      break;
+    }
+    case 'wand': {
+      // A bright dart of light, pointed along +z.
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), mat(color, { emissive: color, emissiveIntensity: 3 }));
+      m.scale.set(0.7, 0.7, 2.6);
+      g.add(m);
+      g.add(glowSprite(color, 1.1));
+      break;
+    }
     case 'arrow': {
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), mat(0x8a6a40));
       shaft.rotation.x = Math.PI / 2;

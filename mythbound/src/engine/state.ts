@@ -1,5 +1,6 @@
 // World progress and saving.
 
+import { RUNES } from '../data/defs';
 import { QUESTS, type QuestId } from '../data/world';
 import { normalizeCharacter, type Character } from '../rules/character';
 
@@ -76,6 +77,10 @@ export function normalizeSave(data: SaveData): SaveData {
   normalizeCharacter(data.character);
   // Heroes from before the zombie race have never cheated death.
   data.character.riseSpent ??= false;
+  // Throwing knives and runes came later.
+  const c = data.character;
+  if (typeof c.knives !== 'number') c.knives = 0;
+  for (const w of c.weapons) if (w.rune !== undefined && !Object.hasOwn(RUNES, w.rune)) delete w.rune;
   return data;
 }
 
