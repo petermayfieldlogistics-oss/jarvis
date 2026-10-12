@@ -1,9 +1,9 @@
 // Conversations and everything the hero can interact with.
 
-import { ANCIENT_GLYPH, CLASSES, RACES, RELICS, ROLES, RUNES, SPELLS, WEAPONS, type RaceId, type RuneId, type ShopId, type SpellId } from '../data/defs';
+import { ANCIENT_GLYPH, CLASSES, RACES, RELICS, ROLES, RUNES, SPELLS, WEAPONS, type ClassId, type RaceId, type RuneId, type ShopId, type SpellId } from '../data/defs';
 import { BOSSES, ELDER_TRIALS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TOMES, TRIALS, WEAPON_TRIALS, type QuestId } from '../data/world';
 import { isRelic, rewardName } from './bosses';
-import { canLearnSpell, dracoFlightHours, learnSpell, lightHealMultiplier, MAX_WEAPON_LEVEL, shopPrice, upgradeCost } from '../rules/character';
+import { canLearnSpell, dracoFlightHours, learnSpell, lightHealMultiplier, MAX_WEAPON_LEVEL, shopPrice, upgradeCost, type Character } from '../rules/character';
 import { canWield, isLightSealed } from '../rules/combat';
 import { MAX_KNIVES, buyRune, buyWeapon, canBearRune, inscribe, ownsKnives, refillKnives, runesHeld, shopStock } from '../rules/weapons';
 import type { DialogOption, DialogSpec } from '../ui/dialog';
@@ -15,6 +15,39 @@ const CHRONICLER_ASIDE: Partial<Record<RaceId, string>> = {
   zombie: ' A zombie. Could you, umm, not drip on the pages?',
   angelic: ' An angel? The glow is lovely. Very good for reading.',
   orc: ' An orc! Please mind the ink. And the desk. And me.',
+};
+
+/** What the Chronicler mutters about the newer classes. */
+const CHRONICLER_CLASS: Partial<Record<ClassId, string>> = {
+  monk: ' A monk. Do you really sit still for hours? I tried once. I fell asleep on the inkpot.',
+  sorcerer: ' A sorcerer. Please point that wand somewhere else while I write.',
+  rogue: " A rogue. Good. Nobody will believe I met you, and I won't be writing much down.",
+};
+
+/** Orrin's welcome, by class (and by path, for the newer ones). */
+function orrinWelcome(c: Character): string {
+  const tail = 'The scrolls speak of six weapons of the old gods, sealed in six trials across the land. Whoever claims them must be worthy, or the weapons will not answer.';
+  switch (c.subclassId) {
+    case 'darkmage':
+      return `A Dark Mage. I can smell the candle smoke and grave dirt on you. Mind what you bargain for. ${tail}`;
+    case 'lightmage':
+      return `A Light Mage! Sister Lumen will be glad of you; the dead are restless of late. ${tail}`;
+  }
+  switch (c.classId) {
+    case 'monk':
+      return `Welcome, monk. No blade, I see. The old gods care less for steel than you might think. ${tail}`;
+    case 'rogue':
+      return `A rogue, is it? Keep your hands where I can see them, and off my scrolls. ${tail}`;
+  }
+  return `Welcome, ${CLASSES[c.classId].name.toLowerCase()}. ${tail}`;
+}
+
+/** Why a tome's spell will not take. */
+const TOME_REFUSAL: Partial<Record<ClassId, string>> = {
+  ranger: 'Rangers are limited to sky magic.',
+  monk: "A monk's arts are of breath and body, not of tomes.",
+  rogue: 'Rogues learn tricks, not spells.',
+  sorcerer: 'A sorcerer learns only arcane tomes, and the magic of their own path.',
 };
 
 export class Story {
@@ -189,7 +222,7 @@ export class Story {
           subtitle: 'Keeper of the Archive',
           text: historian
             ? `Ah, a fellow Historian. Then you already know more than you should, ${c.name}. Good. Six weapons of the old gods sleep in six trials. The scrolls even say who may hold them.`
-            : `Welcome, ${CLASSES[c.classId].name.toLowerCase()}. The scrolls speak of six weapons of the old gods, sealed in six trials across the land. Whoever claims them must be worthy, or the weapons will not answer.`,
+            : orrinWelcome(c),
           options: opts([
             this.questOption('trials', 'Tell me about the trials.', 'I have conquered them all.', 'The trials'),
             this.questOption('tomes', 'Are there more spells to find?', 'I found the lost tomes.', 'Spell tomes'),
@@ -226,6 +259,8 @@ export class Story {
                     'Staff of Hecate: Mages alone.',
                     'Hammer of Hephaestus: Blacksmiths alone.',
                     "Poseidon's Trident: Sailors alone.",
+                    '',
+                    'And the newer paths keep to their own arms: Monks fight with hand wraps, quarterstaffs and spears; Sorcerers with wands, rune circles, staves and daggers; Rogues with daggers, throwing knives, swords and bows.',
                   ].join('\n'),
                   options: [{ label: 'Back', action: () => this.talk('orrin') }],
                 }),
@@ -252,7 +287,9 @@ export class Story {
           text: (smith
             ? "Another smith! Use my anvil whenever you like, half the usual cost. Some say a smith can even wield the Hammer of Hephaestus."
             : "Need an edge? I can improve your weapons, for embers and Ember Ore. A blacksmith would do it for half, mind.") +
-            (c.raceId === 'orc' ? "\n\nAn orc, eh? Mind the doorframe. Your lot never bring a blade back with an edge left on it… good for business." : ''),
+            (c.raceId === 'orc' ? "\n\nAn orc, eh? Mind the doorframe. Your lot never bring a blade back with an edge left on it… good for business." : '') +
+            (c.classId === 'monk' ? "\n\nNo blade? Fists, then. I can sew iron into your wraps (tiger claws, if you've the embers), and a good ironwood staff never hurt anyone. Anyone friendly." : '') +
+            (c.classId === 'rogue' ? "\n\nDaggers, eh? I keep a fine edge on those. And a duelist's saber, light as a feather. Don't tell me what it's for." : ''),
           options: opts([
             { label: 'Upgrade my weapons', action: () => this.forge(true) },
             { label: 'Show me your steel (buy weapons and runes)', action: () => this.shop('brann') },
@@ -272,6 +309,10 @@ export class Story {
               ? `You have made a deal with the Devil (${c.devilDeals} so far). Your light is sealed for now. Every deal seals it longer, and the fourth seals it forever. Please… be careful.`
               : knight
                 ? 'A Knight of the Light! The chapel is yours. May your light never be sealed.'
+                : c.subclassId === 'lightmage'
+                  ? 'A Light Mage! Your wards and your mending… the chapel has prayed for hands like yours. Smite the restless dead for me, child.'
+                  : c.subclassId === 'darkmage'
+                    ? 'I can see shadow clinging to you, child. Hexes and hunger… be careful the dark does not drink you too. The light will still mend you here.'
                 : c.raceId === 'angelic'
                   ? 'Oh! Wings, and a halo… the old books spoke of your kind. Stay close to your friends, child, and your light will mend them.'
                   : c.raceId === 'zombie'
@@ -293,7 +334,9 @@ export class Story {
         return this.open({
           title: 'Quill',
           subtitle: 'Merchant',
-          text: c.raceId === 'zombie'
+          text: c.classId === 'rogue'
+            ? `Hands where I can see them, friend. Both of them. Good. Embers for goods, goods for embers. You have ${c.gold} embers… for now.`
+            : c.raceId === 'zombie'
             ? `Phew! What is that smell? Oh. It's you. Fine, I'll trade with the dead, but the dead pay extra. You have ${c.gold} embers.`
             : c.raceId === 'orc'
               ? `Embers for goods, goods for embers. And please, don't lean on the shelves. You have ${c.gold} embers.`
@@ -340,7 +383,7 @@ export class Story {
           text: this.chronicle(
             g.state.flags.eyesSeen
               ? 'You… you looked at them, didn’t you? Umm. So I was paid to not ask questions, and just write. Sooo I’m just gonna ignore that.'
-              : `Oh! A hero. ${RACES[c.raceId].name}, ${CLASSES[c.classId].name}, ${ROLES[c.roleId].name}… let me write that down.${CHRONICLER_ASIDE[c.raceId] ?? ''} Seriously, who comes up with these things? I lost some pages of an old manuscript. The wind took them. I'm sure it was the wind.`,
+              : `Oh! A hero. ${RACES[c.raceId].name}, ${CLASSES[c.classId].name}, ${ROLES[c.roleId].name}… let me write that down.${CHRONICLER_ASIDE[c.raceId] ?? ''}${CHRONICLER_CLASS[c.classId] ?? ''} Seriously, who comes up with these things? I lost some pages of an old manuscript. The wind took them. I'm sure it was the wind.`,
           ),
           options: opts([
             this.questOption('pages', 'I can look for your pages.', 'I found your pages.', 'Missing pages'),
@@ -463,7 +506,7 @@ export class Story {
       subtitle: can ? 'Spell learned' : 'A spell you cannot learn',
       text: can
         ? `${def.description}\n\nMana: ${def.mana}. ${this.c.spellSlots.includes(spell) ? 'Added to your spell bar.' : 'Equip it from the Spells menu.'}`
-        : `${def.description}\n\nThe words slide off your mind. ${this.c.classId === 'ranger' ? 'Rangers are limited to sky magic.' : 'Your class cannot learn this.'}`,
+        : `${def.description}\n\nThe words slide off your mind. ${TOME_REFUSAL[this.c.classId] ?? 'Your class cannot learn this.'}`,
       options: [{ label: 'Close' }],
     });
   }
@@ -574,7 +617,7 @@ export class Story {
       subtitle: `You have ${c.gold} embers`,
       text: id === 'brann'
         ? 'Greatswords, spears, axes for two hands, knives for throwing. And runes: carve one into a blade at the anvil and it bites with fire, frost, storm or venom.'
-        : 'Odd things from far roads. A wand for a mage, a ring of runes, and music: a lyre to lift your friends, a horn to scatter your foes.',
+        : 'Odd things from far roads. A wand for a mage or a sorcerer, a ring of runes, and music: a lyre to lift your friends, a horn to scatter your foes.',
       options,
     });
   }

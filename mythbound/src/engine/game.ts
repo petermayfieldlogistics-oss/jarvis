@@ -4,6 +4,7 @@ import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, 
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
+import { emberBonus, HEX } from '../rules/classes';
 import { runeDrop } from '../rules/weapons';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -51,6 +52,11 @@ export interface ProjectileSpec {
   rune?: RuneId;
   /** Glow of a wand bolt. */
   color?: number;
+  /** Slows what it hits for this many seconds (a withering shadow bolt). */
+  slow?: number;
+  /** A rogue's knife: coated in poison, or thrown out of Vanish (an ambush). */
+  poison?: boolean;
+  ambush?: boolean;
   /** Strikes, then flies back to `home` (the hand that threw it), hitting again on the way. */
   boomerang?: boolean;
   home?: () => THREE.Vector3 | null;
@@ -354,6 +360,8 @@ export class Game {
 
   /** A monster's blow on a hero: here, or sent to the friend's game. */
   damageHero(h: Hero, amount: number, element: DamageElement, source: Enemy | null) {
+    // A hexed monster hits softer.
+    if (source && source.status.hex > 0) amount *= HEX.dealt;
     if (h === this.player) return this.damagePlayer(amount, element, source);
     if (h instanceof RemoteHero && h.alive) {
       this.coop.hurt(h, amount, element, source);
@@ -463,7 +471,7 @@ export class Game {
   }
 
   /** Damage from the hero's weapon: applies class, race, role and stealth rules. */
-  hitEnemyWithWeapon(e: Enemy, base: number, kind: 'melee' | 'bow' | 'thrown', element: DamageElement, o: { fromBehind?: boolean; fury?: FuryState; draw?: number }) {
+  hitEnemyWithWeapon(e: Enemy, base: number, kind: 'melee' | 'bow' | 'thrown', element: DamageElement, o: { fromBehind?: boolean; fury?: FuryState; draw?: number; finisher?: boolean; ambush?: boolean }) {
     const c = this.player.c;
     const r = outgoingDamage(c, {
       base: base * this.player.songDamage(),
@@ -477,9 +485,21 @@ export class Game {
       heroHp: this.player.hp / this.player.maxHp,
       targetHp: e.hp / e.maxHp,
       warCry: this.player.warCry > 0,
+      targetStunned: e.status.stun > 0,
+      targetPoisoned: e.status.poison > 0,
+      targetBleeding: e.status.bleed > 0,
+      ambush: o.ambush,
+      finisher: o.finisher,
     });
     this.damageEnemy(e, r.amount, element, { source: 'player', tags: r.tags });
     if (kind === 'bow' && c.skills['hunters-mark']) e.status.marked = 8;
+  }
+
+  /** Knocks a monster back (and maybe up): here, or (a guest's copy) by asking the host, whose game moves it. */
+  shoveEnemy(e: Enemy, dx: number, dz: number, force: number, up = 0) {
+    if (!e.alive) return;
+    if (e.net) this.coop.shove(e, dx, dz, force, up);
+    else e.shove(dx, dz, force, up);
   }
 
   damageEnemy(e: Enemy, amount: number, element: DamageElement, o: { source?: string; dot?: boolean; quiet?: boolean; tags?: string[]; by?: number } = {}) {
@@ -494,6 +514,10 @@ export class Game {
     if (weak && weak === element) dmg *= 1.5;
     if (e.affinity !== 'none' && e.affinity !== 'dark' && element === e.affinity) dmg *= 0.5;
     if (e.status.marked > 0) dmg *= 1.15;
+    // A hexed foe takes more from everyone.
+    if (e.status.hex > 0) dmg *= HEX.taken;
+    // Striking (or casting at) a foe ends a rogue's Vanish.
+    if (!remote && !o.dot && (o.source === 'player' || o.source === 'spell') && this.player.vanish > 0) this.player.vanish = 0;
     if (element === 'lightning' && e.status.wet > 0 && o.source !== 'spell') dmg *= 1.5;
     e.hp = guest ? Math.max(1, e.hp - dmg) : e.hp - dmg;
     e.hitFlash = 0.15;
@@ -502,8 +526,8 @@ export class Game {
     if (e.status.bleed > 0 && !remote && this.player.hasBloodsteal()) this.player.heal(dmg);
     if (!o.dot) {
       const tags = o.tags?.filter((t) => t !== 'sneak') ?? [];
-      const text = `${Math.round(dmg)}${tags.includes('backstab') ? ' BACKSTAB' : ''}`;
-      this.fx.damageNumber(e.center().add(new THREE.Vector3(0, e.height * 0.5, 0)), text, tags.includes('backstab') || tags.includes('power') ? 'crit' : weak === element ? 'weak' : '');
+      const text = `${Math.round(dmg)}${tags.includes('ambush') ? ' AMBUSH' : tags.includes('backstab') ? ' BACKSTAB' : ''}`;
+      this.fx.damageNumber(e.center().add(new THREE.Vector3(0, e.height * 0.5, 0)), text, tags.includes('backstab') || tags.includes('ambush') || tags.includes('power') ? 'crit' : weak === element ? 'weak' : '');
       this.fx.impact(e.center(), e.bleeds ? 0x8a0a0a : 0xd8d0c0, Math.min(1, dmg / 40));
     }
     if (guest) return;
@@ -516,6 +540,7 @@ export class Game {
     e.hp = 0;
     this.corpses.push({ e, t: 0 });
     if (this.player.lockTarget === e) this.player.lockTarget = null;
+    this.player.onFoeDied(this, e);
     const isBoss = e instanceof Boss;
     const info: KillInfo = {
       id: isBoss ? e.bdef.id : e.def.id,
@@ -540,6 +565,7 @@ export class Game {
     e.net = null;
     this.corpses.push({ e, t: 0 });
     if (this.player.lockTarget === e) this.player.lockTarget = null;
+    this.player.onFoeDied(this, e);
   }
 
   /** Guest: a kill in the host's world (ours to reward if we were part of it). */
@@ -562,7 +588,8 @@ export class Game {
       }
       const def = bossDef ? null : ENEMIES[info.id as EnemyId];
       const level = info.lv ?? (bossDef ? bossDef.level : def!.level);
-      c.gold += info.gold;
+      c.gold += Math.round(info.gold * emberBonus(c));
+      this.player.onKill();
       // Each hero's own game weighs the kill against their own level.
       this.gainXp(killXp(info.xp, level, c.level, info.boss));
       this.killRegen(level, bossDef ? 2 : def!.scale, info.boss, !!info.minion);
@@ -674,7 +701,13 @@ export class Game {
   damagePlayer(amount: number, element: DamageElement, source: Actor | null, environmental = false) {
     const p = this.player;
     if (!p.alive || amount <= 0 || this.mode === 'dead') return;
-    if (!environmental && p.iframes > 0) return;
+    if (!environmental && p.iframes > 0) {
+      // Rolled (dashed, flipped) clean through it.
+      if (p.rollT >= 0) p.dodged(this);
+      return;
+    }
+    // A duelist's parry turns the blow aside and answers it.
+    if (!environmental && source && p.parryWindow > 0) return p.parried(this, source);
     let blocking = false;
     if (p.blocking && source) {
       const facing = Math.cos(Math.atan2(source.pos.x - p.pos.x, source.pos.z - p.pos.z) - p.yaw);
@@ -688,7 +721,7 @@ export class Game {
       this.audio.play('block');
       this.fx.emit(p.center().add(new THREE.Vector3(Math.sin(p.yaw) * 0.6, 0.2, Math.cos(p.yaw) * 0.6)), { color: 0xffe0a0, count: 14, speed: 5, life: 0.3 });
       if (p.stamina <= 0) {
-        p.stagger = 1;
+        if (p.ironSkin <= 0) p.stagger = 1;
         p.blocking = false;
         blocking = false;
         amount *= 0.5;
@@ -697,9 +730,19 @@ export class Game {
         this.fx.damageNumber(p.center(), 'BLOCKED', 'info');
         if (source instanceof Enemy && !(source instanceof Boss) && p.c.skills.riposte) source.status.stun = 1.2;
         return;
+      } else if (source instanceof Enemy && !(source instanceof Boss) && p.c.skills['counter-strike']) {
+        // An Iron Fist's guard stuns whoever struck it.
+        source.status.stun = Math.max(source.status.stun, 1.2);
       }
     }
-    let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0 });
+    let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0, ironSkin: p.ironSkin > 0 });
+    // A Ward of Dawn soaks up what it can.
+    if (p.ward > 0 && dmg > 0) {
+      const soak = Math.min(p.ward, dmg);
+      p.ward -= soak;
+      dmg -= soak;
+      this.fx.emit(p.center(), { color: 0xfff0b0, count: 8, speed: 2.5, life: 0.35 });
+    }
     if (p.c.elfMystery && p.c.mysteryRevealed && element === 'dark') dmg *= 1.2;
     // Mana Shield: a fifth of the blow drains mana instead.
     if (rank(p.c, 'mana-shield') && !p.soulOrPower && p.mana > 0) {
@@ -716,6 +759,7 @@ export class Game {
     }
     p.hp = Math.min(p.hp, maxHp(p.c)) - dmg;
     if (dmg >= 1) {
+      p.endMeditation();
       p.anim.hurt = 1;
       this.hud.hurt(Math.min(1, dmg / 30));
       this.audio.play('hurt');
@@ -1147,7 +1191,7 @@ export class Game {
         // Each player's game checks its own hero; the shot's copies elsewhere check theirs.
         const p = this.player;
         if (p.alive && p.center().distanceTo(pr.pos) < 0.9 + (p.crouching ? 0 : 0.2)) {
-          this.damagePlayer(pr.damage, pr.element, pr.source);
+          this.damagePlayer(pr.damage * (pr.source && pr.source.status.hex > 0 ? HEX.dealt : 1), pr.element, pr.source);
           impact = true;
         }
       } else {
@@ -1225,9 +1269,11 @@ export class Game {
       for (const o of this.enemies) if (o !== e && o.alive && o.pos.distanceTo(e.pos) < pr.powerShot.radius) this.damageEnemy(o, r.amount * pr.powerShot.splashFraction, pr.element, { source: 'player' });
       return;
     }
-    if (kind) this.hitEnemyWithWeapon(e, pr.damage, kind, pr.element, { draw: pr.draw });
+    if (kind) this.hitEnemyWithWeapon(e, pr.damage, kind, pr.element, { draw: pr.draw, ambush: pr.ambush });
     else this.damageEnemy(e, pr.damage, pr.element, { source: 'spell' });
     if (pr.burn) e.status.burn = 3;
+    if (pr.slow) e.status.slow = Math.max(e.status.slow, pr.slow);
+    if (pr.poison) this.player.envenom(this, e);
     if (pr.element === 'lightning') e.status.stun = Math.max(e.status.stun, 0.4);
     if (pr.rune) this.player.applyRune(this, e, pr.damage, pr.rune);
   }

@@ -1,8 +1,10 @@
 // Game content: classes, subclasses, races, roles, weapons and spells, as
 // written in the design notes. The rules that use these live in src/rules/.
 
-export type ClassId = 'warrior' | 'ranger' | 'mage';
-export type SubclassId = 'swordsman' | 'axeman' | 'bowman' | 'trainer' | 'elemental';
+export type ClassId = 'warrior' | 'ranger' | 'mage' | 'monk' | 'sorcerer' | 'rogue';
+export type SubclassId =
+  | 'swordsman' | 'axeman' | 'bowman' | 'trainer' | 'elemental'
+  | 'ironfist' | 'windwalker' | 'darkmage' | 'lightmage' | 'shadow' | 'duelist';
 export type RaceId = 'elf' | 'draco' | 'human' | 'zombie' | 'angelic' | 'orc' | 'ancient';
 export type RoleId = 'historian' | 'blacksmith' | 'sailor' | 'darkslayer' | 'knight' | 'assassin';
 export type Element = 'fire' | 'water' | 'wind' | 'earth';
@@ -65,6 +67,51 @@ export const CLASSES: Record<ClassId, ClassDef> = {
       'The only class that can wield the Staff of Hecate',
     ],
   },
+  monk: {
+    id: 'monk',
+    name: 'Monk',
+    hp: 105,
+    mana: 35,
+    blurb: 'Fists, feet and a quiet mind.',
+    traits: [
+      'Martial arts: hand wraps jab, cross and kick in quick combos; heavy is a palm strike that throws foes back',
+      'Fights with hand wraps, quarterstaffs, staves and spears',
+      'Chi: mana is chi. Every landed blow restores some; techniques spend it',
+      'Fleet: faster, +20 stamina. Rolls become dashes, a backstep is a backflip, and a second jump flips in the air',
+      'Flurry of Blows (R): a storm of strikes on the foe in front',
+      'Techniques: Palm Shockwave and Meditate (heal)',
+    ],
+  },
+  sorcerer: {
+    id: 'sorcerer',
+    name: 'Sorcerer',
+    hp: 75,
+    mana: 80,
+    blurb: 'Raw power, poured straight from the soul.',
+    traits: [
+      'Raw Power: spells hit 20% harder',
+      'Channelled spells: hold cast to pour out a beam (it drains mana while held)',
+      'Wand and rune-circle master: wand bolts and rune traps cost less mana',
+      'Fights with wands, rune circles, staves and daggers',
+      'Arcane Surge (R): for 8 s spells cost nothing and hit 25% harder',
+      'Walks one of two paths: the Dark Mage or the Light Mage',
+    ],
+  },
+  rogue: {
+    id: 'rogue',
+    name: 'Rogue',
+    hp: 95,
+    mana: 30,
+    blurb: 'Knives in the dark, gone before the body falls.',
+    traits: [
+      'Backstab: blows from behind deal +50%; from stealth, triple damage',
+      'Daggers and throwing knives hit 15% harder. Fights with daggers, knives, swords and bows',
+      'Evasive: rolls are quicker, cheaper and safer',
+      'Quiet feet: harder to notice, even more so crouched',
+      'Vanish (R): every foe but the great ones loses you; your next strike is an ambush (a backstab, and then some)',
+      'Tricks: Smoke Bomb and Poison Blades (poison stacks on foes)',
+    ],
+  },
 };
 
 export interface SubclassDef {
@@ -120,6 +167,54 @@ export const SUBCLASSES: Record<SubclassId, SubclassDef> = {
     expansion: true,
     blurb: 'Bound to one element.',
     traits: ['Choose fire, water, wind or earth', 'Spells of that element are 50% stronger and 25% cheaper', 'Resist that element'],
+  },
+  ironfist: {
+    id: 'ironfist',
+    classId: 'monk',
+    name: 'Iron Fist',
+    expansion: false,
+    blurb: 'Bones like iron, fists like hammers.',
+    traits: ['Starts with level 2 Iron Knuckle wraps', 'Iron Skin: 40% less damage and nothing knocks you down, for 8 s', 'Flurry of Blows and palm strikes hit harder', 'Iron Fist tree'],
+  },
+  windwalker: {
+    id: 'windwalker',
+    classId: 'monk',
+    name: 'Wind Walker',
+    expansion: false,
+    blurb: 'Light as a breeze, fast as a gale.',
+    traits: ['Starts with a level 2 quarterstaff and hand wraps', 'Cyclone Kick: a leaping spin kick that throws foes into the air', 'Flurry of Blows dashes to the foe first', 'Wind Walker tree'],
+  },
+  darkmage: {
+    id: 'darkmage',
+    classId: 'sorcerer',
+    name: 'Dark Mage',
+    expansion: false,
+    blurb: 'Shadow, hunger and curses.',
+    traits: ['Shadow Bolt (hold: a volley of three)', 'Life Drain: a channelled beam that heals you', 'Hex: a cursed foe takes more and deals less', 'Summon Shade: your shadow fights beside you'],
+  },
+  lightmage: {
+    id: 'lightmage',
+    classId: 'sorcerer',
+    name: 'Light Mage',
+    expansion: false,
+    blurb: 'Radiance that burns the dead and shields the living.',
+    traits: ['Radiant Beam: a channelled lance of light (double on dark creatures)', 'Smite Undead: a pillar that crushes the dead and stuns', 'Mending Light: heals you and friends nearby', 'Ward of Dawn: shields you and friends nearby'],
+  },
+  shadow: {
+    id: 'shadow',
+    classId: 'rogue',
+    name: 'Shadow',
+    expansion: false,
+    blurb: 'Unseen, unheard, unforgiving.',
+    traits: ['Starts with a level 2 dagger and throwing knives', 'Shadowstep: blink behind your target', 'Longer Vanish, deadlier ambushes', 'Shadow tree'],
+  },
+  duelist: {
+    id: 'duelist',
+    classId: 'rogue',
+    name: 'Duelist',
+    expansion: false,
+    blurb: 'Steel, footwork and a smile.',
+    traits: ['Starts with a level 2 duelling saber and a dagger', 'Parry: turn the next blow aside and riposte for triple damage', 'Quicker light combos', 'Duelist tree'],
   },
 };
 
@@ -274,7 +369,9 @@ export const ROLES: Record<RoleId, RoleDef> = {
 
 export type WeaponKind =
   | 'sword' | 'axe' | 'bow' | 'staff' | 'dagger' | 'hammer' | 'trident' | 'bolt'
-  | 'greatsword' | 'longsword' | 'spear' | 'battleaxe' | 'knives' | 'wand' | 'runecircle' | 'lyre' | 'horn';
+  | 'greatsword' | 'longsword' | 'spear' | 'battleaxe' | 'knives' | 'wand' | 'runecircle' | 'lyre' | 'horn'
+  // Monks: wrapped fists, and the plain fighting staff.
+  | 'wraps' | 'quarterstaff';
 
 export type LegendaryId = 'sword-of-mars' | 'bow-of-artemis' | 'master-bolt' | 'staff-of-hecate' | 'hammer-of-hephaestus' | 'trident-of-poseidon';
 
@@ -362,12 +459,12 @@ export const WEAPONS: Record<string, WeaponDef> = {
     description: 'Thrown in quick volleys (heavy: three at once). Pick them back up where they land; resting at a shrine refills them.',
   },
   'willow-wand': {
-    id: 'willow-wand', name: 'Willow Wand', kind: 'wand', damage: 7, speed: 2.4, range: 40, element: 'physical', classes: ['mage'], price: 150, shop: 'quill',
-    description: 'Quick arcane bolts for 2 mana (heavy: a bursting bolt for 7). Your spells hit 15% harder while it is in hand. Mages only.',
+    id: 'willow-wand', name: 'Willow Wand', kind: 'wand', damage: 7, speed: 2.4, range: 40, element: 'physical', classes: ['mage', 'sorcerer'], price: 150, shop: 'quill',
+    description: 'Quick arcane bolts for 2 mana (heavy: a bursting bolt for 7). Your spells hit 15% harder while it is in hand. Mages and sorcerers only.',
   },
   'rune-circle': {
-    id: 'rune-circle', name: 'Circle of Runes', kind: 'runecircle', damage: 10, speed: 1.1, range: 24, element: 'physical', classes: ['mage'], price: 190, shop: 'quill',
-    description: 'A ring of runes orbits your hand. Draw rune traps on the ground that burn and slow foes inside (heavy: a binding seal around you). Mages only.',
+    id: 'rune-circle', name: 'Circle of Runes', kind: 'runecircle', damage: 10, speed: 1.1, range: 24, element: 'physical', classes: ['mage', 'sorcerer'], price: 190, shop: 'quill',
+    description: 'A ring of runes orbits your hand. Draw rune traps on the ground that burn and slow foes inside (heavy: a binding seal around you). Mages and sorcerers only.',
   },
   'bards-lyre': {
     id: 'bards-lyre', name: "Bard's Lyre", kind: 'lyre', damage: 9, speed: 1.3, range: 8, element: 'physical', price: 160, shop: 'quill',
@@ -376,6 +473,31 @@ export const WEAPONS: Record<string, WeaponDef> = {
   'war-horn': {
     id: 'war-horn', name: 'War Horn', kind: 'horn', damage: 11, speed: 1, range: 9, element: 'physical', price: 160, shop: 'quill',
     description: 'A blast that sends foes fleeing. Heavy: War Cry. Friends nearby run faster and strike harder; foes cower.',
+  },
+  // Monks fight with their hands; anyone may take up a quarterstaff.
+  'linen-wraps': {
+    id: 'linen-wraps', name: 'Linen Hand Wraps', kind: 'wraps', damage: 7, speed: 2.7, range: 1.8, element: 'physical', classes: ['monk'],
+    description: 'Wrapped fists: a jab, a cross and a spinning kick. Heavy is a palm strike that throws foes back. Monks only.',
+  },
+  'iron-knuckles': {
+    id: 'iron-knuckles', name: 'Iron Knuckle Wraps', kind: 'wraps', damage: 10, speed: 2.5, range: 1.8, element: 'physical', classes: ['monk'],
+    description: 'Wraps sewn over iron knuckles. Every blow lands like a small hammer. Monks only.',
+  },
+  'tiger-claws': {
+    id: 'tiger-claws', name: 'Tiger Claw Wraps', kind: 'wraps', damage: 13, speed: 2.6, range: 1.9, element: 'physical', classes: ['monk'], price: 200, shop: 'brann',
+    description: 'Black wraps with three steel claws over the knuckles. Foes bleed. Monks only.',
+  },
+  'ash-quarterstaff': {
+    id: 'ash-quarterstaff', name: 'Ash Quarterstaff', kind: 'quarterstaff', damage: 11, speed: 1.6, range: 3.0, element: 'physical',
+    description: 'A plain staff of ash, shod with iron at both ends. Quick sweeps; the heavy whirls it round you.',
+  },
+  'ironwood-staff': {
+    id: 'ironwood-staff', name: 'Ironwood Quarterstaff', kind: 'quarterstaff', damage: 15, speed: 1.5, range: 3.1, element: 'physical', price: 170, shop: 'brann',
+    description: 'Dense black ironwood bound in brass. It rings like a bell when it lands.',
+  },
+  'duelist-saber': {
+    id: 'duelist-saber', name: "Duelist's Saber", kind: 'sword', damage: 10, speed: 2.1, range: 2.5, element: 'physical', price: 150, shop: 'brann',
+    description: 'Light and quick: made for footwork, feints and ripostes.',
   },
 };
 
@@ -423,7 +545,8 @@ export const RELICS: Record<RelicId, { id: RelicId; name: string; boon: string }
 
 // ------------------------------------------------------------------ spells --
 
-export type SpellSchool = 'devil' | 'fire' | 'water' | 'sky' | 'light' | 'arcane' | 'earth';
+/** chi: a monk's techniques; shadow: the Dark Mage's; trick: a rogue's. */
+export type SpellSchool = 'devil' | 'fire' | 'water' | 'sky' | 'light' | 'arcane' | 'earth' | 'chi' | 'shadow' | 'trick';
 
 export type SpellId =
   | 'deal-with-the-devil'
@@ -439,7 +562,26 @@ export type SpellId =
   | 'radiant-heal'
   | 'aegis-of-light'
   | 'stone-skin'
-  | 'moonveil';
+  | 'moonveil'
+  // Monk techniques.
+  | 'palm-shockwave'
+  | 'meditate'
+  | 'iron-skin'
+  | 'cyclone-kick'
+  // Sorcerer: the Dark Mage and the Light Mage.
+  | 'shadow-bolt'
+  | 'life-drain'
+  | 'hex'
+  | 'summon-shade'
+  | 'radiant-beam'
+  | 'smite-undead'
+  | 'mending-light'
+  | 'ward-of-dawn'
+  // Rogue tricks.
+  | 'smoke-bomb'
+  | 'poison-blades'
+  | 'shadowstep'
+  | 'parry';
 
 export interface SpellDef {
   id: SpellId;
@@ -453,6 +595,8 @@ export interface SpellDef {
   description: string;
   /** Found as a tome in the world rather than known from the start. */
   hidden?: boolean;
+  /** Held: a beam that costs `mana` and deals `power` every channel tick while the cast button is held. */
+  channel?: boolean;
 }
 
 export const SPELLS: Record<SpellId, SpellDef> = {
@@ -512,6 +656,74 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     id: 'moonveil', name: 'Moonveil', school: 'arcane', element: 'dark', mana: 16, cooldown: 30, power: 0, hidden: true,
     description: 'Become unseen for 10 seconds, or until you strike.',
   },
+  // ---- Monk techniques (chi is the monk's mana).
+  'palm-shockwave': {
+    id: 'palm-shockwave', name: 'Palm Shockwave', school: 'chi', element: 'wind', mana: 10, cooldown: 5, power: 24,
+    description: 'A palm thrust that looses a cone of force: foes in front are hurled back and staggered.',
+  },
+  meditate: {
+    id: 'meditate', name: 'Meditate', school: 'chi', element: 'light', mana: 0, cooldown: 30, power: 0,
+    description: 'Sit and breathe for up to 4 seconds: heal 9% of your health and 8 chi a second. Moving, striking or being hit ends it.',
+  },
+  'iron-skin': {
+    id: 'iron-skin', name: 'Iron Skin', school: 'chi', element: 'earth', mana: 14, cooldown: 24, power: 0,
+    description: 'For 8 seconds take 40% less damage, and nothing staggers you or knocks you down.',
+  },
+  'cyclone-kick': {
+    id: 'cyclone-kick', name: 'Cyclone Kick', school: 'chi', element: 'wind', mana: 12, cooldown: 6, power: 26,
+    description: 'Leap and spin: a whirling kick that strikes all around and throws foes into the air.',
+  },
+  // ---- Dark Mage.
+  'shadow-bolt': {
+    id: 'shadow-bolt', name: 'Shadow Bolt', school: 'shadow', element: 'dark', mana: 8, cooldown: 0.8, power: 26,
+    description: 'A fast bolt of shadow. Hold to loose three in a fan (for triple the mana).',
+  },
+  'life-drain': {
+    id: 'life-drain', name: 'Life Drain', school: 'shadow', element: 'dark', mana: 3, cooldown: 1, power: 6, channel: true,
+    description: 'Hold to pour a dark beam into a foe: it withers, and you heal half of what it loses. Costs mana while held.',
+  },
+  hex: {
+    id: 'hex', name: 'Hex', school: 'shadow', element: 'dark', mana: 14, cooldown: 8, power: 0,
+    description: 'Curse a foe for 12 seconds: it takes 25% more damage and deals 25% less. If it dies cursed, the hex leaps to a foe nearby.',
+  },
+  'summon-shade': {
+    id: 'summon-shade', name: 'Summon Shade', school: 'shadow', element: 'dark', mana: 22, cooldown: 30, power: 10,
+    description: 'Your shadow tears free and fights beside you for 25 seconds.',
+  },
+  // ---- Light Mage.
+  'radiant-beam': {
+    id: 'radiant-beam', name: 'Radiant Beam', school: 'light', element: 'light', mana: 3, cooldown: 1, power: 6, channel: true,
+    description: 'Hold to pour a lance of light into a foe (double against dark creatures). Costs mana while held.',
+  },
+  'smite-undead': {
+    id: 'smite-undead', name: 'Smite Undead', school: 'light', element: 'light', mana: 14, cooldown: 6, power: 34,
+    description: 'A pillar of light on your target. Dark creatures and the dead take 50% more and are stunned.',
+  },
+  'mending-light': {
+    id: 'mending-light', name: 'Mending Light', school: 'light', element: 'light', mana: 16, cooldown: 10, power: 40,
+    description: 'Heals you, your beasts, and co-op friends within 12 m.',
+  },
+  'ward-of-dawn': {
+    id: 'ward-of-dawn', name: 'Ward of Dawn', school: 'light', element: 'light', mana: 18, cooldown: 22, power: 30,
+    description: 'A shield of light on you and co-op friends within 12 m. It soaks up damage for 10 seconds.',
+  },
+  // ---- Rogue tricks.
+  'smoke-bomb': {
+    id: 'smoke-bomb', name: 'Smoke Bomb', school: 'trick', element: 'physical', mana: 10, cooldown: 16, power: 0,
+    description: 'Throw a smoke bomb: for 6 seconds foes in the cloud lose sight of everyone and stumble slowly, and inside it you are nearly invisible.',
+  },
+  'poison-blades': {
+    id: 'poison-blades', name: 'Poison Blades', school: 'trick', element: 'earth', mana: 10, cooldown: 24, power: 0,
+    description: 'Coat your blades for 20 seconds: blows and thrown knives poison foes. Poison stacks up to three times.',
+  },
+  shadowstep: {
+    id: 'shadowstep', name: 'Shadowstep', school: 'trick', element: 'dark', mana: 10, cooldown: 8, power: 0,
+    description: 'Blink behind your target (up to 16 m away), facing its back.',
+  },
+  parry: {
+    id: 'parry', name: 'Parry', school: 'trick', element: 'physical', mana: 6, cooldown: 5, power: 0,
+    description: 'Raise your blade for a heartbeat: the next blow is turned aside, and you riposte for triple damage.',
+  },
 };
 
 export const MAGE_STARTING_SPELLS: SpellId[] = ['deal-with-the-devil', 'inferno', 'wrath-of-thor', 'waterspike', 'way-of-the-wind'];
@@ -562,7 +774,10 @@ export const TIER_POINTS = [0, 0, 2, 5, 9, 14];
 /** Skill points one rank costs at each tier. */
 export const TIER_COST = [0, 1, 1, 2, 2, 3];
 
-export type TreeId = 'swordsman' | 'axeman' | 'bowman' | 'ranger' | 'trainer' | 'mage' | 'elemental';
+export type TreeId =
+  | 'swordsman' | 'axeman' | 'bowman' | 'ranger' | 'trainer' | 'mage' | 'elemental'
+  // The newer classes have a class tree and a tree for each subclass, and learn from both.
+  | 'monk' | 'ironfist' | 'windwalker' | 'sorcerer' | 'darkmage' | 'lightmage' | 'rogue' | 'shadow' | 'duelist';
 
 type Shared = Omit<SkillNode, 'tier' | 'col'>;
 
@@ -585,6 +800,7 @@ const FLOW: Shared = { id: 'flow', name: 'Flow', icon: '🌊', maxRank: 2, level
 const HARMONY: Shared = { id: 'harmony', name: 'Harmony', icon: '☯', maxRank: 1, level: 5, description: 'Combined spells cost 20% less.' };
 const ARCANE_WARD: Shared = { id: 'arcane-ward', name: 'Arcane Ward', icon: '🔰', maxRank: 2, level: 5, description: 'Take 7% less damage per rank.', per: 'Take {7}% less damage.' };
 const ARCANE_MASTERY: Shared = { id: 'arcane-mastery', name: 'Arcane Mastery', icon: '📜', maxRank: 2, level: 8, description: '+8% spell power per rank.', per: '+{8}% spell power.' };
+const LUNGE: Shared = { id: 'lunge', name: 'Lunge', icon: '➤', maxRank: 1, level: 4, description: 'Heavy attacks dash forward.' };
 
 const at = (n: Shared, tier: number, col: number, more: Partial<SkillNode> = {}): SkillNode => ({ ...n, tier, col, ...more });
 
@@ -710,6 +926,153 @@ export const TREES: Record<TreeId, { name: string; nodes: SkillNode[] }> = {
       at(ARCANE_MASTERY, 4, 0, { req: ['focus'] }),
       at(ARCANE_WARD, 4, 2, { req: ['elemental-ward'], level: 8 }),
       { id: 'elemental-avatar', name: 'Elemental Avatar', icon: '🌋', tier: 5, col: 1, maxRank: 1, level: 12, req: ['arcane-mastery'], description: 'Your element hits 20% harder and its spells cost 15% less.' },
+    ],
+  },
+  // ------------------------------------------------------------------ monk --
+  monk: {
+    name: 'Way of the Fist',
+    nodes: [
+      { id: 'open-palm', name: 'Open Palm', icon: '✋', tier: 1, col: 0, maxRank: 3, level: 1, description: '+10% damage with hand wraps and quarterstaffs per rank.', per: '+{10}% hand-wrap and quarterstaff damage.' },
+      { id: 'inner-peace', name: 'Inner Peace', icon: '☯', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Kills restore 50% more health, chi and stamina per rank.', per: 'Kills restore {50}% more.' },
+      { id: 'tempered-body', name: 'Tempered Body', icon: '🧘', tier: 1, col: 2, maxRank: 3, level: 1, description: '+14 max health per rank.', per: '+{14} max health.' },
+      { id: 'swift-strikes', name: 'Swift Strikes', icon: '👊', tier: 2, col: 0, maxRank: 2, level: 2, req: ['open-palm'], description: 'Light attacks are 8% faster per rank.', per: 'Light attacks are {8}% faster.' },
+      { id: 'chi-flow', name: 'Chi Flow', icon: '🌀', tier: 2, col: 1, maxRank: 2, level: 2, req: ['inner-peace'], description: 'Landed blows restore 1 more chi per rank.', per: 'Landed blows restore {1} more chi.' },
+      at(FLEET_FOOT, 2, 2, { req: ['tempered-body'] }),
+      { id: 'roundhouse', name: 'Roundhouse', icon: '🦶', tier: 3, col: 0, maxRank: 1, level: 4, req: ['swift-strikes'], description: 'Your combo finisher reaches 30% farther and knocks foes back.' },
+      { id: 'deep-breath', name: 'Deep Breath', icon: '🌬', tier: 3, col: 1, maxRank: 1, level: 4, req: ['chi-flow'], description: 'Meditate heals 30% faster and recharges 30% sooner.' },
+      at(TUMBLE, 3, 2, { req: ['fleet-foot'], level: 4 }),
+      { id: 'pressure-points', name: 'Pressure Points', icon: '📍', tier: 4, col: 0, maxRank: 2, level: 8, req: ['roundhouse'], description: 'Combo finishers stun foes for 0.6 s per rank (half as long on great foes).', per: 'Finishers stun for {0.6} s.' },
+      { id: 'diamond-soul', name: 'Diamond Soul', icon: '💎', tier: 4, col: 2, maxRank: 2, level: 8, req: ['tumble'], description: 'Take 7% less damage per rank.', per: 'Take {7}% less damage.' },
+      { id: 'grandmaster', name: 'Grandmaster', icon: '🥋', tier: 5, col: 1, maxRank: 1, level: 12, req: ['deep-breath'], description: '+15% melee damage, and Flurry of Blows hits 30% harder.' },
+    ],
+  },
+  ironfist: {
+    name: 'Iron Fist Tree',
+    nodes: [
+      { id: 'stone-fists', name: 'Stone Fists', icon: '🪨', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Flurry of Blows hits 12% harder per rank.', per: 'Flurry of Blows hits {12}% harder.' },
+      { id: 'hard-palm', name: 'Hard Palm', icon: '✊', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Heavy palm strikes hit 15% harder per rank.', per: 'Palm strikes hit {15}% harder.' },
+      { id: 'iron-will', name: 'Iron Will', icon: '🛡', tier: 1, col: 2, maxRank: 2, level: 1, description: '+20 max health per rank.', per: '+{20} max health.' },
+      { id: 'quaking-palm', name: 'Quaking Palm', icon: '〰', tier: 2, col: 0, maxRank: 2, level: 2, req: ['stone-fists'], description: 'Palm Shockwave reaches 25% farther per rank.', per: 'Palm Shockwave reaches {25}% farther.' },
+      { id: 'iron-guard', name: 'Iron Guard', icon: '🤜', tier: 2, col: 2, maxRank: 2, level: 2, req: ['iron-will'], description: 'Your guard turns aside 15% more of each blow per rank.', per: 'Guarding turns aside {15}% more.' },
+      { id: 'unstoppable', name: 'Unstoppable', icon: '🗿', tier: 3, col: 1, maxRank: 1, level: 5, req: ['hard-palm'], description: 'Iron Skin lasts 4 seconds longer.' },
+      { id: 'counter-strike', name: 'Counter Strike', icon: '↩', tier: 3, col: 2, maxRank: 1, level: 5, req: ['iron-guard'], description: 'Blocking a blow stuns the attacker.' },
+      { id: 'shattering-blow', name: 'Shattering Blow', icon: '💥', tier: 4, col: 0, maxRank: 1, level: 8, req: ['quaking-palm'], description: 'Palm strikes deal double damage to stunned foes.' },
+      { id: 'mountain-stance', name: 'Mountain Stance', icon: '⛰', tier: 4, col: 2, maxRank: 2, level: 8, req: ['counter-strike'], description: 'Take 8% less damage per rank.', per: 'Take {8}% less damage.' },
+      { id: 'hundred-fists', name: 'Hundred Fists', icon: '👐', tier: 5, col: 1, maxRank: 1, level: 12, req: ['unstoppable'], description: 'Every punch of Flurry of Blows lands twice.' },
+    ],
+  },
+  windwalker: {
+    name: 'Wind Walker Tree',
+    nodes: [
+      { id: 'gale-step', name: 'Gale Step', icon: '💨', tier: 1, col: 0, maxRank: 2, level: 1, description: 'Dashes carry you 20% farther per rank.', per: 'Dashes carry you {20}% farther.' },
+      { id: 'zephyr', name: 'Zephyr', icon: '🍃', tier: 1, col: 1, maxRank: 2, level: 1, description: '+5% movement speed per rank.', per: '+{5}% movement speed.' },
+      { id: 'whirling-staff', name: 'Whirling Staff', icon: '🥢', tier: 1, col: 2, maxRank: 2, level: 1, description: 'The quarterstaff whirl reaches 25% farther and hits 15% harder per rank.', per: 'The whirl reaches {25}% farther and hits {15}% harder.' },
+      { id: 'cyclone', name: 'Cyclone', icon: '🌪', tier: 2, col: 0, maxRank: 2, level: 2, req: ['gale-step'], description: 'Cyclone Kick hits 20% harder per rank.', per: 'Cyclone Kick hits {20}% harder.' },
+      { id: 'feather-fall', name: 'Feather Fall', icon: '🪶', tier: 2, col: 1, maxRank: 1, level: 3, req: ['zephyr'], description: 'No more fall damage, and you can flip twice in the air.' },
+      { id: 'wind-blades', name: 'Wind Blades', icon: '🗡', tier: 3, col: 0, maxRank: 1, level: 5, req: ['cyclone'], description: 'Dashing through foes cuts them for half your weapon damage.' },
+      { id: 'tailwind', name: 'Tailwind', icon: '🎐', tier: 3, col: 2, maxRank: 1, level: 4, req: ['whirling-staff'], description: 'Kills give 4 seconds of +30% speed.' },
+      { id: 'storm-kick', name: 'Storm Kick', icon: '🌩', tier: 4, col: 0, maxRank: 1, level: 8, req: ['wind-blades'], description: 'Flurry of Blows ends in a gust that hurls foes back.' },
+      { id: 'eye-of-the-storm', name: 'Eye of the Storm', icon: '👁', tier: 4, col: 1, maxRank: 2, level: 8, req: ['feather-fall'], description: 'Dodging a blow with a dash or flip restores 10 stamina and 3 chi per rank.', per: 'A dodge restores {10} stamina and {3} chi.' },
+      { id: 'avatar-of-wind', name: 'Avatar of Wind', icon: '🌀', tier: 5, col: 1, maxRank: 1, level: 12, req: ['eye-of-the-storm'], description: '+10% movement speed, and dashes cost half the stamina.' },
+    ],
+  },
+  // -------------------------------------------------------------- sorcerer --
+  sorcerer: {
+    name: 'Sorcery',
+    nodes: [
+      { id: 'focus', name: 'Focus', icon: '🔆', tier: 1, col: 0, maxRank: 3, level: 1, description: '+10% spell power per rank.', per: '+{10}% spell power.' },
+      at(SOUL_HARVEST, 1, 1),
+      at(DEEP_WELL, 1, 2),
+      { id: 'channeler', name: 'Channeler', icon: '📡', tier: 2, col: 0, maxRank: 2, level: 2, req: ['focus'], description: 'Channelled beams cost 15% less mana per rank.', per: 'Channelled beams cost {15}% less mana.' },
+      at(FLOW, 2, 1, { req: ['soul-harvest'] }),
+      at(HARDY, 2, 2, { req: ['deep-well'] }),
+      { id: 'wandcraft', name: 'Wandcraft', icon: '🪄', tier: 3, col: 0, maxRank: 2, level: 4, req: ['channeler'], description: 'Wand bolts and rune traps hit 20% harder per rank.', per: 'Wand bolts and rune traps hit {20}% harder.' },
+      { id: 'surge-mastery', name: 'Surge Mastery', icon: '⚡', tier: 3, col: 1, maxRank: 1, level: 5, req: ['flow'], description: 'Arcane Surge lasts 4 seconds longer and recharges 20% sooner.' },
+      at(ARCANE_WARD, 3, 2, { req: ['hardy'] }),
+      at(ARCANE_MASTERY, 4, 0, { req: ['wandcraft'] }),
+      { id: 'mana-shield', name: 'Mana Shield', icon: '💠', tier: 4, col: 2, maxRank: 1, level: 9, req: ['arcane-ward'], description: 'A fifth of the damage you take drains mana instead of health.' },
+      { id: 'overflow', name: 'Overflow', icon: '🌊', tier: 5, col: 1, maxRank: 1, level: 12, req: ['surge-mastery'], description: '+15% spell power, and channelled beams reach 30% farther.' },
+    ],
+  },
+  darkmage: {
+    name: 'Dark Mage Tree',
+    nodes: [
+      { id: 'umbral-power', name: 'Umbral Power', icon: '🌑', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Shadow spells hit 10% harder per rank.', per: 'Shadow spells hit {10}% harder.' },
+      { id: 'hunger', name: 'Hunger', icon: '🩸', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Life Drain heals 20% more per rank.', per: 'Life Drain heals {20}% more.' },
+      { id: 'shadow-shroud', name: 'Shadow Shroud', icon: '🦇', tier: 1, col: 2, maxRank: 2, level: 1, description: 'Take 6% less damage per rank.', per: 'Take {6}% less damage.' },
+      { id: 'hexer', name: 'Hexer', icon: '🕯', tier: 2, col: 0, maxRank: 1, level: 2, req: ['umbral-power'], description: 'Hex lasts 5 seconds longer.' },
+      { id: 'shade-lord', name: 'Shade Lord', icon: '👤', tier: 2, col: 1, maxRank: 2, level: 3, req: ['hunger'], description: 'Your shade has 30% more health and damage per rank.', per: 'Your shade has {30}% more health and damage.' },
+      { id: 'withering', name: 'Withering', icon: '🥀', tier: 3, col: 0, maxRank: 1, level: 5, req: ['hexer'], description: 'Shadow Bolts slow foes for 1.5 seconds.' },
+      { id: 'soul-siphon', name: 'Soul Siphon', icon: '👻', tier: 3, col: 1, maxRank: 1, level: 5, req: ['shade-lord'], description: 'Killing a hexed foe restores 10 mana.' },
+      { id: 'death-grip', name: 'Death Grip', icon: '🖐', tier: 3, col: 2, maxRank: 1, level: 4, req: ['shadow-shroud'], description: 'Life Drain also slows its target.' },
+      { id: 'plague-hex', name: 'Plague Hex', icon: '☣', tier: 4, col: 0, maxRank: 1, level: 8, req: ['withering'], description: 'When a hexed foe dies, the hex leaps to two foes instead of one.' },
+      { id: 'second-shade', name: 'Second Shade', icon: '👥', tier: 4, col: 1, maxRank: 1, level: 8, req: ['soul-siphon'], description: 'Summon Shade calls two shades.' },
+      { id: 'lord-of-shadows', name: 'Lord of Shadows', icon: '♛', tier: 5, col: 1, maxRank: 1, level: 12, req: ['second-shade'], description: 'Shadow spells cost 20% less and hit 15% harder.' },
+    ],
+  },
+  lightmage: {
+    name: 'Light Mage Tree',
+    nodes: [
+      { id: 'radiance', name: 'Radiance', icon: '☀', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Light spells hit 10% harder per rank.', per: 'Light spells hit {10}% harder.' },
+      { id: 'gentle-hands', name: 'Gentle Hands', icon: '🤲', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Mending Light heals 15% more per rank.', per: 'Mending Light heals {15}% more.' },
+      { id: 'sanctified', name: 'Sanctified', icon: '✝', tier: 1, col: 2, maxRank: 2, level: 1, description: 'Take 6% less damage per rank.', per: 'Take {6}% less damage.' },
+      { id: 'searing-light', name: 'Searing Light', icon: '🔦', tier: 2, col: 0, maxRank: 1, level: 2, req: ['radiance'], description: 'Radiant Beam dazzles: foes under it are slowed.' },
+      { id: 'beacon', name: 'Beacon', icon: '🗼', tier: 2, col: 1, maxRank: 1, level: 3, req: ['gentle-hands'], description: 'Mending Light and Ward of Dawn reach 50% farther.' },
+      { id: 'dawn-ward', name: 'Dawn Ward', icon: '🔰', tier: 2, col: 2, maxRank: 2, level: 2, req: ['sanctified'], description: 'Ward of Dawn soaks up 25% more per rank.', per: 'Ward of Dawn soaks up {25}% more.' },
+      { id: 'judgement', name: 'Judgement', icon: '⚖', tier: 3, col: 0, maxRank: 1, level: 5, req: ['searing-light'], description: 'Smite Undead strikes every foe within 3 m of the target and stuns 1 second longer.' },
+      { id: 'renewal', name: 'Renewal', icon: '🌱', tier: 3, col: 1, maxRank: 1, level: 5, req: ['beacon'], description: 'Mending Light keeps healing: 30% more over 5 seconds.' },
+      { id: 'aegis-ward', name: 'Aegis Ward', icon: '🛡', tier: 3, col: 2, maxRank: 1, level: 5, req: ['dawn-ward'], description: 'While Ward of Dawn holds, it mends 2% of your health a second.' },
+      { id: 'sunfire', name: 'Sunfire', icon: '🔥', tier: 4, col: 0, maxRank: 1, level: 8, req: ['judgement'], description: 'Light spells set dark creatures burning.' },
+      { id: 'saint', name: 'Saint', icon: '😇', tier: 5, col: 1, maxRank: 1, level: 12, req: ['renewal'], description: 'Light spells cost 20% less, and heals and wards are 20% stronger.' },
+    ],
+  },
+  // ----------------------------------------------------------------- rogue --
+  rogue: {
+    name: "Rogue's Tree",
+    nodes: [
+      { id: 'sharp-knives', name: 'Sharp Knives', icon: '🔪', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Daggers and throwing knives hit 10% harder per rank.', per: 'Daggers and knives hit {10}% harder.' },
+      { id: 'cutpurse', name: 'Cutpurse', icon: '💰', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Kills restore 50% more health, mana and stamina, and foes drop 15% more embers, per rank.', per: 'Kills restore {50}% more; foes drop {15}% more embers.' },
+      at(TRAIL_RUNNER, 1, 2),
+      { id: 'lethality', name: 'Lethality', icon: '🎯', tier: 2, col: 0, maxRank: 2, level: 2, req: ['sharp-knives'], description: 'Backstabs deal 20% more per rank.', per: 'Backstabs deal {20}% more.' },
+      { id: 'soft-steps', name: 'Soft Steps', icon: '👣', tier: 2, col: 1, maxRank: 2, level: 2, req: ['cutpurse'], description: 'Foes take 25% longer to notice you per rank.', per: 'Foes take {25}% longer to notice you.' },
+      at(HARDY, 2, 2, { req: ['trail-runner'] }),
+      { id: 'venomous', name: 'Venomous', icon: '🐍', tier: 3, col: 0, maxRank: 2, level: 4, req: ['lethality'], description: 'Your poison deals 25% more damage per rank.', per: 'Your poison deals {25}% more damage.' },
+      { id: 'escape-artist', name: 'Escape Artist', icon: '🎩', tier: 3, col: 1, maxRank: 1, level: 5, req: ['soft-steps'], description: 'Vanish recharges 25% sooner.' },
+      at(TUMBLE, 3, 2, { req: ['hardy'], level: 4 }),
+      { id: 'cheap-shot', name: 'Cheap Shot', icon: '🥊', tier: 4, col: 0, maxRank: 2, level: 8, req: ['venomous'], description: 'Blows on stunned or poisoned foes deal 15% more per rank.', per: 'Stunned or poisoned foes take {15}% more.' },
+      { id: 'slippery', name: 'Slippery', icon: '🫧', tier: 4, col: 2, maxRank: 2, level: 8, req: ['tumble'], description: 'Rolling through a blow restores 10 stamina per rank.', per: 'A dodge restores {10} stamina.' },
+      { id: 'master-thief', name: 'Master Thief', icon: '🗝', tier: 5, col: 1, maxRank: 1, level: 12, req: ['escape-artist'], description: 'Daggers and knives hit 15% harder, and Vanish lasts 3 seconds longer.' },
+    ],
+  },
+  shadow: {
+    name: 'Shadow Tree',
+    nodes: [
+      { id: 'night-blade', name: 'Night Blade', icon: '🌒', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Ambushes out of Vanish deal 20% more per rank.', per: 'Ambushes deal {20}% more.' },
+      { id: 'blink', name: 'Blink', icon: '✨', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Shadowstep recharges 20% sooner per rank.', per: 'Shadowstep recharges {20}% sooner.' },
+      { id: 'thick-smoke', name: 'Thick Smoke', icon: '🌫', tier: 1, col: 2, maxRank: 2, level: 1, description: 'Smoke Bomb clouds are 30% wider per rank.', per: 'Smoke clouds are {30}% wider.' },
+      { id: 'knife-rain', name: 'Knife Rain', icon: '🌧', tier: 2, col: 0, maxRank: 1, level: 3, req: ['night-blade'], description: 'Heavy throws loose two more knives.' },
+      { id: 'shadow-veil', name: 'Shadow Veil', icon: '🕶', tier: 2, col: 2, maxRank: 2, level: 2, req: ['thick-smoke'], description: 'Vanish lasts 2 seconds longer per rank.', per: 'Vanish lasts {2} s longer.' },
+      { id: 'death-mark', name: 'Death Mark', icon: '☠', tier: 3, col: 0, maxRank: 1, level: 5, req: ['knife-rain'], description: 'Shadowstep marks its target: it takes 15% more damage for 6 seconds.' },
+      { id: 'ghost', name: 'Ghost', icon: '👻', tier: 3, col: 1, maxRank: 1, level: 5, req: ['blink'], description: 'After a Shadowstep you are unseen for 2 seconds.' },
+      { id: 'assassinate', name: 'Assassinate', icon: '⚰', tier: 4, col: 0, maxRank: 1, level: 8, req: ['death-mark'], description: 'An ambush on a foe below 40% health kills it outright (not great foes).' },
+      { id: 'phantom', name: 'Phantom', icon: '🌀', tier: 4, col: 2, maxRank: 1, level: 8, req: ['shadow-veil'], description: 'Kills while vanished stretch Vanish by 2 seconds.' },
+      { id: 'living-shadow', name: 'Living Shadow', icon: '🖤', tier: 5, col: 1, maxRank: 1, level: 12, req: ['ghost'], description: 'Crouched, you are all but invisible; ambushes deal 25% more.' },
+    ],
+  },
+  duelist: {
+    name: 'Duelist Tree',
+    nodes: [
+      { id: 'en-garde', name: 'En Garde', icon: '🤺', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Light attacks are 6% faster per rank.', per: 'Light attacks are {6}% faster.' },
+      { id: 'flourish', name: 'Flourish', icon: '🎭', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Combo finishers hit 20% harder per rank.', per: 'Combo finishers hit {20}% harder.' },
+      { id: 'footwork', name: 'Footwork', icon: '🩰', tier: 1, col: 2, maxRank: 2, level: 1, description: '+5% movement speed per rank.', per: '+{5}% movement speed.' },
+      at(LUNGE, 2, 0, { req: ['en-garde'], level: 3 }),
+      { id: 'perfect-parry', name: 'Perfect Parry', icon: '⚔', tier: 2, col: 1, maxRank: 1, level: 3, req: ['flourish'], description: "Parry's window is 50% longer." },
+      { id: 'riposte-master', name: 'Riposte Master', icon: '↪', tier: 2, col: 2, maxRank: 1, level: 3, req: ['footwork'], description: 'Ripostes deal four times the damage instead of three.' },
+      { id: 'bleeding-edge', name: 'Bleeding Edge', icon: '🩸', tier: 3, col: 0, maxRank: 2, level: 5, req: ['lunge'], description: 'Swords and daggers make foes bleed 10% more often per rank.', per: 'Foes bleed {10}% more often.' },
+      { id: 'momentum', name: 'Momentum', icon: '🔁', tier: 3, col: 1, maxRank: 1, level: 5, req: ['perfect-parry'], description: 'A successful parry restores 25 stamina and its cooldown.' },
+      { id: 'coup-de-grace', name: 'Coup de Grâce', icon: '🗡', tier: 4, col: 0, maxRank: 2, level: 8, req: ['bleeding-edge'], description: 'Blows on bleeding foes deal 15% more per rank.', per: 'Bleeding foes take {15}% more.' },
+      { id: 'dancer', name: 'Dancer', icon: '💃', tier: 4, col: 2, maxRank: 2, level: 8, req: ['riposte-master'], description: 'Take 8% less damage per rank.', per: 'Take {8}% less damage.' },
+      { id: 'virtuoso', name: 'Virtuoso', icon: '🌟', tier: 5, col: 1, maxRank: 1, level: 12, req: ['momentum'], description: '+15% melee damage, and Parry recharges twice as fast.' },
     ],
   },
 };

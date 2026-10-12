@@ -147,7 +147,7 @@ describe('kill regen', () => {
 });
 
 describe('skill trees', () => {
-  const OLD: Record<TreeId, string[]> = {
+  const OLD: Partial<Record<TreeId, string[]>> = {
     swordsman: ['keen-edge', 'wide-flourish', 'riposte', 'lunge', 'blade-dancer'],
     axeman: ['heavy-hand', 'rend', 'cleave', 'throwing-axe', 'earthsplitter'],
     bowman: ['steady-aim', 'shadow-step', 'piercing-shot', 'reclaim', 'deadeye'],
@@ -156,14 +156,17 @@ describe('skill trees', () => {
     mage: ['deep-well', 'focus', 'flow', 'quickening', 'harmony'],
     elemental: ['attunement', 'deep-well', 'flow', 'elemental-ward', 'harmony'],
   };
-  const REGEN = ['bloodlust', 'hunters-feast', 'soul-harvest'];
+  const REGEN = ['bloodlust', 'hunters-feast', 'soul-harvest', 'inner-peace', 'cutpurse'];
+  /** The newer classes' subclass trees sit beside a class tree, so they are smaller and the class tree holds the kill-regen node. */
+  const SUBTREE: TreeId[] = ['ironfist', 'windwalker', 'darkmage', 'lightmage', 'shadow', 'duelist'];
 
   for (const [id, tree] of Object.entries(TREES) as [TreeId, (typeof TREES)[TreeId]][]) {
     it(`${id}: keeps every saved skill, draws a sound tree and fits the points a hero earns`, () => {
       const ids = tree.nodes.map((n) => n.id);
       expect(new Set(ids).size).toBe(ids.length);
-      for (const old of OLD[id]) expect(ids).toContain(old);
-      expect(ids.some((n) => REGEN.includes(n))).toBe(true);
+      for (const old of OLD[id] ?? []) expect(ids).toContain(old);
+      const sub = SUBTREE.includes(id);
+      if (!sub) expect(ids.some((n) => REGEN.includes(n))).toBe(true);
       const cells = new Set(tree.nodes.map((n) => `${n.tier},${n.col}`));
       expect(cells.size).toBe(tree.nodes.length);
       let total = 0;
@@ -180,7 +183,7 @@ describe('skill trees', () => {
         total += n.maxRank * TIER_COST[n.tier];
       }
       // Enough to keep spending into the late 20s, never more than a max-level hero earns.
-      expect(total).toBeGreaterThanOrEqual(28);
+      expect(total).toBeGreaterThanOrEqual(sub ? 18 : 28);
       expect(total).toBeLessThanOrEqual(pointsEarned(MAX_LEVEL));
     });
   }

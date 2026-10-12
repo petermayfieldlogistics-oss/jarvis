@@ -126,6 +126,17 @@ export class SharedFx {
     this.g.fx.damageNumber(at, text, cls);
   }
 
+  /** A beam (a channelled spell): `local` false shares it without drawing it here (the caster draws its own every frame). */
+  beam(from: THREE.Vector3, to: THREE.Vector3, color: number, life = 0.18, local = true) {
+    if (this.on) this.share('bm', [vec(from), vec(to), color, r2(life)], to.x, to.z);
+    if (local) this.g.fx.beam(from, to, color, 0.12, life);
+  }
+
+  /** A rogue's smoke cloud: friends see it, and hide in it too. */
+  smoke(x: number, z: number, radius: number, seconds: number) {
+    if (this.on) this.share('sk', [r2(x), r2(z), r2(radius), r2(seconds)], x, z);
+  }
+
   /** Shakes the camera of everyone close enough to feel it. */
   shake(at: THREE.Vector3, amount: number) {
     if (this.on) this.share('sh', [r2(at.x), r2(at.z), r2(amount)], at.x, at.z);
@@ -245,6 +256,12 @@ export class SharedFx {
       }
       case 'to':
         this.localToast(str(A[0]).slice(0, 80), str(A[1]).replace(/[^a-z]/g, ''), num(A[2]), num(A[3]));
+        break;
+      case 'bm':
+        fx.beam(v(A[0], this.a), v(A[1], this.b), num(A[2], 0xffffff), 0.12, Math.min(0.5, num(A[3], 0.18)));
+        break;
+      case 'sk':
+        this.g.armory.addSmoke(this.g, num(A[0]), num(A[1]), Math.min(10, num(A[2], 4)), Math.min(12, num(A[3], 6)), true);
         break;
     }
   }

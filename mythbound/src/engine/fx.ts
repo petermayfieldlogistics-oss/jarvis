@@ -628,6 +628,9 @@ export class Fx {
   private numbers: { el: HTMLElement; pos: THREE.Vector3; age: number }[] = [];
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
+  /** Pooled beams (channelled spells): a glowing sheath and a white core each. */
+  private beams: { outer: THREE.Mesh; inner: THREE.Mesh; mo: THREE.MeshBasicMaterial; mi: THREE.MeshBasicMaterial; age: number; life: number }[] = [];
+  private beamGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
   private col = new THREE.Color();
   private col2 = new THREE.Color();
   private q = new THREE.Quaternion();
@@ -1187,10 +1190,60 @@ export class Fx {
     this.numbers.push({ el, pos: at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0, 0)), age: 0 });
   }
 
+  /**
+   * A beam from `from` to `to` that fades over `life` seconds. Pooled, so a
+   * channelled spell can call it every frame without allocating.
+   */
+  beam(from: THREE.Vector3, to: THREE.Vector3, color: number, width = 0.12, life = 0.06) {
+    let b = this.beams.find((x) => x.age >= x.life);
+    if (!b && this.beams.length < 12) {
+      const opts = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false } as const;
+      const mo = new THREE.MeshBasicMaterial({ ...opts, color });
+      const mi = new THREE.MeshBasicMaterial({ ...opts, color: 0xffffff });
+      const outer = new THREE.Mesh(this.beamGeo, mo);
+      const inner = new THREE.Mesh(this.beamGeo, mi);
+      outer.renderOrder = inner.renderOrder = 2;
+      outer.frustumCulled = inner.frustumCulled = false;
+      this.scene.add(outer, inner);
+      b = { outer, inner, mo, mi, age: 1, life: 0 };
+      this.beams.push(b);
+    }
+    b ??= this.beams.reduce((x, y) => (y.age / y.life > x.age / x.life ? y : x));
+    b.age = 0;
+    b.life = Math.max(0.02, life);
+    b.mo.color.setHex(color);
+    const len = Math.max(0.01, from.distanceTo(to));
+    const dir = this.v.subVectors(to, from).divideScalar(len);
+    for (const [m, w] of [[b.outer, width], [b.inner, width * 0.35]] as const) {
+      m.position.copy(from).addScaledVector(dir, len / 2);
+      m.quaternion.setFromUnitVectors(UP, dir);
+      // A slight flicker in the width keeps it alive.
+      const k = w * (0.85 + Math.random() * 0.3);
+      m.scale.set(k, len, k);
+      m.visible = true;
+    }
+  }
+
+  /** A slow, heavy puff of smoke (a rogue's smoke bomb). */
+  smokePuff(at: THREE.Vector3, spread: number, color = 0x5e5a62) {
+    const th = Math.random() * TAU;
+    const r = Math.sqrt(Math.random()) * spread;
+    this.col2.setHex(color).multiplyScalar(0.85 + Math.random() * 0.3);
+    this.soft.spawn(at.x + Math.cos(th) * r, at.y + Math.random() * 1.2, at.z + Math.sin(th) * r, (Math.random() - 0.5) * 0.6, 0.15 + Math.random() * 0.3, (Math.random() - 0.5) * 0.6, 1.6 + Math.random() * 0.8, 1.6 + Math.random() * 1.2, this.col2, -0.05, 0.6, 0.8, 0.75);
+  }
+
   update(dt: number) {
     this.frameDt = dt;
     this.particles.update(dt);
     this.soft.update(dt);
+    for (const b of this.beams) {
+      if (b.age >= b.life) continue;
+      b.age += dt;
+      const k = Math.max(0, 1 - b.age / b.life);
+      b.mo.opacity = 0.75 * k;
+      b.mi.opacity = 0.9 * k;
+      if (b.age >= b.life) b.outer.visible = b.inner.visible = false;
+    }
     // Shade the unlit puffs like the lit world around them.
     if (!this.sun) {
       this.sun = this.scene.children.find((o): o is THREE.DirectionalLight => (o as THREE.DirectionalLight).isDirectionalLight) ?? null;

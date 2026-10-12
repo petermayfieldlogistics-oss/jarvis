@@ -1,7 +1,7 @@
 # Mythbound
 
-A dark-fantasy, third-person 3D action RPG that runs in the browser on PC and phone. You pick a class, subclass, race
-and role, then explore a world of nine regions, take quests from the people of Hearthhold, and conquer six trials whose
+A dark-fantasy, third-person 3D action RPG that runs in the browser on PC and phone. You pick a class (Warrior, Ranger,
+Mage, Monk, Sorcerer or Rogue), subclass, race and role, then explore a world of nine regions, take quests from the people of Hearthhold, and conquer six trials whose
 bosses guard the weapons of the old gods.
 
 ## Play
@@ -23,15 +23,15 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | WASD, mouse (click to capture) | left thumb, right thumb drag | move, look |
 | Shift tap | 🔒 | toggle shift lock |
 | Shift hold | push stick far | sprint |
-| C | ⤿ | roll / dodge (rolls through attacks) |
+| C | ⤿ | roll / dodge (rolls through attacks; a Monk dashes, or backflips standing still) |
 | Left click (hold with a bow) | ⚔ | attack / draw and shoot |
 | E | 💥 | heavy attack (Swordsman: Spinner Flourish) |
 | Right click | 🛡 | block / raise shield |
 | Space | ⤒ | jump (Draco: fly up) |
 | Z | ▼ | sneak |
-| Q (hold for alternate form) | ✦ | cast the selected spell |
+| Q (hold for alternate form) | ✦ | cast the selected spell (hold to keep a channelled beam flowing) |
 | 1-4, mouse wheel | tap a spell slot | choose spell |
-| R | ❂ | class ability: BloodRage, Power Shot, Tame, Combine, Volley |
+| R | ❂ | class ability: BloodRage, Power Shot, Tame, Combine, Volley, Flurry of Blows, Arcane Surge, Vanish |
 | G / V | ⊕ / 🪽 | combine spells (Mage Lv 3+) / fly (Draco Lv 6+) |
 | Tab, middle click | ◎ | lock on |
 | H / X / T | ⚗ / 🐟 / ⇄ | flask / eat fish / switch weapon |
@@ -95,6 +95,19 @@ is what was chosen; each is easy to change:
 - **Mage**: all five level 1 spells from the start; Blade of Retribution, Soul or Power and Power of the Light (plus two
   extra spells, Stone Skin and Moonveil) are tomes hidden in the world. From level 3, Combine turns two spells into one
   of six combinations (Firestorm, Storm Surge, Scalding Geyser, Tempest, Thunderfire, Frost Gale).
+- **Monk** (Iron Fist or Wind Walker): fights with hand wraps (jab, cross, kick; heavy is a palm strike that throws foes
+  back), quarterstaffs, staves and spears. Mana is chi: landed blows restore it, techniques spend it (Palm Shockwave,
+  Meditate, Iron Skin or Cyclone Kick). Rolls are dashes, a backstep is a backflip, a second jump flips in the air.
+  **Flurry of Blows** (R): eight punches on the foe in front (a Wind Walker dashes in first). Learns from a class tree and
+  a subclass tree.
+- **Sorcerer** (Dark Mage or Light Mage): +20% spell power, wands and rune circles cost less. Channelled spells pour out
+  while cast is held. Dark Mage: Shadow Bolt, Life Drain (heals you), Hex (+25% damage taken, -25% dealt; leaps on
+  death), Summon Shade. Light Mage: Radiant Beam, Smite Undead, Mending Light and Ward of Dawn (both reach co-op
+  friends). **Arcane Surge** (R): 8 s of free, stronger spells.
+- **Rogue** (Shadow or Duelist): daggers and knives +15%, backstabs +50% from behind and triple from stealth, quieter,
+  evasive rolls. Tricks: Smoke Bomb (foes inside are blinded, you hide), Poison Blades (poison stacks three times),
+  Shadowstep (blink behind a foe) or Parry (turn a blow aside and riposte for triple). **Vanish** (R): every foe loses
+  you; the next strike is an ambush.
 - **Deal with the Devil**: lock on to one-shot a single foe (bosses too, as written), otherwise it takes every level
   1–5 foe nearby. You black out, and light magic is sealed for 1, 2, then 3 game hours; the 4th deal seals it forever.
 - **Expansion** (toggle in the creator): Bowman (level 2 copper bow, 50 steel arrows, Power Shot: 6x damage plus 0.5 NDP

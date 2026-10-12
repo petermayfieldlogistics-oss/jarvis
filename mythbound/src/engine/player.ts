@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RUNES, SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
+import { RUNES, SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type SubclassId, type WeaponKind } from '../data/defs';
 import {
   airFlaps, ANGELIC, dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, drowns, lightHealMultiplier, manaRegen, maxHp, maxMana,
   maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, swimsTireless, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
@@ -12,15 +12,23 @@ import {
 import {
   KNIFE_VOLLEY, RUNE_EFFECT, RUNE_SEAL, RUNE_TRAP, SONG, SONGS, STORM_CHAIN, WAND, isOffhand, isTwoHanded, meleeReach, songOf, swingArc, type SongId,
 } from '../rules/weapons';
-import { buildShield, buildWeapon, compact, disposeObject, setBowString } from './models';
+import {
+  ASSASSINATE, ROLL, beamRange, BEAM, chiOnHit, CYCLONE, cyclonePower, dodgeReward, drainHeal, finisherStun, FLURRY, flurryBlows, flurryPower, focusDiscount, HEX,
+  hexLeaps, hexSeconds, ironSkinSeconds, lightAttackSpeed, lightReach, MEDITATE, meditateHeal, mendAmount, PALM_SHOVE, palmPower, palmWaveRange, PALM_WAVE, parryWindow,
+  POISON, riposteMultiplier, rogueStealth, rollSpec, shadeCount, shadeMultiplier, SHADE, SHADOWSTEP, SMITE, smiteStun, smokeRadius, SMOKE, spellCooldownMultiplier,
+  SURGE, surgeCooldown, surgeSeconds, toxinDps, vanishCooldown, vanishSeconds, wandcraft, WARD, wardAmount, type RollSpec,
+} from '../rules/classes';
+import { buildShield, buildWeapon, buildWraps, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
-import { newAnim, type AnimState, type AttackStyle } from './anim';
+import { FLURRY_AT, newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
-import { Ally, Boss, Enemy } from './entities';
+import { Ally, Boss, Enemy, type Actor } from './entities';
 import type { Game } from './game';
 
 // zap: a wand bolt; rune: a rune trap or seal; play: a lyre or war horn.
-type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar' | 'zap' | 'rune' | 'play';
+// flurry: a monk's storm of punches; cyclone: a spinning kick; meditate: sitting
+// to heal; channel: a held beam; parry: a duelist's guard; riposte: its answer.
+type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar' | 'zap' | 'rune' | 'play' | 'flurry' | 'cyclone' | 'meditate' | 'channel' | 'parry' | 'riposte';
 
 interface Attack {
   kind: AttackKind;
@@ -51,8 +59,10 @@ interface Attack {
   anim0: number;
   /** The heavy version of a zap, rune or play. */
   big: boolean;
-  /** Knives thrown so far in a volley. */
+  /** Knives thrown so far in a volley (punches so far in a flurry). */
   shots: number;
+  /** Extra damage multiplier for this move (a riposte). */
+  mult: number;
 }
 
 /**
@@ -76,6 +86,15 @@ export const TIMING: Partial<Record<AttackStyle, { hit: number; from: number; to
   sweep: { hit: 0.55, from: 0.45, to: 0.74, step: 0.3 },
   volley: { hit: 0.5, from: 0.4, to: 0.5, step: 0 },
   summon: { hit: 0.55, from: 0, to: 0.8, step: 0 },
+  jab: { hit: 0.4, from: 0.3, to: 0.55, step: 0.35 },
+  cross: { hit: 0.42, from: 0.32, to: 0.58, step: 0.4 },
+  kick: { hit: 0.44, from: 0.34, to: 0.62, step: 0.5 },
+  palm: { hit: 0.53, from: 0.44, to: 0.72, step: 0.8 },
+  flurry: { hit: FLURRY_AT[0], from: 0.1, to: 0.86, step: 0 },
+  cyclone: { hit: 0.42, from: 0.26, to: 0.76, step: 0.6 },
+  meditate: { hit: 1, from: 0, to: 1, step: 0 },
+  channel: { hit: 1, from: 0, to: 1, step: 0 },
+  parry: { hit: 1, from: 0, to: 1, step: 0 },
   strum: { hit: 0.45, from: 0, to: 0.6, step: 0 },
   song: { hit: 0.72, from: 0, to: 0.85, step: 0 },
   blow: { hit: 0.42, from: 0, to: 0.8, step: 0 },
@@ -88,14 +107,14 @@ const VOLLEY_AT = [0.5, 0.66, 0.82];
 const COMBO_WINDOW = 0.6;
 /** Presses are remembered this long while a move finishes. */
 const BUFFER = 0.4;
-const ROLL = { time: 0.6, dist: 3.9, iFrom: 0.08, iTo: 0.4 };
-const BACKSTEP = { time: 0.42, dist: 2.3, iFrom: 0.05, iTo: 0.26 };
 
 /** The part of the weapon that leaves a trail, along its local +Y from the grip: [start, tip]. */
 export const BLADE: Record<WeaponKind, [number, number]> = {
   sword: [0.55, 1.2], axe: [0.6, 1.0], hammer: [0.8, 1.2], dagger: [0.2, 0.5], trident: [1.35, 2.0], staff: [1.1, 1.6], bolt: [0.4, 1.0], bow: [0, 0],
   greatsword: [0.75, 1.8], longsword: [0.6, 1.34], spear: [1.3, 1.82], battleaxe: [0.72, 1.14], knives: [0.08, 0.27], wand: [0.3, 0.45],
   runecircle: [0, 0], lyre: [0, 0], horn: [0, 0],
+  // Fists and feet leave their own trails (see limbTrail); a quarterstaff's upper end does.
+  wraps: [0, 0], quarterstaff: [0.62, 1.12],
 };
 
 export const ELEMENT_COLOR: Record<DamageElement, number> = {
@@ -104,6 +123,7 @@ export const ELEMENT_COLOR: Record<DamageElement, number> = {
 
 const SCHOOL_COLOR: Record<SpellSchool, number> = {
   devil: 0xb8121a, fire: 0xff6a1a, sky: 0xa8ccff, water: 0x2ad8ff, light: 0xffd25a, arcane: 0xa060ff, earth: 0xa8743a,
+  chi: 0x7ff0c8, shadow: 0x8a3cff, trick: 0xb8b0a0,
 };
 
 export const RAGE_RED = 0xff2a12;
@@ -112,6 +132,10 @@ const smooth01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
 /** The light combo for each weapon: three steps, the last a finisher. */
 function lightStyle(kind: WeaponKind, step: number): AttackStyle {
+  // Fists: a left jab, a right cross, a high kick to finish.
+  if (kind === 'wraps') return step === 0 ? 'jab' : step === 1 ? 'cross' : 'kick';
+  // A quarterstaff sweeps back and forth, then drives its end in.
+  if (kind === 'quarterstaff') return step === 0 ? 'slash2' : step === 1 ? 'slash' : 'thrust';
   if (kind === 'dagger' || kind === 'knives') return step === 1 ? 'slash2' : 'thrust';
   if (kind === 'trident') return step === 2 ? 'slash3' : 'thrust';
   // Jab, jab, lunge.
@@ -124,6 +148,7 @@ function lightStyle(kind: WeaponKind, step: number): AttackStyle {
 
 /** The heavy blow for each weapon (warrior subclasses may replace it). */
 function heavyStyle(kind: WeaponKind): AttackStyle {
+  if (kind === 'wraps') return 'palm';
   if (kind === 'axe' || kind === 'hammer') return 'overhead';
   if (kind === 'greatsword') return 'slam';
   if (kind === 'spear') return 'sweep';
@@ -194,6 +219,46 @@ export class Player {
   /** A song from a lyre or war horn (this hero's or a friend's) and its seconds left. */
   song: SongId | null = null;
   songLeft = 0;
+  // ---- The Monk, the Sorcerer and the Rogue.
+  /** Monk: Iron Skin seconds left. */
+  ironSkin = 0;
+  /** Rogue: seconds unseen (Vanish); the next strike out of it is an ambush. */
+  vanish = 0;
+  /** Rogue: seconds of Poison Blades left. */
+  poisonBlades = 0;
+  /** Duelist: seconds left to catch a blow with Parry. */
+  parryWindow = 0;
+  /** Sorcerer: Arcane Surge seconds left. */
+  surge = 0;
+  /** Ward of Dawn (this hero's or a friend's): damage it can still soak, and its seconds left. */
+  ward = 0;
+  wardLeft = 0;
+  /** Wind Walker's Tailwind: seconds of extra speed left. */
+  tailwind = 0;
+  /** Shadowstep's Ghost: seconds unseen after a blink. */
+  ghost = 0;
+  /** Standing in smoke (a rogue's, or a friend's): all but invisible. */
+  inSmoke = false;
+  /** Foes this hero has hexed (when one dies, the hex leaps on). */
+  hexed = new Set<Enemy>();
+  /** A Light Mage's Renewal: health still to mend, and how much a second. */
+  private renew = 0;
+  private renewRate = 0;
+  /** A monk's flip in the air: progress 0..1, or -1. */
+  private airFlip = -1;
+  /** The dodge being made (a roll, a dash, a backflip). */
+  private rollSpec: RollSpec = ROLL;
+  /** Foes a Wind Blades dash has already cut. */
+  private dashHit = new Set<Enemy>();
+  /** A held beam (Life Drain, Radiant Beam): the foe it holds and the next tick. */
+  private channel: { spell: SpellId; target: Enemy | null; tick: number; share: number } | null = null;
+  /** Poison stacks this hero keeps ticking on foes (Poison Blades). */
+  private toxins: { e: Enemy; stacks: number; left: number; tick: number }[] = [];
+  /** Things that happen a moment after a move starts (a palm's shockwave, a smoke bomb landing). */
+  private later: { at: number; run: () => void }[] = [];
+  private ironAura: { stop(): void } | null = null;
+  private surgeAura: { stop(): void } | null = null;
+  private wardAura: { stop(): void } | null = null;
   rig: Rig;
   anim = newAnim();
   boat: THREE.Object3D | null = null;
@@ -271,12 +336,19 @@ export class Player {
 
   /** How noticeable the hero is (0 = invisible). */
   stealthFactor(): number {
-    if (this.moonveil > 0) return 0;
+    if (this.moonveil > 0 || this.vanish > 0 || this.ghost > 0) return 0;
     let f = 1;
     if (this.crouching) f *= this.c.roleId === 'assassin' ? 0.2 : 0.4;
     f *= 1 / (1 + 0.25 * rank(this.c, 'shadow-step'));
     if (this.c.raceId === 'elf') f *= 0.85;
+    f *= rogueStealth(this.c, this.crouching);
+    if (this.inSmoke) f *= 0.1;
     return f;
+  }
+
+  /** Hidden from sight (Moonveil, Vanish, Ghost): the model flickers, friends see it too. */
+  get unseen() {
+    return this.moonveil > 0 || this.vanish > 0 || this.ghost > 0;
   }
 
   /** Re-attaches the main weapon (and a warrior's shield) to the model. */
@@ -302,8 +374,9 @@ export class Player {
   }
 
   knockback(dir: THREE.Vector3, force: number) {
-    // A well-timed roll slips through charges as well as blows.
-    if (this.iframes > 0) return;
+    // A well-timed roll slips through charges as well as blows; Iron Skin stands its ground.
+    if (this.iframes > 0 || this.ironSkin > 0) return;
+    this.endMeditation();
     this.vel.x += dir.x * force;
     this.vel.z += dir.z * force;
     this.vel.y = 4;
@@ -345,6 +418,7 @@ export class Player {
     this.aegis = Math.max(0, this.aegis - dt);
     this.moonveil = Math.max(0, this.moonveil - dt);
     this.flapT = Math.max(0, this.flapT - dt);
+    this.tickClassTimers(dt, g);
     if (this.warCry > 0 && (this.warCry -= dt) <= 0) g.hud.toast('The War Cry fades.');
     if (this.song) {
       this.songLeft -= dt;
@@ -401,10 +475,13 @@ export class Player {
     let wantZ = fz * my + fx * mx;
     const wantLen = Math.hypot(wantX, wantZ);
     const sprint = input.held.has('sprint') && wantLen > 0.1 && !this.exhausted && this.stamina > 0 && !this.swimming && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack;
-    let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1) * (this.song ? SONGS[this.song].speed : 1);
+    let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1) * (this.song ? SONGS[this.song].speed : 1) * (this.tailwind > 0 ? 1.3 : 1);
     if (this.blocking || this.drawing > 0) speed *= 0.45;
     const atk = this.attack;
-    if (atk && atk.kind !== 'cast') speed *= atk.kind === 'roar' ? 0 : atk.t < atk.chainAt ? 0.2 : 0.45;
+    // Moving (or rolling) stands a meditating monk up.
+    if (atk?.kind === 'meditate' && (wantLen > 0.3 || input.pressed.has('roll') || input.pressed.has('jump'))) this.endMeditation();
+    if (atk && atk.kind === 'channel') speed *= 0.3;
+    else if (atk && atk.kind !== 'cast') speed *= atk.kind === 'roar' || atk.kind === 'meditate' || atk.kind === 'parry' ? 0 : atk.t < atk.chainAt ? 0.2 : 0.45;
     // Facing the camera or a foe, walking backward is slower.
     if ((shiftLock || this.lockTarget) && wantLen > 0.1 && !this.sailing) {
       const ahead = (wantX * Math.sin(this.yaw) + wantZ * Math.cos(this.yaw)) / wantLen;
@@ -447,8 +524,9 @@ export class Player {
       this.startRoll(g, wantX, wantZ, wantLen);
     }
     if (this.rollT >= 0) {
-      const R = this.backstep ? BACKSTEP : ROLL;
+      const R = this.rollSpec;
       this.rollTime += dt;
+      if (R.kind === 1) this.dashing(g);
       const u = Math.min(1, this.rollTime / R.time);
       this.rollT = u;
       if (this.rollTime >= R.iFrom && this.rollTime < R.iTo) this.iframes = Math.max(this.iframes, R.iTo - this.rollTime);
@@ -547,7 +625,7 @@ export class Player {
     const floor = walksOnWater ? Math.max(ground, WATER_LEVEL) : ground;
     if (!this.swimming && !this.sailing && this.pos.y <= floor) {
       const fall = -this.vel.y;
-      if (!this.grounded && this.vel.y < -22) g.damagePlayer(Math.round((-this.vel.y - 22) * 4), 'true', null, true);
+      if (!this.grounded && this.vel.y < -22 && !rank(c, 'feather-fall')) g.damagePlayer(Math.round((-this.vel.y - 22) * 4), 'true', null, true);
       if (wasAirborne && fall > 3 && !this.flying) this.land(g, fall);
       this.pos.y = floor;
       this.vel.y = 0;
@@ -559,6 +637,10 @@ export class Player {
     if (this.flying) this.grounded = false;
     if (this.grounded || this.swimming || this.sailing || this.flying) this.gliding = false;
     if (this.grounded || this.swimming) this.flapsLeft = airFlaps(c);
+    if (this.airFlip >= 0) {
+      this.airFlip += dt / 0.55;
+      if (this.airFlip >= 1 || this.grounded || this.swimming) this.airFlip = -1;
+    }
 
     // Hazards.
     if (inLava(this.pos.x, this.pos.z, this.pos.y) && !this.flying) {
@@ -599,8 +681,14 @@ export class Player {
     }
     if (this.attack) this.updateAttack(dt, g);
 
-    // Casting: tap for the main form, hold for the alternate.
-    if (canAct && input.pressed.has('cast')) this.castHeld = 0;
+    // Casting: tap for the main form, hold for the alternate. A channelled
+    // spell starts at once and pours out for as long as the button is held.
+    if (canAct && input.pressed.has('cast')) {
+      const sp = this.spell;
+      if (sp && SPELLS[sp].channel && !this.combineMode) this.startChannel(g, sp);
+      else this.castHeld = 0;
+    }
+    if (this.channel) this.updateChannel(dt, g, input.held.has('cast') && canAct);
     if (this.castHeld >= 0) {
       this.castHeld += dt;
       if (input.released.has('cast') || this.castHeld > 0.6) {
@@ -628,23 +716,49 @@ export class Player {
   /** Starts a roll toward the input direction, or a backstep hop without one. */
   private startRoll(g: Game, wantX: number, wantZ: number, wantLen: number) {
     this.backstep = wantLen <= 0.1;
+    // A monk dashes (or backflips), a rogue rolls quick and low, everyone else rolls.
+    const R = (this.rollSpec = rollSpec(this.c, this.backstep));
     this.rollT = 0;
     this.rollTime = 0;
-    this.spend((this.backstep ? 12 : 18) * (1 - 0.25 * rank(this.c, 'tumble')));
+    this.spend(R.cost);
     if (this.attack) this.finishAttack();
+    this.stopChannel();
     this.queued = null;
     this.drawing = 0;
     this.crouching = false;
     this.blocking = false;
     if (this.backstep) {
       this.rollDir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-      this.vel.y = 3.2;
+      this.vel.y = R.hop;
       this.grounded = false;
     } else {
       this.rollDir.set(wantX / wantLen, 0, wantZ / wantLen);
     }
+    if (R.kind === 1) {
+      this.dashHit.clear();
+      g.sfx.emit(this.center(this.tv), { color: this.chiColor(), count: 16, speed: 2, life: 0.4, size: 0.4, drift: this.tv2.copy(this.rollDir).multiplyScalar(-6) });
+    }
     g.sfx.dust(this.pos, this.backstep ? 5 : 8);
     g.audio.play('roll');
+  }
+
+  /** A dash leaves a streak of chi; with Wind Blades it cuts the foes it passes through. */
+  private dashing(g: Game) {
+    if (Math.random() < 0.7) g.fx.emit(this.center(this.tv), { color: this.chiColor(), count: 2, speed: 0.4, life: 0.35, size: 0.5 });
+    if (!rank(this.c, 'wind-blades')) return;
+    const w = mainWeapon(this.c);
+    for (const e of g.enemies) {
+      if (!e.alive || this.dashHit.has(e) || Math.abs(e.pos.y - this.pos.y) > 2.5) continue;
+      if (Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) > e.radius + 1.1) continue;
+      this.dashHit.add(e);
+      g.hitEnemyWithWeapon(e, weaponDamage(w) * 0.5, 'melee', 'wind', {});
+      g.fx.impact(e.center(this.tv), 0xc8ffe4, 0.5);
+    }
+  }
+
+  /** A monk's colour of chi (trails, dashes), by path. */
+  chiColor(): number {
+    return this.c.subclassId === 'ironfist' ? 0xffc27a : this.c.subclassId === 'windwalker' ? 0xa8fff0 : 0x9af0d0;
   }
 
   private endRoll(g: Game) {
@@ -751,7 +865,8 @@ export class Player {
       }
     } else if (kind === 'wand' || kind === 'runecircle') {
       const wand = kind === 'wand';
-      const cost = wand ? (heavy ? WAND.heavyMana : WAND.mana) : heavy ? RUNE_SEAL.mana : RUNE_TRAP.mana;
+      // A sorcerer's focus costs less; in an Arcane Surge, nothing.
+      const cost = this.surge > 0 ? 0 : Math.round((wand ? (heavy ? WAND.heavyMana : WAND.mana) : heavy ? RUNE_SEAL.mana : RUNE_TRAP.mana) * focusDiscount(this.c));
       if (this.mana < cost && !this.soulOrPower) {
         g.hud.toast('Not enough mana.');
         return;
@@ -773,7 +888,7 @@ export class Player {
     } else {
       const w = WEAPONS[mainWeapon(this.c).id];
       const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
-      const dur = (1 / w.speed) * 0.9 * quick;
+      const dur = (1 / w.speed) * 0.9 * quick * (heavy ? 1 : lightAttackSpeed(this.c));
       const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer') - 0.15 * rank(this.c, 'blade-master');
       if (!heavy) {
         const chained = cur ? cur.kind === 'light' : this.lastKind === 'light' && this.now - this.lastSwingEnd < COMBO_WINDOW;
@@ -789,9 +904,12 @@ export class Player {
           g.hud.toast('Spinner Flourish!', 'skill');
         } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
           this.startAttack('throw', 'throw', 0.7);
-        } else if (kind === 'battleaxe') {
-          // The battle axe whirls all the way round.
-          this.startAttack('spin', 'spin', dur * 1.35);
+        } else if (kind === 'battleaxe' || kind === 'quarterstaff') {
+          // The battle axe (and a quarterstaff) whirls all the way round.
+          this.startAttack('spin', 'spin', dur * (kind === 'quarterstaff' ? 1.25 : 1.35));
+        } else if (kind === 'wraps') {
+          // A palm strike: a step in and both palms driven into the foe.
+          this.startAttack('heavy', 'palm', Math.max(0.6, dur * 1.9), { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
         } else {
           // A lunge carries the heavy blow several steps forward.
           this.startAttack('heavy', heavyStyle(kind), dur * 1.6, { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
@@ -824,10 +942,13 @@ export class Player {
     return best;
   }
 
-  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number; big?: boolean } = {}) {
+  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number; big?: boolean; mult?: number } = {}) {
     const tm = TIMING[style] ?? TIMING.slash!;
     if (this.attack) this.finishAttack();
-    const fixed = kind === 'roar';
+    if (kind !== 'channel') this.stopChannel();
+    // Held and multi-blow moves run their own clock (flurry punches, beams, sitting, a parry).
+    const own = kind === 'flurry' || kind === 'channel' || kind === 'meditate' || kind === 'parry';
+    const fixed = kind === 'roar' || kind === 'meditate' || kind === 'parry';
     this.attack = {
       kind,
       style,
@@ -840,7 +961,7 @@ export class Player {
       cancelAt: (fixed ? 1 : kind === 'cast' || kind === 'bow' ? 0 : Math.min(tm.to, tm.hit + 0.06)) * duration,
       step: o.step ?? tm.step * (o.finisher ? 1.3 : 1),
       stepFrom: Math.max(0, tm.from - 0.14) * duration,
-      done: false,
+      done: own,
       landed: false,
       combo: this.comboStep,
       finisher: !!o.finisher,
@@ -848,6 +969,7 @@ export class Player {
       anim0: kind === 'bow' ? 0.62 : 0,
       big: !!o.big,
       shots: 0,
+      mult: o.mult ?? 1,
     };
     this.crouching = this.crouching && this.c.roleId === 'assassin';
   }
@@ -863,17 +985,25 @@ export class Player {
   private updateAttack(dt: number, g: Game) {
     const a = this.attack!;
     a.t += dt;
+    if (a.kind === 'flurry') {
+      // Each punch of the storm lands on its own beat.
+      while (a.shots < FLURRY_AT.length && a.t >= FLURRY_AT[a.shots] * a.duration) this.flurryPunch(g, a.shots++);
+    } else if (a.kind === 'meditate') {
+      this.meditate(dt, g, a);
+    }
     if (a.style === 'volley') {
       // Each knife of the fan leaves the hand on its own throw.
       while (a.shots < KNIFE_VOLLEY && a.t >= VOLLEY_AT[a.shots] * a.duration) {
         this.throwKnife(g, (a.shots - 1) * 0.12);
+        // Knife Rain: two more fan out wider with the last throw.
+        if (a.shots === KNIFE_VOLLEY - 1 && rank(this.c, 'knife-rain')) for (const turn of [-0.3, 0.3]) this.throwKnife(g, turn);
         a.shots++;
       }
       a.done = a.shots > 0;
     }
     if (!a.done && a.t >= a.hitAt) {
       a.done = true;
-      if (a.kind === 'light' || a.kind === 'heavy' || a.kind === 'spin') {
+      if (a.kind === 'light' || a.kind === 'heavy' || a.kind === 'spin' || a.kind === 'riposte') {
         a.landed = this.meleeHit(g, a);
         if (this.c.classId === 'warrior') {
           if (a.landed) onMeleeLanded(this.c, this.fury);
@@ -892,6 +1022,8 @@ export class Player {
         this.drawRune(g, a.big);
       } else if (a.kind === 'play') {
         this.play(g, a.big);
+      } else if (a.kind === 'cyclone') {
+        this.cycloneHit(g);
       }
       if (a.landed && this.c.subclassId === 'axeman' && a.kind === 'heavy' && !this.grounded && rank(this.c, 'earthsplitter')) {
         g.sfx.ring(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 5, 0xc8a070);
@@ -920,15 +1052,22 @@ export class Player {
   }
 
   private meleeHit(g: Game, a: Attack): boolean {
-    const w = mainWeapon(this.c);
+    const c = this.c;
+    const w = mainWeapon(c);
     const def = WEAPONS[w.id];
     const range = meleeReach(def);
-    const reach = range + (a.kind === 'spin' ? 0.8 + 0.3 * rank(this.c, 'wide-flourish') * range : 0);
-    const arc = swingArc(def.kind, a.kind === 'spin' ? 'spin' : a.kind === 'heavy' ? 'heavy' : 'light', rank(this.c, 'cleave') > 0);
-    let base = weaponDamage(w) * (a.kind === 'heavy' ? 1.8 : a.kind === 'spin' ? 1.3 * (1 + 0.2 * rank(this.c, 'wide-flourish')) : 1);
-    if (a.finisher && a.kind === 'light') base *= 1.35;
+    const palm = a.kind === 'heavy' && def.kind === 'wraps';
+    // A roundhouse finisher reaches farther; a quarterstaff whirl farther still with Whirling Staff.
+    const finisher = a.finisher && a.kind === 'light';
+    const kickReach = finisher && def.kind === 'wraps' && rank(c, 'roundhouse') ? range * 0.3 : 0;
+    const whirl = a.kind === 'spin' && def.kind === 'quarterstaff' ? rank(c, 'whirling-staff') : 0;
+    const reach = range + kickReach + (a.kind === 'spin' ? 0.8 + 0.3 * rank(c, 'wide-flourish') * range + 0.25 * whirl * range : 0);
+    const arc = swingArc(def.kind, a.kind === 'spin' ? 'spin' : a.kind === 'heavy' ? 'heavy' : 'light', rank(c, 'cleave') > 0);
+    let base = weaponDamage(w) * (a.kind === 'heavy' ? (palm ? 1 : 1.8) : a.kind === 'spin' ? 1.3 * (1 + 0.2 * rank(c, 'wide-flourish')) * (1 + 0.15 * whirl) : 1) * a.mult;
+    if (finisher) base *= 1.35;
     let landed = false;
     const fwdYaw = this.yaw;
+    const ambush = this.vanish > 0;
     for (const e of g.enemies) {
       if (!e.alive) continue;
       const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
@@ -937,20 +1076,42 @@ export class Player {
       const facing = Math.cos(Math.atan2(dx, dz) - fwdYaw);
       if (facing < arc && d > e.radius + 0.4) continue;
       const fromBehind = Math.cos(Math.atan2(-dx, -dz) - e.yaw) < -0.3;
-      g.hitEnemyWithWeapon(e, base, 'melee', def.element, { fromBehind, fury: this.fury });
+      const boss = e instanceof Boss;
+      // Assassinate: an ambush on a badly hurt foe ends it.
+      if (ambush && rank(c, 'assassinate') && !boss && e.hp < e.maxHp * ASSASSINATE) {
+        g.damageEnemy(e, e.hp + 1, 'true', { source: 'player', tags: ['backstab'] });
+        g.sfx.damageNumber(e.center(this.tv).setY(e.pos.y + e.height + 0.4), 'ASSASSINATED', 'crit');
+        landed = true;
+        continue;
+      }
+      const hitBase = palm ? weaponDamage(w) * palmPower(c, e.status.stun > 0) * a.mult : base;
+      g.hitEnemyWithWeapon(e, hitBase, 'melee', def.element, { fromBehind, fury: this.fury, finisher, ambush });
       landed = true;
-      if (e.bleeds && Math.random() < bleedChance(this.c)) e.status.bleed = 4;
+      if (e.bleeds && Math.random() < bleedChance(c)) e.status.bleed = 4;
       if (def.legendary === 'hammer-of-hephaestus' || def.legendary === 'sword-of-mars') e.status.burn = 3;
       if (def.element !== 'physical') g.sfx.impact(e.center(this.tv), ELEMENT_COLOR[def.element], 0.7);
       if (w.rune) this.applyRune(g, e, base, w.rune);
+      if (this.poisonBlades > 0) this.envenom(g, e);
+      // A palm strike (or a roundhouse) throws the foe back; pressure points stun it.
+      if (palm) g.shoveEnemy(e, dx, dz, PALM_SHOVE);
+      else if (kickReach) g.shoveEnemy(e, dx, dz, 6);
+      if (finisher && rank(c, 'pressure-points')) e.status.stun = Math.max(e.status.stun, finisherStun(c, boss));
     }
     if (landed) {
       // Hit-stop and shake scaled to the blow.
       const big = a.kind === 'heavy' ? 1 : a.kind === 'spin' ? 0.7 : a.finisher ? 0.75 : 0;
       g.hitStop(0.055 + 0.065 * big);
       g.shake(0.12 + 0.2 * big);
+      this.gainChi(chiOnHit(c));
+      if (ambush) g.hud.toast('Ambush!', 'skill');
+      if (palm) g.sfx.shockwave(this.tv.set(this.pos.x + Math.sin(this.yaw) * 1.2, this.pos.y + 1.1, this.pos.z + Math.cos(this.yaw) * 1.2), 1.6, this.chiColor(), 0.25);
     }
     return landed;
+  }
+
+  /** Chi (a monk's mana) flowing back. */
+  private gainChi(n: number) {
+    if (n > 0 && !this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + n);
   }
 
   /** Dust and sparks for the bigger moves as they land. */
@@ -998,6 +1159,15 @@ export class Player {
   /** Angelic: a beat of the wings in mid-air, a burst upward. */
   private flap(g: Game) {
     this.flapsLeft--;
+    if (this.c.classId === 'monk') {
+      // A front flip off the air itself.
+      this.vel.y = 8.2;
+      this.airFlip = 0;
+      this.spend(10);
+      g.sfx.emit(this.center(this.tv), { color: this.chiColor(), count: 14, speed: 2.4, life: 0.5, size: 0.35, up: -1, drag: 2 });
+      g.audio.play('roll');
+      return;
+    }
     this.flapT = 0.35;
     this.vel.y = ANGELIC.flapSpeed;
     this.spend(ANGELIC.flapStamina);
@@ -1098,7 +1268,10 @@ export class Player {
   private weaponTrail(g: Game) {
     const a = this.attack;
     const w = this.weaponMesh;
-    if (!a || !w || (a.kind !== 'light' && a.kind !== 'heavy' && a.kind !== 'spin' && a.kind !== 'throw')) return;
+    if (!a || !w) return;
+    // Fists and feet trail their own streaks.
+    if (this.weaponKind === 'wraps' || a.kind === 'flurry' || a.kind === 'cyclone') return limbTrail(g, this.rig, a.style, a.t / a.duration, this.chiColor());
+    if (a.kind !== 'light' && a.kind !== 'heavy' && a.kind !== 'spin' && a.kind !== 'throw' && a.kind !== 'riposte') return;
     const kind = this.weaponKind;
     if (kind === 'bow') return;
     if (a.t < a.from - 0.04 * a.duration || a.t > (a.kind === 'throw' ? a.hitAt : a.to)) return;
@@ -1189,7 +1362,7 @@ export class Player {
     const from = this.center().add(this.tv.set(Math.sin(this.yaw) * 0.4, 0.45, Math.cos(this.yaw) * 0.4));
     const to = g.aimPoint(WEAPONS[w.id].range);
     if (turn) to.sub(from).applyAxisAngle(UP, turn).add(from);
-    g.spawnProjectile({ from, to, speed: 46, kind: 'knife', owner: 'player', damage: weaponDamage(w), element: 'physical', gravity: 5, source: null, rune: w.rune });
+    g.spawnProjectile({ from, to, speed: 46, kind: 'knife', owner: 'player', damage: weaponDamage(w), element: 'physical', gravity: 5, source: null, rune: w.rune, poison: this.poisonBlades > 0, ambush: this.vanish > 0 });
     g.audio.play('throw');
     if (c.knives === 0) g.hud.toast('Out of knives! Pick them up, or rest at a shrine.', 'warn');
   }
@@ -1200,7 +1373,7 @@ export class Player {
     const fx = w.rune ? RUNE_EFFECT[w.rune] : null;
     const element: DamageElement = fx ? fx.element : 'physical';
     const color = w.rune ? RUNES[w.rune].color : 0xb070ff;
-    const power = weaponDamage(w) * spellPowerMultiplier(this.c, element) * this.songDamage() * (big ? 2.2 : 1);
+    const power = weaponDamage(w) * spellPowerMultiplier(this.c, element) * wandcraft(this.c) * this.songDamage() * (big ? 2.2 : 1);
     const tip = this.weaponTip(this.tv2);
     const from = tip ?? this.center().add(this.tv.set(Math.sin(this.yaw) * 0.6, 0.4, Math.cos(this.yaw) * 0.6));
     g.spawnProjectile({ from: from.clone(), to: g.aimPoint(WEAPONS[w.id].range), speed: big ? 38 : 60, kind: 'wand', owner: 'player', damage: power, element, gravity: 0, source: null, explode: big ? 2.6 : undefined, rune: w.rune, color });
@@ -1214,7 +1387,7 @@ export class Player {
     const fx = w.rune ? RUNE_EFFECT[w.rune] : null;
     const element: DamageElement = fx ? fx.element : 'physical';
     const color = w.rune ? RUNES[w.rune].color : 0x46f0c8;
-    const power = weaponDamage(w) * spellPowerMultiplier(this.c, element) * this.songDamage();
+    const power = weaponDamage(w) * spellPowerMultiplier(this.c, element) * wandcraft(this.c) * this.songDamage();
     if (big) {
       g.armory.addTrap(g, { x: this.pos.x, z: this.pos.z, radius: RUNE_SEAL.radius, seconds: RUNE_SEAL.seconds, damage: power * 0.25, element, color, slow: 0, root: RUNE_SEAL.root, rune: w.rune });
       // It snaps shut on everything inside at once.
@@ -1340,6 +1513,9 @@ export class Player {
 
   abilityName(): string {
     const c = this.c;
+    if (c.classId === 'monk') return 'Flurry of Blows';
+    if (c.classId === 'rogue') return 'Vanish';
+    if (c.classId === 'sorcerer') return 'Arcane Surge';
     if (c.subclassId === 'bowman') return 'Power Shot';
     if (hasBloodrage(c)) return 'BloodRage';
     if (c.subclassId === 'trainer') return 'Tame';
@@ -1354,6 +1530,9 @@ export class Player {
 
   private useAbility(g: Game) {
     const c = this.c;
+    if (c.classId === 'monk') return this.flurry(g);
+    if (c.classId === 'rogue') return this.startVanish(g);
+    if (c.classId === 'sorcerer') return this.startSurge(g);
     if (c.subclassId === 'bowman') {
       if (this.abilityReadyAt > this.now) return g.hud.toast('Power Shot is not ready.');
       if (this.weaponKind !== 'bow') return g.hud.toast('Power Shot needs a bow.');
@@ -1385,6 +1564,277 @@ export class Player {
     if (this.weaponKind !== 'bow' || this.arrows() < 3) return g.hud.toast('Volley needs a bow and 3 arrows.');
     this.abilityReadyAt = this.now + 10;
     for (let i = 0; i < 3; i++) setTimeout(() => this.alive && this.fireArrow(g, 0.9), i * 120);
+  }
+
+  // ------------------------------------------------- monk, sorcerer, rogue --
+
+  /** Flurry of Blows: a storm of punches on the foe in front (a Wind Walker dashes to it first). */
+  private flurry(g: Game) {
+    if (this.abilityReadyAt > this.now) return g.hud.toast(`Flurry of Blows is ready in ${Math.ceil(this.abilityReadyAt - this.now)}s.`);
+    if (this.exhausted || this.stamina < 5) return g.hud.toast('Too winded.');
+    this.spend(FLURRY.stamina);
+    this.abilityReadyAt = this.now + FLURRY.cooldown;
+    if (this.c.subclassId === 'windwalker') {
+      const t = this.lockTarget ?? g.findTarget(FLURRY.dash + 2, 0.4, false);
+      if (t && t.pos.distanceTo(this.pos) > t.radius + 1.6) {
+        // Across the gap in a gust.
+        const dx = t.pos.x - this.pos.x, dz = t.pos.z - this.pos.z;
+        const d = Math.hypot(dx, dz);
+        const go = Math.min(FLURRY.dash, d - t.radius - 1.1);
+        g.sfx.emit(this.center(this.tv), { color: this.chiColor(), count: 18, speed: 2, life: 0.45, size: 0.45 });
+        this.pos.x += (dx / d) * go;
+        this.pos.z += (dz / d) * go;
+        this.pos.y = Math.max(this.pos.y, heightAt(this.pos.x, this.pos.z));
+        this.yaw = Math.atan2(dx, dz);
+        g.sfx.dust(this.pos, 8);
+      }
+    }
+    this.startAttack('flurry', 'flurry', FLURRY.duration, { step: 0 });
+    this.attack!.aim = this.pickAim(g, 0, 0, 0);
+    this.queued = null;
+    g.hud.toast('Flurry of Blows!', 'skill');
+    g.audio.play('swing');
+  }
+
+  /** One punch of a flurry (the last one throws them back with Storm Kick). */
+  private flurryPunch(g: Game, i: number) {
+    const c = this.c;
+    const w = mainWeapon(c);
+    const base = weaponDamage(w) * flurryPower(c) * this.songDamage();
+    const fwdX = Math.sin(this.yaw), fwdZ = Math.cos(this.yaw);
+    const last = i === FLURRY_AT.length - 1;
+    let landed = false;
+    for (const e of g.enemies) {
+      if (!e.alive || Math.abs(e.pos.y - this.pos.y) > 3 + e.height) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > FLURRY.reach + e.radius || ((dx * fwdX + dz * fwdZ) / (d || 1) < 0.3 && d > e.radius + 0.4)) continue;
+      const fromBehind = Math.cos(Math.atan2(-dx, -dz) - e.yaw) < -0.3;
+      for (let k = 0; k < flurryBlows(c); k++) g.hitEnemyWithWeapon(e, base, 'melee', 'physical', { fromBehind });
+      if (this.poisonBlades > 0) this.envenom(g, e);
+      if (last && rank(c, 'storm-kick')) g.shoveEnemy(e, dx, dz, 12);
+      landed = true;
+    }
+    const hand = i % 2 === 0 ? this.rig.handL : this.rig.handR;
+    hand.getWorldPosition(this.tv);
+    if (landed) {
+      g.fx.impact(this.tv, 0xffe8c0, 0.35);
+      g.hitStop(0.03);
+      g.shake(0.08);
+      g.audio.play('hit');
+      this.gainChi(1);
+    }
+    if (last && rank(c, 'storm-kick')) {
+      g.sfx.shockwave(this.tv2.set(this.pos.x + fwdX * 2, this.pos.y + 1, this.pos.z + fwdZ * 2), 3.5, 0xc8ffe4, 0.35);
+      g.sfx.emit(this.tv, { color: 0xd8fff0, count: 30, speed: 8, life: 0.5, size: 0.5, drift: this.tv2.set(fwdX * 9, 0.5, fwdZ * 9) });
+    }
+  }
+
+  /** Cyclone Kick lands: everything around is struck and thrown into the air. */
+  private cycloneHit(g: Game) {
+    const def = SPELLS['cyclone-kick'];
+    const power = this.spellDamage(def.power * cyclonePower(this.c), 'wind');
+    let landed = false;
+    for (const e of g.enemies) {
+      if (!e.alive || Math.abs(e.pos.y - this.pos.y) > 3.5 + e.height) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      if (Math.hypot(dx, dz) > CYCLONE.radius + e.radius) continue;
+      g.damageEnemy(e, power, 'wind', { source: 'player' });
+      g.shoveEnemy(e, dx, dz, 5, CYCLONE.lift);
+      landed = true;
+    }
+    g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.6, this.pos.z), CYCLONE.radius + 0.6, 0xc8ffe4, 0.4);
+    g.sfx.emit(this.center(this.tv), { color: 0xd8fff0, count: 40, speed: 7, life: 0.5, size: 0.5, up: 2 });
+    g.sfx.sound('swing', this.pos);
+    if (landed) {
+      g.hitStop(0.07);
+      g.shake(0.22);
+      this.gainChi(chiOnHit(this.c));
+    }
+  }
+
+  /** Sitting in meditation: health and chi flow back each second. */
+  private meditate(dt: number, g: Game, a: Attack) {
+    const sitting = a.t > 0.35 && a.t < a.duration - 0.35;
+    if (!sitting) return;
+    this.heal(this.maxHp * meditateHeal(this.c) * dt);
+    this.gainChi(MEDITATE.chi * dt);
+    this.stamina = Math.min(this.maxStamina, this.stamina + 20 * dt);
+    if (Math.random() < dt * 6) g.fx.emit(this.center(this.tv), { color: 0x9af0d0, count: 2, speed: 0.6, life: 1.1, size: 0.3, up: 1.4 });
+  }
+
+  /** A meditating monk stands up (moved, struck, or done). */
+  endMeditation() {
+    const a = this.attack;
+    if (a?.kind === 'meditate' && a.t < a.duration - 0.35) a.t = Math.max(a.t, a.duration - 0.35);
+  }
+
+  /** Vanish: gone from every foe's sight; the next strike is an ambush. */
+  private startVanish(g: Game) {
+    if (this.abilityReadyAt > this.now) return g.hud.toast(`Vanish is ready in ${Math.ceil(this.abilityReadyAt - this.now)}s.`);
+    this.vanish = vanishSeconds(this.c);
+    this.abilityReadyAt = this.now + vanishCooldown(this.c);
+    this.dropAggro(g, Infinity);
+    g.sfx.emit(this.center(this.tv), { color: 0x4a4650, count: 40, speed: 2.5, life: 1.1, size: 1.1, up: 0.8, drag: 1.5 });
+    g.sfx.sound('roll', this.pos);
+    g.hud.toast('Vanished. Your next strike is an ambush.', 'skill');
+  }
+
+  /** Every foe close enough (not great foes) forgets the hero; in co-op the host's monsters too. */
+  private dropAggro(g: Game, range: number) {
+    for (const e of g.enemies) {
+      if (!e.alive || e.net || e instanceof Boss || !e.aware || e.pos.distanceTo(this.pos) > range) continue;
+      e.aware = false;
+      e.awareness = 0;
+      e.state = 'return';
+    }
+    g.coop.dropAggro(range);
+  }
+
+  /** Arcane Surge: for a while, spells cost nothing and hit harder. */
+  private startSurge(g: Game) {
+    if (this.abilityReadyAt > this.now) return g.hud.toast(`Arcane Surge is ready in ${Math.ceil(this.abilityReadyAt - this.now)}s.`);
+    this.surge = surgeSeconds(this.c);
+    this.abilityReadyAt = this.now + surgeCooldown(this.c);
+    const color = this.pathColor();
+    g.sfx.magicCircle(this.pos, color, 3.2, 1.6);
+    g.sfx.emit(this.center(this.tv), { color, count: 50, speed: 4, life: 0.9, size: 0.5, up: 2 });
+    g.sfx.flash(this.center(this.tv), color, 20, 12);
+    g.hud.toast('ARCANE SURGE! Spells are free and stronger.', 'skill');
+    g.audio.play('spell');
+    if (!this.attack && this.grounded) this.startAttack('cast', 'summon', 0.7);
+  }
+
+  /** A sorcerer's colour: violet for the Dark Mage, gold for the Light Mage. */
+  pathColor(): number {
+    return this.c.subclassId === 'lightmage' ? 0xffd870 : this.c.subclassId === 'darkmage' ? 0x9a4dff : 0xa060ff;
+  }
+
+  /** Poison Blades: a blow (or a knife) poisons; stacks tick here, on top of the poison status. */
+  envenom(g: Game, e: Enemy) {
+    e.status.poison = Math.max(e.status.poison, POISON.seconds);
+    let t = this.toxins.find((x) => x.e === e);
+    if (!t) this.toxins.push((t = { e, stacks: 0, left: 0, tick: 0.5 }));
+    t.stacks = Math.min(POISON.stacks, t.stacks + 1);
+    t.left = POISON.seconds;
+    g.fx.emit(e.center(this.tv), { color: 0x7cff3a, count: 6 + t.stacks * 3, speed: 1.4, life: 0.6, size: 0.3 });
+  }
+
+  /** A ward of light soaks up damage for a while (cast here, or by a friend). */
+  receiveWard(g: Game, amount: number, from?: string) {
+    this.ward = Math.max(this.ward, amount);
+    this.wardLeft = WARD.seconds;
+    if (from) g.hud.toast(`${from} wards you with light.`, 'skill');
+  }
+
+  /** Healing from a friend's Mending Light. */
+  receiveMend(g: Game, amount: number, from?: string) {
+    const got = Math.min(amount * lightHealMultiplier(this.c), this.maxHp - this.hp);
+    this.heal(got);
+    if (got >= 1) g.fx.damageNumber(this.center(this.tv).setY(this.pos.y + 2), `+${Math.round(got)}`, 'heal');
+    g.fx.emit(this.center(this.tv), { color: 0xfff0b0, count: 24, speed: 1.6, life: 0.9, up: 2 });
+    if (from) g.hud.toast(`${from} mends you.`, 'skill');
+  }
+
+  /** A blow caught by Parry: turned aside, and answered with a riposte. */
+  parried(g: Game, source: Actor) {
+    this.parryWindow = 0;
+    g.sfx.emit(this.center(this.tv).addScaledVector(this.tv2.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)), 0.7), { color: 0xfff2c0, count: 26, speed: 6, life: 0.35, size: 0.4 });
+    g.sfx.sound('block', this.pos);
+    g.fx.damageNumber(this.center(this.tv).setY(this.pos.y + 2.1), 'PARRY', 'crit');
+    g.hitStop(0.09);
+    this.yaw = Math.atan2(source.pos.x - this.pos.x, source.pos.z - this.pos.z);
+    if (rank(this.c, 'momentum')) {
+      this.stamina = Math.min(this.maxStamina, this.stamina + 25);
+      this.cooldowns.set('parry', 0);
+    }
+    this.startAttack('riposte', 'thrust', 0.42, { mult: riposteMultiplier(this.c), step: 0.8 });
+    this.attack!.aim = this.yaw;
+  }
+
+  /** A foe died: a hex on it leaps on (and feeds a Soul Siphon). */
+  onFoeDied(g: Game, e: Enemy) {
+    if (!this.hexed.delete(e)) return;
+    if (rank(this.c, 'soul-siphon')) this.gainChi(10);
+    let n = hexLeaps(this.c);
+    const from = e.center();
+    const near = g.enemies.filter((o) => o.alive && o !== e && o.status.hex <= 0 && o.pos.distanceTo(e.pos) < HEX.leap).sort((a, b) => a.pos.distanceTo(e.pos) - b.pos.distanceTo(e.pos));
+    for (const o of near) {
+      if (n-- <= 0) break;
+      o.status.hex = hexSeconds(this.c);
+      this.hexed.add(o);
+      g.sfx.lightning(from, o.center(this.tv), 0x9a4dff);
+    }
+  }
+
+  /** The hero took part in a kill: Tailwind, and Phantom stretching a Vanish. */
+  onKill() {
+    if (rank(this.c, 'tailwind')) this.tailwind = 4;
+    if (this.vanish > 0 && rank(this.c, 'phantom')) this.vanish += 2;
+  }
+
+  /** Dodged a blow mid-roll (Eye of the Storm, Slippery). */
+  dodged(g: Game) {
+    const r = dodgeReward(this.c);
+    if (!r.stamina && !r.mana) return;
+    this.stamina = Math.min(this.maxStamina, this.stamina + r.stamina);
+    this.gainChi(r.mana);
+    g.fx.emit(this.center(this.tv), { color: 0xd8fff0, count: 10, speed: 2, life: 0.4 });
+  }
+
+  /** The newer classes' timers: Iron Skin, Vanish, wards, surges, poison, smoke. */
+  private tickClassTimers(dt: number, g: Game) {
+    this.ironSkin = Math.max(0, this.ironSkin - dt);
+    this.poisonBlades = Math.max(0, this.poisonBlades - dt);
+    this.parryWindow = Math.max(0, this.parryWindow - dt);
+    this.tailwind = Math.max(0, this.tailwind - dt);
+    this.ghost = Math.max(0, this.ghost - dt);
+    if (this.vanish > 0 && (this.vanish -= dt) <= 0) g.hud.toast('You step out of the shadows.');
+    if (this.surge > 0 && (this.surge -= dt) <= 0) g.hud.toast('The surge ebbs.');
+    if (this.wardLeft > 0) {
+      this.wardLeft -= dt;
+      if (rank(this.c, 'aegis-ward')) this.heal(this.maxHp * WARD.mend * dt);
+      if (this.wardLeft <= 0 || this.ward <= 0) this.ward = this.wardLeft = 0;
+    }
+    if (this.renew > 0) {
+      const step = Math.min(this.renew, this.renewRate * dt);
+      this.renew -= step;
+      this.heal(step);
+    }
+    for (let i = this.later.length - 1; i >= 0; i--) {
+      if (this.now < this.later[i].at) continue;
+      const run = this.later[i].run;
+      this.later.splice(i, 1);
+      run();
+    }
+    for (let i = this.toxins.length - 1; i >= 0; i--) {
+      const t = this.toxins[i];
+      t.left -= dt;
+      t.tick -= dt;
+      if (!t.e.alive || t.left <= 0) {
+        this.toxins.splice(i, 1);
+        continue;
+      }
+      if (t.tick <= 0) {
+        t.tick += 0.5;
+        g.damageEnemy(t.e, toxinDps(this.c) * t.stacks * 0.5, 'true', { dot: true, source: 'player' });
+      }
+    }
+    for (const e of this.hexed) if (!e.alive || e.status.hex <= 0) this.hexed.delete(e);
+    this.inSmoke = g.armory.inSmoke(this.pos.x, this.pos.z);
+    // Auras for Iron Skin, the surge and a ward.
+    this.ironAura = this.auraFor(g, this.ironAura, this.ironSkin > 0, 0xc8a070);
+    this.surgeAura = this.auraFor(g, this.surgeAura, this.surge > 0, this.pathColor());
+    this.wardAura = this.auraFor(g, this.wardAura, this.ward > 0, 0xfff0b0);
+  }
+
+  private auraFor(g: Game, aura: { stop(): void } | null, on: boolean, color: number) {
+    if (on && this.alive && !aura) return g.fx.aura(this.rig.root, color, Infinity);
+    if ((!on || !this.alive) && aura) {
+      aura.stop();
+      return null;
+    }
+    return aura;
   }
 
   private tame(g: Game) {
@@ -1465,11 +1915,102 @@ export class Player {
   // ---------------------------------------------------------------- spells --
 
   private castCooldown(key: string, seconds: number) {
-    this.cooldowns.set(key, this.now + seconds * cooldownMultiplier(this.c));
+    const own = Object.hasOwn(SPELLS, key) ? spellCooldownMultiplier(this.c, key as SpellId) : 1;
+    this.cooldowns.set(key, this.now + seconds * cooldownMultiplier(this.c) * own);
   }
 
   private spellDamage(power: number, element: DamageElement) {
-    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1));
+    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1);
+  }
+
+  // -------------------------------------------------------------- beams --
+
+  /** A channelled spell starts: it pours out while the button is held. */
+  private startChannel(g: Game, spell: SpellId) {
+    const free = this.surge > 0 || this.soulOrPower;
+    const check = canCast(this.c, spell, { gameMinutes: g.gameMinutes, mana: free ? Infinity : this.mana, inDesert: g.zone === 'desert', soulOrPower: false });
+    if (!check.ok) return g.hud.toast(check.reason!, 'warn');
+    if (!this.ready(spell)) return g.hud.toast(`${SPELLS[spell].name} is not ready (${this.cooldownLeft(spell).toFixed(0)}s).`);
+    this.startAttack('channel', 'channel', 3600);
+    this.channel = { spell, target: null, tick: 0, share: 0 };
+    g.sfx.magicCircle(this.pos, this.pathColor(), 1.5, 0.8);
+    g.audio.play(SPELLS[spell].school === 'light' ? 'holy' : 'spell');
+  }
+
+  private updateChannel(dt: number, g: Game, held: boolean) {
+    const ch = this.channel!;
+    const a = this.attack;
+    const c = this.c;
+    if (!held || !a || a.kind !== 'channel' || !this.alive || this.swimming || this.sailing) return this.stopChannel();
+    const def = SPELLS[ch.spell];
+    const range = beamRange(c);
+    // Hold on to the foe while it stays in reach; otherwise find the one ahead.
+    if (!ch.target || !ch.target.alive || ch.target.pos.distanceTo(this.pos) > range + 2) ch.target = this.lockTarget ?? g.findTarget(range, 0.8, false);
+    const t = ch.target;
+    if (t) this.yaw = rotateTowards(this.yaw, Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z), dt, 12);
+    const color = ch.spell === 'life-drain' ? 0x9a4dff : 0xffe08a;
+    const from = this.weaponTip(this.tv2) ?? this.center(this.tv2);
+    const to = t ? t.center(this.tv) : this.tv.copy(from).add(BEAM_AHEAD.set(Math.sin(this.yaw) * range * 0.5, 0, Math.cos(this.yaw) * range * 0.5));
+    g.fx.beam(from, to, color, ch.spell === 'life-drain' ? 0.1 : 0.14, 0.06);
+    ch.share -= dt;
+    if (ch.share <= 0) {
+      ch.share = 0.12;
+      g.sfx.beam(from, to, color, 0.18, false);
+    }
+    ch.tick -= dt;
+    if (ch.tick > 0) return;
+    ch.tick += BEAM.tick;
+    const free = this.surge > 0 || this.soulOrPower;
+    const cost = free ? 0 : spellCost(c, ch.spell);
+    if (this.mana < cost) {
+      g.hud.toast('Not enough mana.');
+      return this.stopChannel();
+    }
+    this.mana -= cost;
+    if (!t) return;
+    let dmg = this.spellDamage(def.power, def.element);
+    // Dark creatures burn faster under a lance of light.
+    if (ch.spell === 'radiant-beam' && t.dark) dmg *= 1.33;
+    g.damageEnemy(t, dmg, def.element, { source: 'spell' });
+    g.fx.impact(to, color, 0.35);
+    if (ch.spell === 'life-drain') {
+      this.heal(dmg * drainHeal(c));
+      g.fx.emit(to, { color: 0xc08aff, count: 4, speed: 1, life: 0.5, size: 0.35, drift: BEAM_AHEAD.subVectors(from, to).multiplyScalar(2) });
+      if (rank(c, 'death-grip')) t.status.slow = Math.max(t.status.slow, 1);
+    } else {
+      if (rank(c, 'searing-light')) t.status.slow = Math.max(t.status.slow, 1);
+      if (rank(c, 'sunfire') && t.dark) t.status.burn = Math.max(t.status.burn, 3);
+    }
+  }
+
+  private stopChannel() {
+    const ch = this.channel;
+    if (!ch) return;
+    this.channel = null;
+    this.castCooldown(ch.spell, SPELLS[ch.spell].cooldown);
+    if (this.attack?.kind === 'channel') this.finishAttack();
+  }
+
+  /** Palm Shockwave lands: a cone of force throws foes back. */
+  private palmWave(g: Game, power: number, reach: number) {
+    if (!this.alive) return;
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    for (const e of g.enemies) {
+      if (!e.alive || Math.abs(e.pos.y - this.pos.y) > 3 + e.height) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > reach + e.radius || ((dx * fx + dz * fz) / (d || 1) < PALM_WAVE.cos && d > e.radius + 0.5)) continue;
+      g.damageEnemy(e, power * (1 - 0.4 * Math.min(1, d / reach)), 'wind', { source: 'spell' });
+      g.shoveEnemy(e, dx, dz, PALM_WAVE.shove * (1 - 0.5 * Math.min(1, d / reach)));
+    }
+    const color = this.chiColor();
+    for (let i = 1; i <= 3; i++) {
+      const d = (i / 3) * reach * 0.8;
+      g.sfx.shockwave(this.tv.set(this.pos.x + fx * d, this.pos.y + 1.0, this.pos.z + fz * d), 0.7 + i * 0.7, color, 0.25 + i * 0.07);
+    }
+    g.sfx.emit(this.center(this.tv), { color, count: 30, speed: 4, life: 0.5, size: 0.5, drift: this.tv2.set(fx * 14, 0.4, fz * 14) });
+    g.sfx.sound('slam', this.pos);
+    g.shake(0.2);
   }
 
   private cast(g: Game, alt: boolean) {
@@ -1499,15 +2040,158 @@ export class Player {
       return;
     }
 
-    const check = canCast(c, spell, ctx);
+    // In an Arcane Surge spells cost nothing.
+    const free = this.surge > 0;
+    const check = canCast(c, spell, free ? { ...ctx, mana: Infinity } : ctx);
     if (!check.ok) return g.hud.toast(check.reason!, 'warn');
+    if (free) check.cost = 0;
     if (!this.ready(spell)) return g.hud.toast(`${SPELLS[spell].name} is not ready (${this.cooldownLeft(spell).toFixed(0)}s).`);
     const def = SPELLS[spell];
+    if (def.channel) return this.startChannel(g, spell);
     const target = this.lockTarget ?? g.findTarget(30, 0.75, false);
     const aim = target ? target.center() : g.aimPoint(30);
     const power = this.spellDamage(def.power, def.element);
+    // The move that plays (null: the spell starts its own), and whether a rune circle marks it.
+    let pose: AttackStyle | null = 'cast';
+    let circle = def.school !== 'chi' && def.school !== 'trick';
 
     switch (spell) {
+      // ---- Monk techniques.
+      case 'palm-shockwave': {
+        pose = null;
+        this.startAttack('cast', 'palm', 0.75, { step: 0.6 });
+        const reach = palmWaveRange(c);
+        this.later.push({ at: this.now + 0.75 * 0.53, run: () => this.palmWave(g, power, reach) });
+        break;
+      }
+      case 'meditate':
+        if (!this.grounded || this.swimming || this.sailing) return g.hud.toast('Find your footing first.');
+        pose = null;
+        this.startAttack('meditate', 'meditate', MEDITATE.seconds + 0.7);
+        g.hud.toast('You sit and breathe…', 'skill');
+        break;
+      case 'iron-skin':
+        this.ironSkin = ironSkinSeconds(c);
+        pose = 'roar';
+        g.sfx.emit(this.center(this.tv), { color: 0xc8a070, count: 36, speed: 2.5, life: 0.7, size: 0.4, up: 1 });
+        g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.15, this.pos.z), 2.5, 0xc8a070, 0.35);
+        g.hud.toast('Iron Skin!', 'skill');
+        break;
+      case 'cyclone-kick':
+        pose = null;
+        this.startAttack('cyclone', 'cyclone', CYCLONE.duration, { step: 1.4 });
+        if (this.grounded) {
+          this.vel.y = 6;
+          this.grounded = false;
+        }
+        break;
+      // ---- Dark Mage.
+      case 'shadow-bolt': {
+        const n = alt ? 3 : 1;
+        if (alt && !free && !this.soulOrPower && this.mana < check.cost * 3) return g.hud.toast('Not enough mana.');
+        if (alt && !this.soulOrPower) this.mana -= check.cost * 2;
+        const from = this.weaponTip(this.tv2)?.clone() ?? this.center().add(this.tv.set(0, 0.4, 0));
+        for (let i = 0; i < n; i++) {
+          const to = aim.clone();
+          if (n > 1) to.sub(from).applyAxisAngle(UP, (i - 1) * 0.14).add(from);
+          g.spawnProjectile({ from: from.clone(), to, speed: 44, kind: 'orb', owner: 'player', damage: power, element: 'dark', gravity: 0, source: null, color: 0x9a4dff, slow: rank(c, 'withering') ? 1.5 : 0 });
+        }
+        break;
+      }
+      case 'hex':
+        if (!target) return g.hud.toast('No target.');
+        target.status.hex = hexSeconds(c);
+        this.hexed.add(target);
+        g.sfx.magicCircle(target.pos, 0x9a4dff, 1.6, 1.2);
+        g.sfx.emit(target.center(), { color: 0x9a4dff, count: 30, speed: 1.5, life: 1, up: 1.5 });
+        g.sfx.damageNumber(target.center().setY(target.pos.y + target.height + 0.3), 'HEXED', 'info');
+        break;
+      case 'summon-shade':
+        for (let i = 0; i < shadeCount(c); i++) {
+          const ally = new Ally('shade', this.pos.x + (i ? -1.3 : 1.3), this.pos.z - 1, c.level, SHADE.seconds, shadeMultiplier(c), shadeMultiplier(c));
+          g.addAlly(ally);
+          g.sfx.emit(ally.center(), { color: 0x3a2a5a, count: 40, speed: 2.5, life: 1, size: 0.9, up: 1 });
+        }
+        break;
+      // ---- Light Mage.
+      case 'smite-undead': {
+        if (!target) return g.hud.toast('No target.');
+        const smite = (e: Enemy, k: number) => {
+          g.damageEnemy(e, power * k * (e.dark ? SMITE.dark : 1), 'light', { source: 'spell' });
+          if (!e.dark) return;
+          e.status.stun = Math.max(e.status.stun, smiteStun(c));
+          if (rank(c, 'sunfire')) e.status.burn = Math.max(e.status.burn, 4);
+        };
+        smite(target, 1);
+        if (rank(c, 'judgement')) for (const e of g.enemies) if (e !== target && e.alive && e.pos.distanceTo(target.pos) < SMITE.radius + e.radius) smite(e, 0.6);
+        g.sfx.magicCircle(target.pos, SCHOOL_COLOR.light, rank(c, 'judgement') ? 3 : 2, 1);
+        g.sfx.pillar(target.pos.clone(), 0xfff0b0, rank(c, 'judgement') ? 2.6 : 1.6);
+        break;
+      }
+      case 'mending-light': {
+        const amount = mendAmount(c, power);
+        this.receiveMend(g, amount);
+        if (rank(c, 'renewal')) {
+          this.renew = amount * 0.3;
+          this.renewRate = this.renew / 5;
+        }
+        const R = lightReach(c);
+        for (const al of g.allies) if (al.alive && al.pos.distanceTo(this.pos) < R) al.hp = Math.min(al.maxHp, al.hp + amount);
+        g.coop.shareBuff('mend', this.pos, amount, R);
+        g.sfx.ring(this.center().setY(this.pos.y + 0.3), R, 0xfff0b0, 0.8);
+        break;
+      }
+      case 'ward-of-dawn': {
+        const amount = wardAmount(c, power);
+        this.receiveWard(g, amount);
+        const R = lightReach(c);
+        g.coop.shareBuff('ward', this.pos, amount, R);
+        g.sfx.ring(this.center().setY(this.pos.y + 0.3), R, 0xffe8a0, 0.8);
+        g.sfx.shockwave(this.center(this.tv), 2.2, 0xfff0b0, 0.5);
+        break;
+      }
+      // ---- Rogue tricks.
+      case 'smoke-bomb': {
+        pose = null;
+        this.startAttack('throw', 'throw', 0.5, { step: 0 });
+        const at = g.aimPoint(16);
+        const dx = at.x - this.pos.x, dz = at.z - this.pos.z;
+        const d = Math.hypot(dx, dz);
+        const k = d > 14 ? 14 / d : 1;
+        const x = this.pos.x + dx * k, z = this.pos.z + dz * k;
+        const r = smokeRadius(c);
+        this.later.push({ at: this.now + 0.3, run: () => g.armory.addSmoke(g, x, z, r, SMOKE.seconds) });
+        g.audio.play('throw');
+        break;
+      }
+      case 'poison-blades':
+        this.poisonBlades = POISON.coat;
+        pose = 'parry';
+        g.sfx.emit(this.center(this.tv), { color: 0x7cff3a, count: 30, speed: 1.5, life: 0.8, up: 1 });
+        g.hud.toast('Your blades drip with poison.', 'skill');
+        break;
+      case 'shadowstep': {
+        const t = this.lockTarget ?? g.findTarget(SHADOWSTEP.range, 0.5, false);
+        if (!t || t.pos.distanceTo(this.pos) > SHADOWSTEP.range + t.radius) return g.hud.toast('No foe close enough.');
+        pose = null;
+        const back = t.radius + 0.9;
+        const x = t.pos.x - Math.sin(t.yaw) * back, z = t.pos.z - Math.cos(t.yaw) * back;
+        g.sfx.emit(this.center(this.tv), { color: 0x2a2030, count: 30, speed: 2, life: 0.7, size: 0.8, up: 0.6 });
+        this.pos.set(x, Math.max(heightAt(x, z), this.pos.y - 3), z);
+        g.world.resolve(this.pos, this.radius);
+        this.vel.set(0, 0, 0);
+        this.yaw = Math.atan2(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
+        if (rank(c, 'ghost')) this.ghost = SHADOWSTEP.ghost;
+        if (rank(c, 'death-mark')) t.status.marked = Math.max(t.status.marked, SHADOWSTEP.mark);
+        g.sfx.emit(this.center(this.tv), { color: 0x2a2030, count: 30, speed: 2, life: 0.7, size: 0.8, up: 0.6 });
+        g.sfx.sound('roll', this.pos);
+        break;
+      }
+      case 'parry':
+        pose = null;
+        this.startAttack('parry', 'parry', parryWindow(c) + 0.3);
+        this.parryWindow = parryWindow(c);
+        break;
       case 'deal-with-the-devil': {
         // Locked on (or hold): the single foe. Otherwise a ring of level 1-5 foes.
         const single = this.lockTarget ?? (alt ? target : null);
@@ -1637,8 +2321,9 @@ export class Player {
     }
     if (spell !== 'soul-or-power') this.mana -= check.cost;
     this.castCooldown(spell, def.cooldown);
-    if (spell !== 'deal-with-the-devil') {
-      this.startAttack('cast', 'cast', 0.55);
+    if (spell === 'deal-with-the-devil') circle = false;
+    else if (pose) this.startAttack('cast', pose, 0.55);
+    if (circle) {
       // A rune circle at the caster's feet in the colour of the school.
       const big = spell === 'power-of-the-light' || spell === 'soul-or-power';
       g.sfx.magicCircle(this.pos, SCHOOL_COLOR[def.school], big ? 3.2 : 1.7, big ? 2 : 1.3);
@@ -1777,7 +2462,13 @@ export class Player {
     a.swimming = this.swimming;
     a.flying = this.flying;
     a.airborne = !this.grounded && !this.swimming && !this.sailing;
-    a.rolling = this.backstep ? -1 : this.rollT;
+    // A plain backstep is a hop; a monk's is a backflip (rollKind 2).
+    a.rolling = this.backstep && this.rollSpec.kind === 0 ? -1 : this.rollT;
+    a.rollKind = this.rollSpec.kind;
+    if (this.rollT < 0 && this.airFlip >= 0) {
+      a.rolling = this.airFlip;
+      a.rollKind = 3;
+    }
     a.draw = this.drawing;
     a.fury = this.fury.bloodrageActive ? 1 : 0;
     a.windup = 0;
@@ -1785,6 +2476,12 @@ export class Player {
     const at = this.attack;
     if (at) {
       a.attack = Math.min(1, at.anim0 + ((1 - at.anim0) * at.t) / at.duration);
+      // Held moves run on their own clock: settle into the pose, hold it, and (sitting) get up at the end.
+      if (at.kind === 'channel') a.attack = Math.min(0.6, (0.3 * at.t) / 0.18);
+      else if (at.kind === 'meditate') {
+        const t = at.t, d = at.duration;
+        a.attack = t < 0.35 ? (0.3 * t) / 0.35 : t < d - 0.35 ? 0.3 + (0.4 * (t - 0.35)) / (d - 0.7) : Math.min(1, 0.7 + (0.3 * (t - (d - 0.35))) / 0.35);
+      }
       a.attackStyle = at.style;
     } else a.attack = -1;
     if (this.rig.wings) {
@@ -1803,7 +2500,7 @@ export class Player {
     const r = this.rig.root;
     r.position.copy(this.pos);
     r.rotation.y = this.yaw;
-    r.visible = this.moonveil <= 0 || Math.floor(this.anim.t * 6) % 3 !== 0;
+    r.visible = !this.unseen || Math.floor(this.anim.t * 6) % 3 !== 0;
     animateHumanoid(this.rig, this.anim);
     if (this.boat) {
       this.boat.position.set(this.pos.x, WATER_LEVEL + 0.05 + Math.sin(this.anim.t * 2) * 0.06, this.pos.z);
@@ -1849,6 +2546,15 @@ function rotateTowards(from: number, to: number, dt: number, rate: number, maxSp
  */
 export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: RuneId): { weapon: THREE.Object3D; shield: THREE.Object3D | null } {
   const w = WEAPONS[weaponId];
+  if (w.kind === 'wraps') {
+    // Wraps on both fists; the left one rides where a shield would (but is not one).
+    const weapon = buildWraps(weaponId, false, rune);
+    const left = buildWraps(weaponId, true);
+    left.userData.offhand = true;
+    rig.handR.add(weapon);
+    rig.handL.add(left);
+    return { weapon, shield: left };
+  }
   const weapon = compact(buildWeapon(w.kind, !!w.legendary, rune));
   if (isOffhand(w.kind)) rig.handL.add(weapon);
   else rig.handR.add(weapon);
@@ -1861,6 +2567,28 @@ export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: 
   }
   weapon.traverse((o) => (o.castShadow = true));
   return { weapon, shield };
+}
+
+const BEAM_AHEAD = new THREE.Vector3();
+const LA = new THREE.Vector3();
+const LB = new THREE.Vector3();
+const LC = new THREE.Vector3();
+/** Streaks behind the fists and feet of unarmed moves (a jab's left fist, a kick's right foot), for any hero. */
+export function limbTrail(g: Game, rig: Rig, style: AttackStyle, v: number, color: number) {
+  const tm = TIMING[style];
+  if (!tm || v < tm.from - 0.04 || v > tm.to) return;
+  const L: [THREE.Object3D, THREE.Object3D] = [rig.foreArmL!, rig.handL];
+  const R: [THREE.Object3D, THREE.Object3D] = [rig.foreArmR!, rig.handR];
+  const limbs = style === 'jab' ? [L] : style === 'cross' ? [R] : style === 'palm' || style === 'flurry' ? [L, R] : style === 'kick' || style === 'cyclone' ? [[rig.shinR!, rig.footR!] as [THREE.Object3D, THREE.Object3D]] : null;
+  if (!limbs || !L[0]) return;
+  for (const [joint, end] of limbs) {
+    end.updateWorldMatrix(true, false);
+    joint.getWorldPosition(LA);
+    end.getWorldPosition(LB);
+    // From partway down the limb to just past the fist (or the toes).
+    LC.subVectors(LB, LA);
+    g.fx.trailPoint(end, LA.addScaledVector(LC, 0.55), LB.addScaledVector(LC, 0.32), color, 0.8, 0.16);
+  }
 }
 
 const NOCK = new THREE.Vector3();
@@ -1887,22 +2615,48 @@ const GRAVE_DUST = new THREE.Color(0x5e5a4a);
 /** A colour faded with grave dust. */
 const faded = (hex: number) => new THREE.Color(hex).lerp(GRAVE_DUST, 0.45).getHex();
 
-export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'>): Rig {
+type Look = { armor: number; cloth: number; accent: number; build: 'heavy' | 'light' | 'robe' | 'gi'; head: 'helmet' | 'hood' | 'hat' | 'bare' | 'mask'; cape?: number; headband?: number; circlet?: number };
+
+/** Each class's clothes; the newer classes dress for their subclass. */
+function classLook(classId: ClassId, subclassId: SubclassId | null | undefined): Look {
+  switch (classId) {
+    case 'warrior':
+      return { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy', head: 'helmet', cape: 0x5a1a14 };
+    case 'ranger':
+      return { armor: 0x4a5a3a, cloth: 0x2e3a26, accent: 0x8a7a4a, build: 'light', head: 'hood', cape: 0x2a3a22 };
+    case 'mage':
+      return { armor: 0x3a2e5a, cloth: 0x2a2244, accent: 0xc0a050, build: 'robe', head: 'hat' };
+    case 'monk':
+      // A gi (its trousers take `armor`), a sash and a headband in the sash's colour.
+      return subclassId === 'windwalker'
+        ? { armor: 0x4a5a64, cloth: 0xd6d2c2, accent: 0x2f8a86, build: 'gi', head: 'bare', headband: 0x2f8a86 }
+        : subclassId === 'ironfist'
+          ? { armor: 0x3a2a20, cloth: 0x8a4420, accent: 0x161412, build: 'gi', head: 'bare', headband: 0x161412 }
+          : { armor: 0x4a3424, cloth: 0xc0702a, accent: 0x8a1c18, build: 'gi', head: 'bare', headband: 0x8a1c18 };
+    case 'sorcerer':
+      return subclassId === 'lightmage'
+        ? { armor: 0xd8cfa8, cloth: 0xe6dec8, accent: 0xe0b84a, build: 'robe', head: 'bare', circlet: 0xe0b84a }
+        : { armor: 0x2a1c3a, cloth: 0x1c1426, accent: 0x8a4ad8, build: 'robe', head: 'hood' };
+    case 'rogue':
+      // Dark leathers, a hood and a mask; a duelist shows a little more colour.
+      return subclassId === 'duelist'
+        ? { armor: 0x3a2622, cloth: 0x241a1a, accent: 0xb08a4a, build: 'light', head: 'mask', cape: 0x5a1418 }
+        : { armor: 0x262224, cloth: 0x161418, accent: 0x6a5e50, build: 'light', head: 'mask' };
+  }
+}
+
+export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'> & { subclassId?: SubclassId | null }): Rig {
   const skin = SKIN[c.raceId];
-  const look = {
-    warrior: { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy' as const, head: 'helmet' as const, cape: 0x5a1a14 },
-    ranger: { armor: 0x4a5a3a, cloth: 0x2e3a26, accent: 0x8a7a4a, build: 'light' as const, head: 'hood' as const, cape: 0x2a3a22 },
-    mage: { armor: 0x3a2e5a, cloth: 0x2a2244, accent: 0xc0a050, build: 'robe' as const, head: 'hat' as const, cape: undefined },
-  }[c.classId];
+  const look = classLook(c.classId, c.subclassId);
   if (c.roleId === 'knight') {
     look.armor = 0xc8c0a8;
     look.accent = 0xffe080;
-    look.cape = 0xb8ae94;
+    if (look.build !== 'gi') look.cape = 0xb8ae94;
   }
-  if (c.roleId === 'assassin' || c.roleId === 'darkslayer') {
+  if ((c.roleId === 'assassin' || c.roleId === 'darkslayer') && c.classId !== 'rogue') {
     look.cloth = 0x18161a;
-    look.cape = 0x101012;
-    if (c.classId !== 'warrior') look.armor = 0x24222a;
+    if (look.build !== 'gi') look.cape = 0x101012;
+    if (c.classId !== 'warrior' && look.build !== 'gi') look.armor = 0x24222a;
   }
   if (c.raceId === 'zombie') {
     look.cloth = faded(look.cloth);

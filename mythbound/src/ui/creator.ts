@@ -1,14 +1,23 @@
 // Title screen and character creation.
 
 import { ANCIENT_GLYPH, CLASSES, RACES, ROLES, SUBCLASSES, type ClassId, type Element, type RaceId, type RoleId, type SubclassId } from '../data/defs';
-import { createCharacter, subclassesFor, validateChoice, type Character, type CharacterChoice } from '../rules/character';
+import { classStats, createCharacter, subclassesFor, validateChoice, type Character, type CharacterChoice } from '../rules/character';
 import { loadUnlocks } from '../engine/state';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 
 type Step = 'class' | 'subclass' | 'race' | 'role' | 'name';
 
-const CLASS_ICON: Record<ClassId, string> = { warrior: '⚔', ranger: '🏹', mage: '✦' };
+const CLASS_ICON: Record<ClassId, string> = { warrior: '⚔', ranger: '🏹', mage: '✦', monk: '☯', sorcerer: '🔮', rogue: '🗡' };
+const SUB_ICON: Partial<Record<SubclassId, string>> = { ironfist: '👊', windwalker: '🍃', darkmage: '🌑', lightmage: '☀', shadow: '🌘', duelist: '🤺' };
+
+/** A class card's numbers at level 1: health, mana, stamina and speed, as bars. */
+function statBars(id: ClassId): string {
+  const st = classStats(id);
+  const bar = (label: string, v: number, max: number, cls: string, text = String(Math.round(v))) =>
+    `<div class="cstat ${cls}"><span>${label}</span><i><b style="width:${Math.round(Math.min(1, v / max) * 100)}%"></b></i><em>${text}</em></div>`;
+  return `<div class="cstats">${bar('HP', st.hp, 130, 'hp')}${bar('Mana', st.mana, 90, 'mana')}${bar('Stamina', st.stamina, 130, 'stam')}${bar('Speed', st.speed, 8, 'speed', st.speed.toFixed(1))}</div>`;
+}
 const RACE_ICON: Record<RaceId, string> = { elf: '🌿', draco: '🐉', human: '🛡', zombie: '🧟', angelic: '😇', orc: '👹', ancient: '◉' };
 const ROLE_ICON: Record<RoleId, string> = { historian: '📜', blacksmith: '⚒', sailor: '⚓', darkslayer: '☠', knight: '☀', assassin: '🗡' };
 
@@ -42,14 +51,14 @@ export function showCreator(root: HTMLElement, onDone: (c: Character) => void, o
     const idx = list.indexOf(step);
     let cards = '';
     if (step === 'class') {
-      cards = (Object.keys(CLASSES) as ClassId[]).map((id) => card(id, CLASS_ICON[id], CLASSES[id].name, CLASSES[id].blurb, CLASSES[id].traits, choice.classId === id)).join('');
+      cards = (Object.keys(CLASSES) as ClassId[]).map((id) => card(id, CLASS_ICON[id], CLASSES[id].name, CLASSES[id].blurb, CLASSES[id].traits, choice.classId === id, statBars(id))).join('');
     } else if (step === 'subclass') {
       cards = subclassesFor(choice.classId, choice.expansion).map((id) => {
         const s = SUBCLASSES[id];
         const extra = id === 'elemental' && choice.subclassId === 'elemental'
           ? `<div class="elements">${(['fire', 'water', 'wind', 'earth'] as Element[]).map((e) => `<span class="el${choice.wizardElement === e ? ' on' : ''}" data-el="${e}">${e}</span>`).join('')}</div>`
           : '';
-        return card(id, s.expansion ? '✧' : '⚔', s.name + (s.expansion ? ' (expansion)' : ''), s.blurb, s.traits, choice.subclassId === id, extra);
+        return card(id, SUB_ICON[id] ?? (s.expansion ? '✧' : '⚔'), s.name + (s.expansion ? ' (expansion)' : ''), s.blurb, s.traits, choice.subclassId === id, extra);
       }).join('');
     } else if (step === 'race') {
       cards = (Object.keys(RACES) as RaceId[]).map((id) => {
