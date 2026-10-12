@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { SPELLS, WEAPONS, type SpellId, type WeaponKind } from '../data/defs';
-import { EYES_RUINS, SHRINES, TRIALS, ZONES } from '../data/world';
+import { EYES_RUINS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
 import { Boss } from '../engine/entities';
 import type { Game } from '../engine/game';
+import { nextQuestHint, questLines, trackedId, type QuestLine, type QuestTarget } from '../engine/questlog';
+import { saveSettings } from '../engine/state';
 import { mapImage, toMap } from './mapimage';
 
 /** Two or three letters that tell spells apart on small touch slots. */
@@ -87,6 +89,20 @@ export class Hud {
   private blackEl: HTMLElement;
   private eyesEl: HTMLElement;
   private xpFill: HTMLElement;
+  private xpLevel: HTMLElement;
+  private xpNum: HTMLElement;
+  private txpFill: HTMLElement;
+  private txpLevel: HTMLElement;
+  private xpShown = -1;
+  private tl: HTMLElement;
+  private questEl: HTMLElement;
+  private questT = 0;
+  private questKey = '';
+  private questArrow: HTMLElement | null = null;
+  private questTarget: QuestTarget | null = null;
+  private arrowDeg = NaN;
+  /** Phone-sized screens: the quest bar starts folded and never lists every quest. */
+  private phone = matchMedia('(max-height: 500px), (max-width: 600px)');
   private bars3d: HTMLElement[] = [];
   private barLayer: HTMLElement;
   private crosshair: HTMLElement;
@@ -118,7 +134,9 @@ export class Hud {
         <div class="bar hp"><div class="track"><div class="ghost"></div><div class="fill"></div></div><span class="val"></span></div>
         <div class="bar mana"><div class="track"><div class="ghost"></div><div class="fill"></div></div><span class="val"></span></div>
         <div class="bar stam"><div class="track"><div class="fill"></div></div></div>
+        <div class="txp"><div class="fill"></div><span></span></div>
         <div class="status"></div>
+        <div class="qbar"></div>
         <div class="party"></div>
       </div>
       <div class="tr">
@@ -128,7 +146,7 @@ export class Hud {
       <div class="bl"><div class="info"></div></div>
       <div class="bc">
         <div class="spells"></div>
-        <div class="xp"><div class="fill"></div></div>
+        <div class="xp"><b class="xlv"></b><div class="fill"></div><small class="xnum"></small></div>
       </div>
       <div class="prompt"></div>
       <div class="bossbar hidden">
@@ -166,6 +184,12 @@ export class Hud {
     this.blackEl = q('.blackout');
     this.eyesEl = q('.vignette.eyes');
     this.xpFill = q('.xp .fill');
+    this.xpLevel = q('.xp .xlv');
+    this.xpNum = q('.xp .xnum');
+    this.txpFill = q('.txp .fill');
+    this.txpLevel = q('.txp span');
+    this.tl = q('.tl');
+    this.questEl = q('.qbar');
     this.barLayer = q('.barlayer');
     this.crosshair = q('.crosshair');
     // Tap a spell slot to select it; tap the ability slot to use it.
@@ -176,9 +200,43 @@ export class Hud {
       if (slot.dataset.ability) g.input.tap('ability');
       else if (slot.dataset.slot) g.input.tap(`slot${Number(slot.dataset.slot) + 1}` as 'slot1');
     });
+    // Quest bar: the header folds it; tapping another quest tracks it, and
+    // tapping the tracked one moves on to the next (all phones can show).
+    this.questEl.addEventListener('pointerdown', (e) => {
+      const t = e.target as HTMLElement;
+      const row = t.closest<HTMLElement>('[data-q], [data-qnext]');
+      if (!t.closest('[data-qtoggle]') && !row) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (row?.dataset.q) g.state.tracked = row.dataset.q as QuestId;
+      else if (row) this.trackNextQuest();
+      else this.toggleQuests();
+      this.questKey = '';
+      this.updateQuests();
+    });
+  }
+
+  /** Folded to one line: the player's choice, or by default on phones. */
+  private get questsFolded() {
+    return this.g.settings.questsCollapsed ?? this.phone.matches;
+  }
+
+  private trackNextQuest() {
+    const p = this.g.player.pos;
+    const lines = questLines(this.g.state, p.x, p.z);
+    const i = lines.findIndex((l) => l.id === trackedId(this.g.state, lines));
+    if (lines.length > 1) this.g.state.tracked = lines[(i + 1) % lines.length].id;
+  }
+
+  toggleQuests() {
+    this.g.settings.questsCollapsed = !this.questsFolded;
+    saveSettings(this.g.settings);
+    this.questKey = '';
   }
 
   toast(text: string, kind = '') {
+    // Every quest change says so: refresh the quest bar on the next frame.
+    if (kind === 'quest') this.questT = 0;
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.textContent = text;
@@ -350,7 +408,20 @@ export class Hud {
       this.partyT = 0.2;
       this.updateParty();
     }
-    put(this.xpFill, 'width', c.level >= MAX_LEVEL ? '100%' : pct(c.xp / xpToNext(c.level)));
+    const xpk = c.level >= MAX_LEVEL ? '100%' : pct(c.xp / xpToNext(c.level));
+    put(this.xpFill, 'width', xpk);
+    put(this.txpFill, 'width', xpk);
+    if (this.xpShown !== c.level * 1e7 + c.xp) {
+      this.xpShown = c.level * 1e7 + c.xp;
+      this.xpLevel.textContent = this.txpLevel.textContent = `Lv ${c.level}`;
+      this.xpNum.textContent = c.level >= MAX_LEVEL ? 'MAX' : `${c.xp} / ${xpToNext(c.level)} XP`;
+    }
+    this.questT -= dt;
+    if (this.questT <= 0) {
+      this.questT = 0.25;
+      this.updateQuests();
+    }
+    this.pointQuestArrow();
 
     // Vignettes.
     this.hurtLevel = Math.max(0, this.hurtLevel - dt * 1.2);
@@ -387,6 +458,62 @@ export class Hud {
     }
 
     this.updateEnemyBars();
+  }
+
+  /** The quest bar: active quests with progress, the tracked one with where to go. Rebuilt only when something shown changes. */
+  private updateQuests() {
+    const g = this.g;
+    const p = g.player.pos;
+    const lines = questLines(g.state, p.x, p.z);
+    const tracked = trackedId(g.state, lines);
+    const main = lines.find((l) => l.id === tracked) ?? nextQuestHint(g.state);
+    // Phones never show the whole list: open, the bar adds one line for the tracked quest.
+    const view = this.questsFolded ? 'folded' : this.phone.matches ? 'mini' : 'full';
+    this.questTarget = main?.target ?? null;
+    const dist = main?.target ? Math.hypot(main.target.x - p.x, main.target.z - p.z) : 0;
+    const key = `${view}|${main?.id}|${main?.label}|${Math.round(dist / 10)}|${lines.map((l) => `${l.id}${l.progress}`).join(',')}`;
+    if (key !== this.questKey) {
+      this.questKey = key;
+      put(this.questEl, 'class', !main ? 'qbar none' : view === 'full' ? 'qbar' : `qbar line ${view}`);
+      put(this.questEl, 'html', main ? this.questHtml(main, lines, view, dist) : '');
+      this.questArrow = this.questEl.querySelector('.qarrow');
+      this.arrowDeg = NaN;
+      this.pointQuestArrow();
+    }
+    // Touch layouts stack the info panel below this column, wherever it ends.
+    put(this.root, '--tlb', `${Math.round(this.tl.offsetTop + this.tl.offsetHeight)}px`);
+  }
+
+  private questHtml(main: QuestLine, lines: QuestLine[], view: 'folded' | 'mini' | 'full', dist: number): string {
+    const count = (l: QuestLine) => (l.goal ? (l.ready ? '<em class="ok">✔</em>' : `<em>${l.progress}/${l.goal}</em>`) : '');
+    const where = main.target ? `<i class="qarrow"></i>${dist < 12 ? 'here' : `${Math.round(dist / 10) * 10} m`}` : '';
+    const more = lines.length > 1 ? `<small>${lines.length}</small>` : '';
+    const bar = (l: QuestLine) => (l.goal && !l.ready ? `<div class="qprog"><b style="width:${Math.round((l.progress / l.goal) * 100)}%"></b></div>` : '');
+    // Where to go when a place is known, else what to do (always for a quest to hand in, or a hint).
+    const place = (l: QuestLine) => esc(l.target && l.goal && !l.ready ? l.target.name : l.objective);
+    if (view !== 'full') {
+      const head = `<div class="qhead" data-qtoggle="1"><i class="qtog">${view === 'mini' ? '▾' : '▸'}</i><span class="qt"><span>${esc(main.label)}</span>${count(main)}</span>${where ? `<span class="qdir">${where}</span>` : ''}${more}</div>`;
+      if (view === 'folded') return head;
+      return `${head}<div class="qrow on${main.ready ? ' ready' : ''}"${lines.length > 1 ? ' data-qnext="1"' : ''}>${bar(main)}<div class="qsub">${place(main)}</div></div>`;
+    }
+    const rows = (lines.length ? lines : [main]).map((l) => {
+      if (l !== main) return `<div class="qrow" data-q="${l.id}"><div class="qt"><span>${esc(l.label)}</span>${count(l)}</div></div>`;
+      const sub = `${where}${where ? ' · ' : ''}${place(l)}`;
+      return `<div class="qrow on${l.ready ? ' ready' : ''}"${lines.length > 1 ? ' data-qnext="1"' : ''}><div class="qt"><span>${esc(l.label)}</span>${count(l)}</div>${bar(l)}<div class="qsub">${sub}</div></div>`;
+    });
+    return `<div class="qhead" data-qtoggle="1"><i class="qtog">▾</i><b>Quests</b>${more}</div>${rows.join('')}`;
+  }
+
+  /** Turns the tracked quest's arrow toward its goal, relative to the camera (in 5° steps, so the DOM rarely changes). */
+  private pointQuestArrow() {
+    const t = this.questTarget;
+    if (!this.questArrow || !t) return;
+    const p = this.g.player.pos;
+    const rel = Math.atan2(t.x - p.x, t.z - p.z) - this.g.camYaw;
+    const deg = (((Math.round((-rel * 180) / Math.PI / 5) * 5) % 360) + 360) % 360;
+    if (deg === this.arrowDeg) return;
+    this.arrowDeg = deg;
+    this.questArrow.style.transform = `rotate(${deg}deg)`;
   }
 
   /** Co-op: the room code and each friend's health. */

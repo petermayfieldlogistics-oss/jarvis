@@ -2,7 +2,7 @@
 
 export type Action =
   | 'attack' | 'heavy' | 'block' | 'roll' | 'jump' | 'sprint' | 'interact' | 'cast' | 'ability' | 'lock'
-  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock'
+  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock' | 'quests'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4';
 
 /** Releasing Shift sooner than this toggles shift lock; holding it longer sprints. */
@@ -21,6 +21,7 @@ const KEYS: Record<string, Action> = {
   KeyT: 'swap',
   KeyG: 'combine',
   KeyM: 'map',
+  KeyJ: 'quests',
   Escape: 'menu',
   KeyI: 'menu',
   KeyC: 'roll',

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, WEAPONS, type DamageElement } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
-import { addXp, dracoFlightHours, maxHp, type Character } from '../rules/character';
+import { addXp, dracoFlightHours, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -446,6 +446,8 @@ export class Game {
       fromBehind: !!o.fromBehind,
       fury: o.fury,
       draw: o.draw,
+      heroHp: this.player.hp / this.player.maxHp,
+      targetHp: e.hp / e.maxHp,
     });
     this.damageEnemy(e, r.amount, element, { source: 'player', tags: r.tags });
     if (kind === 'bow' && c.skills['hunters-mark']) e.status.marked = 8;
@@ -489,7 +491,10 @@ export class Game {
     const info: KillInfo = {
       id: isBoss ? e.bdef.id : e.def.id,
       boss: isBoss,
-      xp: isBoss ? e.bdef.xp : e.summoned ? e.def.xp * 0.3 : e.def.xp,
+      // Monsters out of their home region (a level bonus) are tougher, and teach more.
+      xp: isBoss ? e.bdef.xp : (e.summoned ? e.def.xp * 0.3 : e.def.xp) * (1 + 0.12 * e.levelBonus),
+      lv: e.level,
+      minion: e.summoned,
       gold: isBoss ? e.bdef.gold : Math.round(e.def.gold * (0.6 + Math.random() * 0.8)),
       x: Math.round(e.pos.x),
       z: Math.round(e.pos.z),
@@ -519,9 +524,12 @@ export class Game {
     const credited = this.coop.credited(info);
     if (credited) {
       const c = this.player.c;
-      c.gold += info.gold;
-      this.gainXp(info.xp);
       const def = bossDef ? null : ENEMIES[info.id as EnemyId];
+      const level = info.lv ?? (bossDef ? bossDef.level : def!.level);
+      c.gold += info.gold;
+      // Each hero's own game weighs the kill against their own level.
+      this.gainXp(killXp(info.xp, level, c.level, info.boss));
+      this.killRegen(level, bossDef ? 2 : def!.scale, info.boss, !!info.minion);
       if (bossDef ? bossDef.dark : def!.dark) this.questProgress('dead', 1);
       if (def && def.id.startsWith('bandit')) this.questProgress('bounty', 1);
       if (def && def.drop && Math.random() < def.drop.chance) {
@@ -544,16 +552,43 @@ export class Game {
     }
   }
 
+  /** A kill restores a little health, mana and stamina (much more for a boss), with a green and blue burst. */
+  private killRegen(level: number, scale: number, boss: boolean, minion: boolean) {
+    const p = this.player;
+    if (!p.alive) return;
+    const r = killRestore(p.c, { level, scale, boss, minion });
+    const hp = Math.min(r.hp, Math.max(0, p.maxHp - p.hp));
+    const mana = p.soulOrPower ? 0 : Math.min(r.mana, Math.max(0, p.maxMana - p.mana));
+    p.heal(hp);
+    p.mana += mana;
+    p.stamina = Math.min(p.maxStamina, p.stamina + r.stamina);
+    const at = p.center();
+    this.fx.emit(at, { color: 0x58f078, count: boss ? 60 : 12, speed: boss ? 4 : 2, life: 0.9, size: 0.45, up: 2.5, drag: 1.2 });
+    this.fx.emit(at, { color: 0x5aa8ff, count: boss ? 40 : 8, speed: boss ? 3.5 : 1.6, life: 0.9, size: 0.4, up: 2.2, drag: 1.2 });
+    if (boss) this.fx.ring(p.pos.clone().setY(p.pos.y + 0.2), 4, 0x60ff90, 0.8);
+    at.y += 0.9;
+    if (hp >= 1) this.fx.damageNumber(at, `+${Math.round(hp)}`, 'heal');
+    if (mana >= 1) this.fx.damageNumber(at, `+${Math.round(mana)}`, 'mana');
+  }
+
   gainXp(xp: number) {
-    const gained = addXp(this.player.c, xp);
+    const c = this.player.c;
+    const from = c.level;
+    const gained = addXp(c, xp);
     if (gained > 0) {
       this.player.hp = this.player.maxHp;
       this.player.mana = this.player.maxMana;
       this.player.refillStamina();
-      this.player.flightLeft = dracoFlightHours(this.player.c) * 60;
-      this.hud.banner(`LEVEL ${this.player.c.level}`, 'level', 'Skill point gained');
+      this.player.flightLeft = dracoFlightHours(c) * 60;
+      // The banner spells out what the level gave.
+      const up = levelRewards(c, from);
+      const gains = [up.hp && `+${up.hp} HP`, up.mana && `+${up.mana} mana`, up.stamina && `+${up.stamina} stamina`, `+${up.points} skill point${up.points === 1 ? '' : 's'}`];
+      // Milestones get their own line (a toast would sit on top of it on phones).
+      const star = up.milestones.map((m) => `★ Milestone · ${m.name}: ${m.text}`);
+      this.hud.banner(`LEVEL ${c.level}`, 'level', [gains.filter(Boolean).join(' · '), ...star].join('\n'));
       this.audio.play('levelup');
-      this.fx.emit(this.player.center(), { color: 0xffd070, count: 80, speed: 6, life: 1.2, up: 3 });
+      this.fx.emit(this.player.center(), { color: 0xffd070, count: up.milestones.length ? 140 : 80, speed: 6, life: 1.2, up: 3 });
+      if (up.milestones.length) this.fx.ring(this.player.pos.clone(), 6, 0xffd070, 0.9);
       this.checkLevelEvents();
       this.summonLizardKin();
     }
@@ -599,6 +634,12 @@ export class Game {
     }
     let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0 });
     if (p.c.elfMystery && p.c.mysteryRevealed && element === 'dark') dmg *= 1.2;
+    // Mana Shield: a fifth of the blow drains mana instead.
+    if (rank(p.c, 'mana-shield') && !p.soulOrPower && p.mana > 0) {
+      const drain = Math.min(p.mana, dmg * 0.2);
+      p.mana -= drain;
+      dmg -= drain;
+    }
     dmg = Math.round(dmg * 10) / 10;
     if (dmg <= 0) return;
     if (source) source.damageDealt += dmg;
@@ -916,6 +957,7 @@ export class Game {
     if (this.mode === 'play') {
       if (input.pressed.has('menu')) this.menu.open();
       else if (input.pressed.has('map')) this.menu.open('map');
+      if (input.pressed.has('quests')) this.hud.toggleQuests();
     } else if (this.mode === 'menu' && (input.pressed.has('menu') || input.pressed.has('map'))) {
       this.menu.close();
     }
@@ -1054,7 +1096,8 @@ export class Game {
     const kind = pr.kind === 'arrow' ? 'bow' : pr.kind === 'fireball' || pr.kind === 'orb' || pr.kind === 'water' ? null : 'thrown';
     if (pr.powerShot && !e.aware) {
       // Power Shot: 6x damage while undetected, and 0.5 NDP to everything nearby.
-      const r = outgoingDamage(this.player.c, { base: pr.damage, kind: 'bow', element: pr.element, targetDark: e.dark, undetected: true, fromBehind: false, draw: pr.draw });
+      const p = this.player;
+      const r = outgoingDamage(p.c, { base: pr.damage, kind: 'bow', element: pr.element, targetDark: e.dark, undetected: true, fromBehind: false, draw: pr.draw, heroHp: p.hp / p.maxHp, targetHp: e.hp / e.maxHp });
       this.damageEnemy(e, r.amount * pr.powerShot.multiplier, pr.element, { source: 'player', tags: ['power'] });
       this.fx.ring(e.center(), pr.powerShot.radius, 0xffd070, 0.5);
       this.hud.toast('POWER SHOT!', 'skill');

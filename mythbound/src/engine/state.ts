@@ -1,7 +1,7 @@
 // World progress and saving.
 
 import { QUESTS, type QuestId } from '../data/world';
-import type { Character } from '../rules/character';
+import { normalizeCharacter, type Character } from '../rules/character';
 
 export type QuestState = 'none' | 'active' | 'done';
 
@@ -12,6 +12,8 @@ export interface WorldState {
   shrinesFound: string[];
   trialsDone: string[];
   quests: Record<QuestId, { state: QuestState; progress: number }>;
+  /** The quest the HUD's quest bar points the way to. */
+  tracked: QuestId | null;
   /** Tomes, pages and loot already picked up. */
   taken: string[];
   loreRead: string[];
@@ -40,6 +42,7 @@ export function newWorldState(): WorldState {
     shrinesFound: ['hearth'],
     trialsDone: [],
     quests,
+    tracked: null,
     taken: [],
     loreRead: [],
     lostEmbers: null,
@@ -70,6 +73,7 @@ export function normalizeSave(data: SaveData): SaveData {
   data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
+  normalizeCharacter(data.character);
   return data;
 }
 
@@ -155,6 +159,8 @@ export interface Settings {
   /** Co-op: the name friends see, and the relay server's address. */
   coopName: string;
   coopServer: string;
+  /** The HUD quest bar folded to one line; null until the player chooses (folded on phones). */
+  questsCollapsed: boolean | null;
 }
 
 export function defaultQuality(): Settings['quality'] {
@@ -163,7 +169,7 @@ export function defaultQuality(): Settings['quality'] {
 }
 
 export function loadSettings(): Settings {
-  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', coopName: '', coopServer: '' };
+  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', coopName: '', coopServer: '', questsCollapsed: null };
   try {
     return { ...d, ...JSON.parse(storage()?.getItem(SETTINGS_KEY) ?? '{}') };
   } catch {

@@ -122,6 +122,8 @@ export class Story {
     if (id === 'pages') st.progress = PAGES.filter((p) => this.g.state.taken.includes(p.id)).length;
     if (id === 'tomes') st.progress = TOMES.filter((t) => this.g.state.taken.includes(`tome-${t.spell}`)).length;
     if (id === 'trials') st.progress = this.g.state.trialsDone.length;
+    // The quest bar follows the newest quest.
+    this.g.state.tracked = id;
     this.g.hud.toast(`New quest: ${QUESTS[id].name}`, 'quest');
   }
 

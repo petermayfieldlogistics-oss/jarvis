@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { SPELLS, WEAPONS, type ClassId, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
   dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, manaRegen, maxHp, maxMana, maxStamina, maxTamed, moveSpeed, rank,
-  tameableKinds, weaponDamage, type Character,
+  staminaRegen, tameableKinds, weaponDamage, type Character,
 } from '../rules/character';
 import {
-  BLOODRAGE, bleedChance, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
+  BLOODRAGE, bleedChance, bloodrageDuration, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
   hasBloodsteal, immuneToBleed, mainWeapon, newFury, onMeleeLanded, onMeleeMissed, powerShot, retribution, spellCost, spellPowerMultiplier, strikeDevilDeal,
   type FuryState,
 } from '../rules/combat';
@@ -507,7 +507,7 @@ export class Player {
     const spending = sprint || this.attack || this.rollT >= 0 || this.drawing > 0;
     if (sprint) this.spend(14 * dt);
     if (!spending) this.staminaWait = Math.max(0, this.staminaWait - dt);
-    if (!spending && this.staminaWait <= 0 && !(this.swimming && c.roleId !== 'sailor')) this.stamina = Math.min(this.maxStamina, this.stamina + 38 * dt * (this.blocking ? 0.4 : 1));
+    if (!spending && this.staminaWait <= 0 && !(this.swimming && c.roleId !== 'sailor')) this.stamina = Math.min(this.maxStamina, this.stamina + staminaRegen(c) * dt * (this.blocking ? 0.4 : 1));
     if (this.exhausted && this.stamina >= this.maxStamina * 0.3) this.exhausted = false;
     if (!this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + manaRegen(c) * dt);
     else this.mana = 0;
@@ -553,7 +553,7 @@ export class Player {
     this.backstep = wantLen <= 0.1;
     this.rollT = 0;
     this.rollTime = 0;
-    this.spend(this.backstep ? 12 : 18);
+    this.spend((this.backstep ? 12 : 18) * (1 - 0.25 * rank(this.c, 'tumble')));
     if (this.attack) this.finishAttack();
     this.queued = null;
     this.drawing = 0;
@@ -658,7 +658,7 @@ export class Player {
       const w = WEAPONS[mainWeapon(this.c).id];
       const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
       const dur = (1 / w.speed) * 0.9 * quick;
-      const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer');
+      const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer') - 0.15 * rank(this.c, 'blade-master');
       if (!heavy) {
         const chained = cur ? cur.kind === 'light' : this.lastKind === 'light' && this.now - this.lastSwingEnd < COMBO_WINDOW;
         this.comboStep = chained ? (this.comboStep + 1) % 3 : 0;
@@ -669,7 +669,7 @@ export class Player {
         this.spend(25 * thrift);
         this.comboStep = 0;
         if (this.c.subclassId === 'swordsman') {
-          this.startAttack('spin', 'spin', dur * 1.5);
+          this.startAttack('spin', 'spin', dur * 1.5, rank(this.c, 'lunge') ? { step: 2.2 } : {});
           g.hud.toast('Spinner Flourish!', 'skill');
         } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
           this.startAttack('throw', 'throw', 0.7);
@@ -954,7 +954,7 @@ export class Player {
       if (!this.soulOrPower) this.mana -= BLOODRAGE.mana;
       this.fury.bloodrageActive = true;
       this.fury.stacks = 0;
-      this.bloodrageUntil = this.now + BLOODRAGE.duration;
+      this.bloodrageUntil = this.now + bloodrageDuration(c);
       this.bloodrageReadyAt = this.now + BLOODRAGE.cooldown;
       g.hud.toast(c.level >= 4 ? 'BLOODRAGE! Bloodsteal awakens.' : 'BLOODRAGE!', 'rage');
       // A planted roar; it can't be cut short by attacks or rolls.
@@ -988,7 +988,8 @@ export class Player {
     target.tamed = true;
     g.coop.tamed(target);
     g.removeEnemy(target);
-    g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond'), 1 + 0.2 * rank(this.c, 'feral-bite')));
+    const alpha = 0.3 * rank(this.c, 'alpha-call');
+    g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond') + alpha, 1 + 0.2 * rank(this.c, 'feral-bite') + alpha));
     if (!this.c.tamed.includes(kind)) this.c.tamed.push(kind);
     g.hud.toast(`Tamed a ${target.name}!`, 'skill');
     g.audio.play('pickup');
