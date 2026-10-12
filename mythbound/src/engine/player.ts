@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
   airFlaps, ANGELIC, dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, drowns, lightHealMultiplier, manaRegen, maxHp, maxMana,
-  maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
+  maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, swimsTireless, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
 } from '../rules/character';
 import {
   BLOODRAGE, bleedChance, bloodrageDuration, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
@@ -372,8 +372,8 @@ export class Player {
       speed = c.roleId === 'sailor' ? 5.5 : 3.6;
       this.crouching = false;
       this.blocking = false;
-      // Zombies have no breath to lose: swimming doesn't tire them.
-      if (c.roleId !== 'sailor' && drowns(c)) this.stamina = Math.max(0, this.stamina - 3.5 * dt);
+      // Zombies have no breath to lose and sailors or pearl-bearers never tire: swimming costs them nothing.
+      if (!swimsTireless(c) && drowns(c)) this.stamina = Math.max(0, this.stamina - 3.5 * dt);
       if (this.stamina <= 0 && drowns(c)) {
         this.drown += dt;
         if (this.drown > 1) {
@@ -531,7 +531,7 @@ export class Player {
     const spending = sprint || this.attack || this.rollT >= 0 || this.drawing > 0;
     if (sprint) this.spend(14 * dt);
     if (!spending) this.staminaWait = Math.max(0, this.staminaWait - dt);
-    if (!spending && this.staminaWait <= 0 && !(this.swimming && c.roleId !== 'sailor' && drowns(c))) this.stamina = Math.min(this.maxStamina, this.stamina + staminaRegen(c) * dt * (this.blocking ? 0.4 : 1));
+    if (!spending && this.staminaWait <= 0 && !(this.swimming && !swimsTireless(c) && drowns(c))) this.stamina = Math.min(this.maxStamina, this.stamina + staminaRegen(c) * dt * (this.blocking ? 0.4 : 1));
     if (this.exhausted && this.stamina >= this.maxStamina * 0.3) this.exhausted = false;
     if (!this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + manaRegen(c) * dt);
     else this.mana = 0;

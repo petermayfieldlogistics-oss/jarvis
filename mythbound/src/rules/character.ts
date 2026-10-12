@@ -9,6 +9,7 @@ import {
   type CreatureKind,
   type Element,
   type RaceId,
+  type RelicId,
   type RoleId,
   type SpellId,
   type SubclassId,
@@ -250,11 +251,14 @@ export function normalizeCharacter(c: Character): Character {
   return c;
 }
 
+/** Relics from the elder foes live in the pack and work as long as they are carried. */
+export const hasRelic = (c: Pick<Character, 'items'>, id: RelicId) => (c.items[id] ?? 0) > 0;
+
 // ------------------------------------------------------------------ stats --
 
 export function maxHp(c: Character): number {
   const perLevel = c.classId === 'warrior' ? 12 : c.classId === 'ranger' ? 9 : 7;
-  let base = CLASSES[c.classId].hp + perLevel * (c.level - 1);
+  let base = CLASSES[c.classId].hp + perLevel * (c.level - 1) + (hasRelic(c, 'dragon-heart') ? 30 : 0);
   base += 15 * rank(c, 'iron-hide') + 12 * rank(c, 'hardy');
   base *= 1 + 0.1 * perk(c, 10) + 0.1 * perk(c, 30);
   if (c.raceId === 'orc') base *= ORC.hp;
@@ -266,10 +270,16 @@ export function maxMana(c: Character): number {
   let m = CLASSES[c.classId].mana + perLevel * (c.level - 1);
   if (c.roleId === 'knight') m += 10;
   if (c.raceId === 'ancient') m += 15;
+  if (hasRelic(c, 'tide-crown')) m += 20;
   m += 10 * rank(c, 'deep-well');
   if (c.raceId === 'elf') m *= 1.2;
   m *= 1 + 0.15 * perk(c, 20) + 0.1 * perk(c, 30);
   return Math.round(m);
+}
+
+/** Sailors, and whoever carries the Leviathan's pearl, swim without tiring. */
+export function swimsTireless(c: Character): boolean {
+  return c.roleId === 'sailor' || hasRelic(c, 'leviathan-pearl');
 }
 
 export function maxStamina(c: Character): number {
@@ -292,7 +302,7 @@ export function moveSpeed(c: Character): number {
 
 export function manaRegen(c: Character): number {
   const base = c.classId === 'mage' ? 2.2 : c.classId === 'ranger' ? 1.3 : 0.8;
-  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1);
+  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1) * (hasRelic(c, 'tide-crown') ? 1.3 : 1);
 }
 
 /** Quick Draw: rangers draw every weapon faster. Multiplies draw/ready times. */

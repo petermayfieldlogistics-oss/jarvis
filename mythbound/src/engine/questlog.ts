@@ -1,7 +1,7 @@
 // The quest log behind the HUD's quest bar and the Quests tab: what each active
 // quest asks for next, and where to go when a place is known.
 
-import { ENEMIES, FISHING_SPOTS, NPCS, ORE_NODES, QUESTS, SPAWNS, TRIALS, ZONES, type QuestId } from '../data/world';
+import { ELDER_TRIALS, ENEMIES, FISHING_SPOTS, LAIRS, NPCS, ORE_NODES, QUESTS, SPAWNS, WEAPON_TRIALS, ZONES, type QuestId } from '../data/world';
 import type { WorldState } from './state';
 import { zoneAt } from './terrain';
 
@@ -32,6 +32,8 @@ const LABEL: Record<QuestId, string> = {
   bounty: 'Bounty: Bandits',
   tomes: 'Lost Tomes',
   pages: 'Missing Pages',
+  elders: 'The Elder Foes',
+  hunts: 'Monster Hunts',
 };
 
 const OBJECTIVE: Record<QuestId, string> = {
@@ -42,6 +44,8 @@ const OBJECTIVE: Record<QuestId, string> = {
   bounty: 'Defeat bandits on the roads',
   tomes: 'Tomes are hidden across the land',
   pages: 'The pages blew far and wide',
+  elders: 'Face the next elder foe',
+  hunts: 'Hunt the monster in its lair',
 };
 
 // Camps where a quest's monsters live, named after their region.
@@ -70,7 +74,11 @@ function giver(id: QuestId): QuestTarget | null {
 function targetFor(id: QuestId, state: WorldState, x: number, z: number): QuestTarget | null {
   switch (id) {
     case 'trials':
-      return nearest(TRIALS.filter((t) => !state.trialsDone.includes(t.id)).map((t) => ({ x: t.x, z: t.z, name: t.name })), x, z);
+      return nearest(WEAPON_TRIALS.filter((t) => !state.trialsDone.includes(t.id)).map((t) => ({ x: t.x, z: t.z, name: t.name })), x, z);
+    case 'elders':
+      return nearest(ELDER_TRIALS.filter((t) => !state.trialsDone.includes(t.id)).map((t) => ({ x: t.x, z: t.z, name: t.name })), x, z);
+    case 'hunts':
+      return nearest(LAIRS.filter((l) => !state.flags[`hunted-${l.boss}`]).map((l) => ({ x: l.x, z: l.z, name: l.name })), x, z);
     case 'ore':
       return nearest(ORE, x, z);
     case 'fish':

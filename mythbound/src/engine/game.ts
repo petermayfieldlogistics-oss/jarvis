@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import { ANCIENT_GLYPH, WEAPONS, type DamageElement } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
+import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
 import { Spawner } from './spawner';
 import { Ally, Boss, Enemy, type Actor } from './entities';
+import { buildRelic, clearHazards, huntedNear, isRelic, Lairs, makeBoss, rewardName, updateHazards } from './bosses';
 import { Coop, RemoteHero, type KillInfo } from './coop';
 import type { Hero } from './hero';
 import { SharedFx } from './sharedfx';
@@ -81,6 +83,8 @@ export class Game {
   post: Post;
   cam: CameraRig;
   spawner: Spawner;
+  /** The hunted great foes (the Reaper, the Giant Spider) in their lairs. */
+  lairs: Lairs;
   fog = new THREE.FogExp2(0xb8a27a, 0.006);
   world: World;
   fx: Fx;
@@ -183,6 +187,7 @@ export class Game {
     this.fx = new Fx(this.scene, this.camera, this.hud.numberLayer, q === 'low');
     this.story = new Story(this);
     this.spawner = new Spawner(this);
+    this.lairs = new Lairs(this);
     this.sfx = new SharedFx(this);
     this.coop = new Coop(this);
     this.coop.onChange = () => this.menu.coopChanged();
@@ -284,6 +289,8 @@ export class Game {
     for (const e of [...this.enemies]) this.removeEnemy(e);
     this.corpses = [];
     this.boss = null;
+    this.lairs.clear();
+    clearHazards();
   }
 
   /** Fills every camp again. In co-op the host's world is shared, so resting doesn't reset it (and guests have no monsters of their own). */
@@ -553,8 +560,11 @@ export class Game {
         }
       }
     }
-    // A felled boss lifts the fog; those who fought it win the trial.
-    if (bossDef) {
+    // A hunted foe has no fog: those who fought it share the spoils.
+    if (bossDef?.mini) {
+      if (credited) this.huntDone(bossDef);
+    } else if (bossDef) {
+      // A felled boss lifts the fog; those who fought it win the trial.
       if (this.inTrial || credited) this.completeTrial(bossDef);
       else this.endTrial(true);
     }
@@ -577,6 +587,28 @@ export class Game {
     at.y += 0.9;
     if (hp >= 1) this.fx.damageNumber(at, `+${Math.round(hp)}`, 'heal');
     if (mana >= 1) this.fx.damageNumber(at, `+${Math.round(mana)}`, 'mana');
+  }
+
+  /** A hunted foe slain: its unique drop the first time, ore and a bounty mark every time. */
+  private huntDone(boss: BossDef) {
+    const c = this.player.c;
+    const flag = `hunted-${boss.id}`;
+    const first = !this.state.flags[flag];
+    setTimeout(() => {
+      this.hud.banner('MONSTER SLAIN', 'victory', `${boss.name}, ${boss.title}`);
+      this.audio.play('victory');
+    }, 1000);
+    c.items['ember-ore'] = (c.items['ember-ore'] ?? 0) + 2;
+    this.hud.toast('+2 Ember Ore');
+    if (first) {
+      this.state.flags[flag] = true;
+      if (!c.weapons.some((w) => w.id === boss.reward)) {
+        c.weapons.push({ id: boss.reward, level: 1 });
+        setTimeout(() => this.hud.toast(`You claim ${WEAPONS[boss.reward].name}! (see your pack)`, 'quest'), 2600);
+      }
+      this.questProgress('hunts', 1);
+    }
+    this.save();
   }
 
   gainXp(xp: number) {
@@ -743,7 +775,8 @@ export class Game {
     if (this.activeTrial) return;
     if (this.coop.isGuest) return this.coop.requestTrial(t.id);
     if (peer === undefined && this.state.trialsDone.includes(t.id)) return this.hud.toast('You have already conquered this trial.');
-    const boss = new Boss(BOSSES[t.boss], { x: t.x, z: t.z, radius: t.radius });
+    const boss = makeBoss(BOSSES[t.boss], t.id);
+    if (!boss) return;
     // Everyone near the altar is sealed in; more heroes, a tougher boss.
     const inside = (h: Hero) => Math.hypot(h.pos.x - t.x, h.pos.z - t.z) < t.radius + 3;
     const ids: number[] = [];
@@ -753,7 +786,7 @@ export class Game {
     }
     const me = peer === undefined || inside(this.player);
     if (me) ids.push(this.coop.myId);
-    if (ids.length > 1) boss.scaleHealth(1 + 0.6 * (ids.length - 1));
+    if (ids.length > 1) boss.scaleHealth(bossHealthScale(ids.length));
     this.boss = boss;
     this.enemies.push(boss);
     this.scene.add(boss.model.root);
@@ -775,7 +808,7 @@ export class Game {
       this.audio.play('roar');
       this.audio.setMood(1, BOSSES[t.boss].dark);
     } else this.hud.toast(`The fog rises over the ${t.name}.`);
-    if (inside && this.state.quests.trials.state === 'none') this.state.quests.trials.state = 'active';
+    if (inside && !t.elder && this.state.quests.trials.state === 'none') this.state.quests.trials.state = 'active';
   }
 
   endTrial(won: boolean) {
@@ -789,6 +822,7 @@ export class Game {
     this.activeTrial = null;
     this.inTrial = false;
     this.fx.clearTelegraphs();
+    clearHazards();
     this.audio.setMood(0, false);
     if (!won) this.hud.setBoss(null);
   }
@@ -808,7 +842,7 @@ export class Game {
     if (first) {
       this.state.unclaimed.push(boss.reward);
       this.placeLegendary(boss.reward);
-      this.questProgress('trials', 1);
+      this.questProgress(t.elder ? 'elders' : 'trials', 1);
     }
     this.save();
   }
@@ -817,17 +851,20 @@ export class Game {
     const trial = TRIALS.find((t) => BOSSES[t.boss].reward === weaponId);
     if (!trial || this.loot.has(weaponId)) return;
     const g = new THREE.Group();
-    const w = buildWeapon(WEAPONS[weaponId].kind, true);
-    w.position.y = 0.4;
-    g.add(w);
-    const glow = glowSprite(0xffd070, 3);
-    glow.position.y = 1;
-    g.add(glow);
+    if (isRelic(weaponId)) g.add(buildRelic(weaponId));
+    else {
+      const w = buildWeapon(WEAPONS[weaponId].kind, true);
+      w.position.y = 0.4;
+      g.add(w);
+      const glow = glowSprite(0xffd070, 3);
+      glow.position.y = 1;
+      g.add(glow);
+    }
     const x = trial.x + 3, z = trial.z + 3;
     g.position.set(x, heightAt(x, z) + 0.6, z);
     this.scene.add(g);
     this.loot.set(weaponId, g);
-    this.world.interactables.push({ id: `legendary-${weaponId}`, kind: 'loot', x, y: g.position.y, z, radius: 3, label: `Take the ${WEAPONS[weaponId].name}`, object: g });
+    this.world.interactables.push({ id: `legendary-${weaponId}`, kind: 'loot', x, y: g.position.y, z, radius: 3, label: `Take the ${rewardName(weaponId, WEAPONS)}`, object: g });
   }
 
   claimLegendary(weaponId: string) {
@@ -980,6 +1017,7 @@ export class Game {
       this.cam.look(this);
 
       this.player.update(gdt, this);
+      updateHazards(this, gdt);
       if (this.bleedTimer > 0) {
         this.bleedTimer -= dt;
         if (this.player.immuneToBleed()) this.bleedTimer = 0;
@@ -1019,7 +1057,10 @@ export class Game {
       this.updateTrial(dt);
       this.updateZone();
       this.updateEyes(dt);
-      if (!this.coop.isGuest) this.spawner.update(dt);
+      if (!this.coop.isGuest) {
+        this.spawner.update(dt);
+        this.lairs.update();
+      }
       this.updateOre();
       if (this.mode === 'play') this.updateInteraction();
       else this.hud.prompt(null);
@@ -1155,7 +1196,8 @@ export class Game {
       const c = this.corpses[i];
       c.t += dt;
       c.e.update(dt, this);
-      if (c.t > 3.5) {
+      // A felled boss lies a while longer.
+      if (c.t > (c.e instanceof Boss ? 6 : 3.5)) {
         this.fx.emit(c.e.center(), { color: 0xffc070, count: 16, speed: 1.5, life: 1, up: 1.5 });
         this.removeEnemy(c.e);
         this.corpses.splice(i, 1);
@@ -1181,7 +1223,9 @@ export class Game {
   private updateTrial(dt: number) {
     const t = this.activeTrial;
     if (!t) {
-      this.hud.setBoss(null);
+      // No fog up: a hunted foe in a fight close by still gets its bar.
+      const h = huntedNear(this);
+      this.hud.setBoss(h ? `${h.bdef.name}, ${h.bdef.title}` : null, h?.hp ?? 0, h?.maxHp ?? 1);
       return;
     }
     const p = this.player.pos;

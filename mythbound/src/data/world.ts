@@ -1,7 +1,7 @@
 // The world of Mythbound: zones, places, people, monsters and stories.
 // Coordinates are world units; north is -z.
 
-import { ANCIENT_GLYPH, type CreatureKind, type SpellId } from './defs';
+import { ANCIENT_GLYPH, RELICS, type CreatureKind, type SpellId } from './defs';
 
 export const WORLD_HALF = 450;
 
@@ -38,7 +38,7 @@ export const ISLAND = { x: 70, z: 262, radius: 40 };
 
 export type EnemyId =
   | 'wolf' | 'boar' | 'bandit' | 'bandit-archer' | 'skeleton' | 'wraith' | 'scorpion'
-  | 'fire-imp' | 'magma-hound' | 'drowned' | 'eye-watcher' | 'mars-legionary' | 'drake';
+  | 'fire-imp' | 'magma-hound' | 'drowned' | 'eye-watcher' | 'mars-legionary' | 'drake' | 'spiderling';
 
 export type BodyType = 'humanoid' | 'quad' | 'floater' | 'insect' | 'imp' | 'drake';
 export type Affinity = 'fire' | 'water' | 'wind' | 'earth' | 'dark' | 'none';
@@ -79,18 +79,23 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
   'eye-watcher': { id: 'eye-watcher', name: 'Watcher', body: 'floater', hp: 85, damage: 15, speed: 5, level: 10, affinity: 'dark', dark: true, xp: 70, gold: 25, color: 0x2a2030, scale: 1.2, reach: 2.4, ranged: { projectile: 'orb', range: 32, speed: 20 }, bleeds: false },
   'mars-legionary': { id: 'mars-legionary', name: 'Legionary of Mars', body: 'humanoid', hp: 150, damage: 20, speed: 5.8, level: 12, affinity: 'fire', dark: false, xp: 90, gold: 35, color: 0x7a2a22, scale: 1.15, reach: 2.8, bleeds: true },
   drake: { id: 'drake', name: 'Ash Drake', body: 'drake', hp: 180, damage: 22, speed: 7, level: 13, affinity: 'fire', dark: false, xp: 120, gold: 40, color: 0x4a2a24, scale: 1.4, reach: 3, ranged: { projectile: 'fireball', range: 30, speed: 24 }, tame: 'drake', bleeds: true },
+  // Hatched by the Giant Spider in its fights: quick and weak.
+  spiderling: { id: 'spiderling', name: 'Spiderling', body: 'insect', hp: 20, damage: 5, speed: 8.5, level: 4, affinity: 'earth', dark: false, xp: 8, gold: 1, color: 0x2a221c, scale: 0.45, reach: 1.3, bleeds: true },
 };
 
 // ------------------------------------------------------------------ bosses --
 
-export type BossId = 'cernunna' | 'thalassor' | 'zephyron' | 'ignaroth' | 'champion' | 'hecate-shade';
-export type BossAttack = 'sweep' | 'charge' | 'slam' | 'volley' | 'strikes' | 'summon' | 'teleport' | 'leap' | 'ring' | 'combo';
+export type BossId = 'cernunna' | 'thalassor' | 'zephyron' | 'ignaroth' | 'champion' | 'hecate-shade' | 'leviathan' | 'sea-queen' | 'elder-dragon' | 'reaper' | 'giant-spider';
+export type BossAttack =
+  | 'sweep' | 'charge' | 'slam' | 'volley' | 'strikes' | 'summon' | 'teleport' | 'leap' | 'ring' | 'combo'
+  // The elder foes' and the hunted foes' own moves (engine/bosses.ts).
+  | 'bite' | 'claw' | 'breath' | 'gust' | 'flight' | 'strike' | 'tail' | 'dive' | 'wave' | 'whirlpool' | 'trident' | 'geyser' | 'reap' | 'drain' | 'web';
 
 export interface BossDef {
   id: BossId;
   name: string;
   title: string;
-  model: 'stag' | 'crab' | 'colossus' | 'golem' | 'champion' | 'witch';
+  model: 'stag' | 'crab' | 'colossus' | 'golem' | 'champion' | 'witch' | 'serpent' | 'dragon' | 'siren' | 'reaper' | 'spider';
   hp: number;
   damage: number;
   level: number;
@@ -104,7 +109,12 @@ export interface BossDef {
   attacks: BossAttack[];
   summon?: EnemyId;
   projectile: 'arrow' | 'fireball' | 'orb' | 'water' | 'lightning';
+  /** A trial's weapon or relic, left in its arena; a hunted foe's unique drop. */
   reward: string;
+  /** Hunted, not a trial: it haunts a lair (LAIRS) with no fog, and returns a while after it falls. */
+  mini?: boolean;
+  /** Shouted when it is enraged (below half health). */
+  rage?: string;
 }
 
 export const BOSSES: Record<BossId, BossDef> = {
@@ -113,7 +123,7 @@ export const BOSSES: Record<BossId, BossDef> = {
     xp: 400, gold: 200, scale: 2.6, color: 0x4a4232, speed: 9, attacks: ['charge', 'sweep', 'summon', 'volley'], summon: 'wolf', projectile: 'arrow', reward: 'bow-of-artemis',
   },
   thalassor: {
-    id: 'thalassor', name: 'Thalassor', title: 'the Drowned Leviathan', model: 'crab', hp: 950, damage: 20, level: 6, affinity: 'water', dark: false,
+    id: 'thalassor', name: 'Thalassor', title: 'the Tide Tyrant', model: 'crab', hp: 950, damage: 20, level: 6, affinity: 'water', dark: false,
     xp: 600, gold: 260, scale: 3, color: 0x3e5f66, speed: 5, attacks: ['slam', 'volley', 'ring', 'sweep'], summon: 'drowned', projectile: 'water', reward: 'trident-of-poseidon',
   },
   zephyron: {
@@ -132,6 +142,33 @@ export const BOSSES: Record<BossId, BossDef> = {
     id: 'hecate-shade', name: 'Shade of Hecate', title: 'Queen of the Crossroads', model: 'witch', hp: 1300, damage: 25, level: 13, affinity: 'dark', dark: true,
     xp: 1300, gold: 500, scale: 2.2, color: 0x2a2440, speed: 6, attacks: ['teleport', 'volley', 'ring', 'summon'], summon: 'wraith', projectile: 'orb', reward: 'staff-of-hecate',
   },
+  // The elder foes: beyond the six trials, each guards a relic.
+  leviathan: {
+    id: 'leviathan', name: 'The Leviathan', title: 'Coil of the Abyss', model: 'serpent', hp: 2600, damage: 30, level: 12, affinity: 'water', dark: false,
+    xp: 1800, gold: 700, scale: 1.4, color: 0x24525e, speed: 0, attacks: ['strike', 'tail', 'breath', 'wave', 'volley', 'dive'], projectile: 'water', reward: 'leviathan-pearl',
+    rage: 'The Leviathan thrashes, and the sea boils!',
+  },
+  'sea-queen': {
+    id: 'sea-queen', name: 'Queen Nerissa', title: 'Queen of the Sea', model: 'siren', hp: 2200, damage: 28, level: 12, affinity: 'water', dark: false,
+    xp: 1600, gold: 650, scale: 1.3, color: 0x2f8a96, speed: 6.5, attacks: ['volley', 'whirlpool', 'trident', 'summon', 'teleport', 'ring', 'geyser'], summon: 'drowned', projectile: 'water', reward: 'tide-crown',
+    rage: 'The sea rises for its Queen!',
+  },
+  'elder-dragon': {
+    id: 'elder-dragon', name: 'Pyrrhax', title: 'the Elder Dragon', model: 'dragon', hp: 3200, damage: 34, level: 15, affinity: 'fire', dark: false,
+    xp: 2400, gold: 900, scale: 2.3, color: 0x5a1a12, speed: 5.5, attacks: ['bite', 'claw', 'breath', 'gust', 'ring', 'flight'], projectile: 'fireball', reward: 'dragon-heart',
+    rage: 'Pyrrhax roars, and the mountain answers with fire!',
+  },
+  // The hunted: no trial, they haunt their lairs.
+  reaper: {
+    id: 'reaper', name: 'The Reaper', title: 'Harvester of the Mire', model: 'reaper', hp: 820, damage: 22, level: 9, affinity: 'dark', dark: true,
+    xp: 650, gold: 220, scale: 1, color: 0x15131a, speed: 6, attacks: ['reap', 'teleport', 'drain', 'summon'], summon: 'skeleton', projectile: 'orb', reward: 'reapers-edge', mini: true,
+    rage: "The Reaper's lantern flares. It hungers.",
+  },
+  'giant-spider': {
+    id: 'giant-spider', name: 'Broodmother', title: 'the Giant Spider', model: 'spider', hp: 520, damage: 15, level: 5, affinity: 'earth', dark: false,
+    xp: 380, gold: 140, scale: 2.3, color: 0x2a221c, speed: 7.5, attacks: ['bite', 'leap', 'web', 'summon'], summon: 'spiderling', projectile: 'arrow', reward: 'venomfang', mini: true,
+    rage: 'Broodmother shrieks, and the hollow crawls with her young!',
+  },
 };
 
 // ------------------------------------------------------------------ places --
@@ -145,6 +182,8 @@ export interface TrialDef {
   boss: BossId;
   level: number;
   intro: string;
+  /** An elder foe's lair: fought like a trial but not one of the six (it guards a relic). */
+  elder?: boolean;
 }
 
 export const TRIALS: TrialDef[] = [
@@ -154,6 +193,33 @@ export const TRIALS: TrialDef[] = [
   { id: 'forge', name: 'Trial of the Forge', x: VOLCANO.x, z: VOLCANO.z, radius: 26, boss: 'ignaroth', level: 10, intro: 'The mountain’s heart beats like a hammer.' },
   { id: 'war', name: 'Trial of War', x: 300, z: -260, radius: 30, boss: 'champion', level: 12, intro: 'The crowd of ghosts roars for blood.' },
   { id: 'crossroads', name: 'Trial of the Crossroads', x: -300, z: -265, radius: 28, boss: 'hecate-shade', level: 13, intro: 'Three roads. Three faces. One queen.' },
+  // The elder foes. Both sea lairs are headlands joined to the beach: no boat needed.
+  { id: 'deep', name: "Serpent's Shoal", x: 230, z: 192, radius: 24, boss: 'leviathan', level: 11, intro: 'The tide pulls back. Coils as wide as towers rise from the sea.', elder: true },
+  { id: 'court', name: 'Drowned Court', x: -40, z: 184, radius: 24, boss: 'sea-queen', level: 12, intro: 'A song rises from the waves. The Queen of the Sea holds court.', elder: true },
+  { id: 'roost', name: "Dragon's Roost", x: 0, z: -398, radius: 28, boss: 'elder-dragon', level: 14, intro: 'Ash falls like snow. Something vast unfolds its wings.', elder: true },
+];
+
+/** The six weapon trials; the elder lairs are fought the same way but are not part of that quest. */
+export const WEAPON_TRIALS = TRIALS.filter((t) => !t.elder);
+export const ELDER_TRIALS = TRIALS.filter((t) => t.elder);
+
+export interface LairDef {
+  id: string;
+  name: string;
+  boss: BossId;
+  x: number;
+  z: number;
+  /** How far it follows a hero from its lair before giving up. */
+  leash: number;
+  /** Only there after dark. */
+  night?: boolean;
+  hint: string;
+}
+
+/** Where the hunted great foes dwell. */
+export const LAIRS: LairDef[] = [
+  { id: 'hollow', name: 'Silken Hollow', boss: 'giant-spider', x: -220, z: -115, leash: 30, hint: 'Deep in Whisperwood, webs as wide as sails. Look up.' },
+  { id: 'graves', name: 'Mourner’s Rest', boss: 'reaper', x: -290, z: 140, leash: 32, night: true, hint: 'A graveyard in the Weeping Mire. The Reaper walks it after dark.' },
 ];
 
 export interface ShrineDef {
@@ -255,6 +321,26 @@ export const LORE: LoreDef[] = [
   {
     id: 'eyes-warning', x: -255, z: 240, title: 'Scratched Into a Tree', ancient: true,
     text: 'DO NOT LOOK AT THE EYES. Residue suggests the carvings were once dyed to glow in the dark. Everyone who saw them died shortly after. Always horribly. Always painfully.',
+  },
+  {
+    id: 'leviathan', x: 200, z: 150, title: 'The Coil of the Abyss',
+    text: 'Fishers say the Leviathan sleeps coiled around the shoal to the east. When the sea pulls back from the point, run. Where its head falls, nothing stands. Where its head lies, strike.',
+  },
+  {
+    id: 'court', x: -12, z: 141, title: 'The Drowned Court',
+    text: 'Beneath the western waves a queen holds court among the drowned. Her song pulls sailors under and her whirlpools pull them in. Run against the pull, or roll free.',
+  },
+  {
+    id: 'wyrm', x: -36, z: -372, title: 'The Elder Wyrm',
+    text: 'Older than the mountain’s fire, it roosts on the far side of Molten Peak. When its throat glows, get out of the way. When it takes to the sky, watch the ground for falling fire.',
+  },
+  {
+    id: 'mourners', x: -274, z: 126, title: 'Mourner’s Rest',
+    text: 'When the moon is up, the Reaper comes to collect what the Mire owes. It steps through shadow to stand behind you, and drinks the life of any who stand too long in its gaze.',
+  },
+  {
+    id: 'silk', x: -200, z: -104, title: 'Silken Hollow',
+    text: 'Nothing lives in this hollow but webs, bones and silence. The webs hold fast; the bite festers. Whatever spun them is very big, and very patient. Look up.',
   },
 ];
 
@@ -384,7 +470,7 @@ export const FISHING_SPOTS = [{ x: 30, z: 158 }, { x: -110, z: 158 }, { x: 160, 
 
 // ------------------------------------------------------------------ quests --
 
-export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages';
+export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts';
 
 export interface QuestDef {
   id: QuestId;
@@ -431,6 +517,16 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     description: 'The Chronicler lost three pages of an old manuscript. They were "taken by the wind". Find them.',
     reward: { xp: 300 },
   },
+  elders: {
+    id: 'elders', name: 'The Elder Foes', giver: 'orrin', goal: 3,
+    description: "Slay the three elder foes: the Leviathan at the Serpent's Shoal, the Queen of the Sea in the Drowned Court and the Elder Dragon on its roost beyond Molten Peak.",
+    reward: { gold: 1500, xp: 2500 },
+  },
+  hunts: {
+    id: 'hunts', name: 'Monster Hunts', giver: 'quill', goal: 2,
+    description: 'Quill posted two bounties: Broodmother, the Giant Spider of Silken Hollow, and the Reaper that walks Mourner’s Rest after dark.',
+    reward: { gold: 400, xp: 500 },
+  },
 };
 
 // ------------------------------------------------------------------- items --
@@ -440,4 +536,5 @@ export const ITEMS: Record<string, { name: string; description: string; heal?: n
   'golden-fish': { name: 'Golden Fish', description: 'Restores 90 HP.', heal: 90 },
   'ember-ore': { name: 'Ember Ore', description: 'Glowing ore from Molten Peak. Used to upgrade weapons.' },
   'free-upgrade': { name: "Brann's Token", description: 'One free weapon upgrade at any anvil.' },
+  ...Object.fromEntries(Object.values(RELICS).map((r) => [r.id, { name: r.name, description: `Relic. ${r.boon}` }])),
 };

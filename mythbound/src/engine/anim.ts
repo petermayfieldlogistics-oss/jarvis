@@ -7,7 +7,9 @@ export type AttackStyle =
   | 'slash' | 'slash2' | 'slash3' | 'overhead' | 'thrust' | 'spin' | 'heavy'
   | 'cast' | 'bow' | 'throw' | 'roar'
   // Monster and boss moves.
-  | 'bite' | 'claw' | 'sting' | 'sweep' | 'charge' | 'slam' | 'leap' | 'stomp' | 'volley' | 'ring' | 'summon' | 'teleport' | 'strikes' | 'combo';
+  | 'bite' | 'claw' | 'sting' | 'sweep' | 'charge' | 'slam' | 'leap' | 'stomp' | 'volley' | 'ring' | 'summon' | 'teleport' | 'strikes' | 'combo'
+  // The elder and hunted foes (bosses.ts): their strike runs anim.attack 0..1 straight through.
+  | 'breath' | 'gust' | 'flight' | 'strike' | 'tail' | 'dive' | 'wave' | 'whirlpool' | 'trident' | 'geyser' | 'reap' | 'drain' | 'web';
 
 export interface AnimState {
   /** Walk/run cycle phase, radians; advance it by distance travelled. */
@@ -51,3 +53,24 @@ export const newAnim = (): AnimState => ({
 });
 
 export const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+// Timings shared by a boss's gameplay and its animator, so a co-op guest (who
+// only receives anim.attack) poses the same moment the host decided.
+
+/** The Elder Dragon's flight, as fractions of its strike: airborne after `up`, diving from `dive`, landing at `land`. */
+export const FLIGHT = { up: 0.12, dive: 0.78, land: 0.86 };
+
+/** How far either side of its aim a breath sweeps (radians). */
+export const BREATH_SPAN = 0.55;
+
+/** A breath attack sweeps from one side to the other: the head's turn (radians, +left) at strike progress k. */
+export function breathSweep(k: number, span: number): number {
+  const u = Math.min(1, Math.max(0, (k - 0.06) / 0.86));
+  return span * (1 - 2 * u);
+}
+
+/** Strike progress (anim.attack) at which each of these moves lands: the Leviathan's head, the Queen's thrusts... */
+export const LANDS: Partial<Record<AttackStyle, number[]>> = {
+  bite: [0.35], claw: [0.4], strike: [0.12], tail: [0.32], wave: [0.2], gust: [0.35], reap: [0.4], web: [0.3], trident: [0.22, 0.48, 0.76],
+  geyser: [0.2], whirlpool: [0.1], breath: [0.06], drain: [0.1], dive: [0.45], flight: [FLIGHT.land],
+};
