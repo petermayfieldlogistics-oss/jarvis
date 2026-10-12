@@ -48,6 +48,18 @@ interface Smoke {
   remote: boolean;
 }
 
+/** Burning ground left by a fire power strike: foes inside keep burning. */
+interface Zone {
+  x: number;
+  z: number;
+  y: number;
+  radius: number;
+  left: number;
+  tick: number;
+  /** Damage a second to foes inside (0 for a friend's: their game deals it). */
+  dps: number;
+}
+
 interface Dropped {
   obj: THREE.Object3D;
   age: number;
@@ -66,6 +78,7 @@ export class Armory {
   private dropped: Dropped[] = [];
   private traps: Trap[] = [];
   private smokes: Smoke[] = [];
+  private zones: Zone[] = [];
   private v = new THREE.Vector3();
 
   constructor(private scene: THREE.Scene) {}
@@ -104,6 +117,13 @@ export class Armory {
     g.audio.play('throw');
   }
 
+  /** The ground burns here for a while (a fire power strike). Friends see it; only this game burns foes with it. */
+  addZone(g: Game, x: number, z: number, radius: number, seconds: number, dps: number, remote = false) {
+    if (!remote) g.sfx.zone(x, z, radius, seconds);
+    if (this.zones.length >= 6) this.zones.shift();
+    this.zones.push({ x, z, y: Math.max(heightAt(x, z), WATER_LEVEL), radius, left: seconds, tick: 0, dps: remote ? 0 : dps });
+  }
+
   /** Whether a spot lies inside a smoke cloud. */
   inSmoke(x: number, z: number): boolean {
     for (const s of this.smokes) if (Math.hypot(x - s.x, z - s.z) < s.radius) return true;
@@ -114,6 +134,7 @@ export class Armory {
     this.updateKnives(dt, g);
     this.updateTraps(dt, g);
     this.updateSmokes(dt, g);
+    this.updateZones(dt, g);
     this.statusWisps(dt, g);
   }
 
@@ -121,6 +142,32 @@ export class Armory {
     while (this.dropped.length) this.removeKnife(0);
     this.traps.length = 0;
     this.smokes.length = 0;
+    this.zones.length = 0;
+  }
+
+  private updateZones(dt: number, g: Game) {
+    for (let i = this.zones.length - 1; i >= 0; i--) {
+      const z = this.zones[i];
+      z.left -= dt;
+      if (z.left <= 0) {
+        this.zones.splice(i, 1);
+        continue;
+      }
+      // Flames lick up all over it, dying down at the end.
+      const n = z.left > 1 ? 3 : 1;
+      for (let k = 0; k < n; k++) {
+        const th = Math.random() * TAU, r = Math.sqrt(Math.random()) * z.radius;
+        g.fx.emit(this.v.set(z.x + Math.cos(th) * r, z.y + 0.1, z.z + Math.sin(th) * r), { color: Math.random() < 0.6 ? 0xff6a1a : 0xffb040, count: 1, speed: 0.4, up: 2.4, life: 0.6, size: 0.6 });
+      }
+      z.tick -= dt;
+      if (z.tick > 0 || z.dps <= 0) continue;
+      z.tick += 0.5;
+      for (const e of g.enemies) {
+        if (!e.alive || Math.abs(e.pos.y - z.y) > 3 || Math.hypot(e.pos.x - z.x, e.pos.z - z.z) > z.radius + e.radius * 0.5) continue;
+        e.status.burn = Math.max(e.status.burn, 1.5);
+        g.damageEnemy(e, z.dps * 0.5, 'fire', { source: 'player', dot: true });
+      }
+    }
   }
 
   private updateSmokes(dt: number, g: Game) {

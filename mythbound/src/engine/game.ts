@@ -5,6 +5,7 @@ import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, m
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
+import { BURST_COLOR, type Burst } from '../rules/power';
 import { runeDrop } from '../rules/weapons';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -57,12 +58,18 @@ export interface ProjectileSpec {
   /** A rogue's knife: coated in poison, or thrown out of Vanish (an ambush). */
   poison?: boolean;
   ambush?: boolean;
+  /** A power strike's burst where it lands (a charged arrow, knife, axe or bolt): its kind, how charged, and the strike's base damage. */
+  burst?: { kind: Burst; charge: number; base: number };
+  /** A friend's charged shot, shown glowing here (its burst lands in their game). */
+  glowing?: Burst;
   /** Strikes, then flies back to `home` (the hand that threw it), hitting again on the way. */
   boomerang?: boolean;
   home?: () => THREE.Vector3 | null;
 }
 
 interface Projectile extends ProjectileSpec {
+  /** The last foe it struck (a burst centres on it). */
+  struck?: Enemy;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   life: number;
@@ -426,7 +433,14 @@ export class Game {
     return origin.addScaledVector(dir, maxDist + this.camDist);
   }
 
+  /** An empowered spell's burst, for the first projectile the spell looses (see Player.cast). */
+  projectileBurst: ProjectileSpec['burst'] | null = null;
+
   spawnProjectile(spec: ProjectileSpec, fromNet = false) {
+    if (spec.owner === 'player' && this.projectileBurst && !spec.burst) {
+      spec = { ...spec, burst: this.projectileBurst };
+      this.projectileBurst = null;
+    }
     if (!fromNet) this.coop.shareProjectile(spec);
     const dir = spec.to.clone().sub(spec.from);
     const dist = dir.length();
@@ -434,7 +448,7 @@ export class Game {
     const vel = dir.multiplyScalar(spec.speed);
     // Aim up a little to make arcing shots land where intended.
     if (spec.gravity > 0) vel.y += (spec.gravity * dist) / spec.speed / 2;
-    const mesh = projectileMesh(spec.kind, spec.color, spec.rune);
+    const mesh = projectileMesh(spec.kind, spec.color, spec.rune, !!(spec.burst || spec.glowing));
     mesh.position.copy(spec.from);
     if (spec.kind === 'knife') {
       // Tumbles end over end in the plane of its flight.
@@ -1183,6 +1197,9 @@ export class Game {
         if (Math.random() < 0.6) this.fx.emit(pr.pos, { color: pr.color ?? 0xb070ff, count: 1, speed: 0.4, life: 0.3, size: 0.35 });
       }
       if (pr.kind === 'fireball' && Math.random() < 0.6) this.fx.emit(pr.pos, { color: 0xff6020, count: 1, speed: 0.5, life: 0.4, size: 0.8 });
+      // A charged shot streams its burst's colour.
+      const streak = pr.burst?.kind ?? pr.glowing;
+      if (streak) this.fx.emit(pr.pos, { color: BURST_COLOR[streak], count: 2, speed: 0.6, life: 0.4, size: 0.5 });
       if (pr.kind === 'orb' && Math.random() < 0.5) this.fx.emit(pr.pos, { color: 0xa070ff, count: 1, speed: 0.5, life: 0.4, size: 0.6 });
       let impact = false;
       if (!pr.returning && (pr.pos.y < heightAt(pr.pos.x, pr.pos.z) || pr.life <= 0)) impact = true;
@@ -1204,6 +1221,7 @@ export class Game {
           const closest = prev.clone().addScaledVector(seg, t);
           if (closest.distanceTo(c) < e.radius + 0.35 + e.height * 0.25) {
             pr.hit.add(e);
+            pr.struck = e;
             if (pr.owner !== 'remote') this.projectileHit(pr, e);
             // On the way home it cuts through everything in its path.
             if (pr.returning) continue;
@@ -1216,6 +1234,11 @@ export class Game {
         }
       }
       if (impact) {
+        // A charged shot bursts where it lands (once; a returning bolt doesn't burst again).
+        if (pr.burst && pr.owner === 'player') {
+          this.player.burst(this, pr.burst.kind, pr.pos.clone(), pr.burst.charge, pr.burst.base, pr.struck ?? null);
+          pr.burst = undefined;
+        }
         if (pr.explode) {
           this.fx.ring(pr.pos.clone(), pr.explode, pr.color ?? (pr.element === 'lightning' ? 0xd8e8ff : 0xff6020), 0.45);
           if (pr.owner !== 'remote') for (const e of this.enemies) if (e.alive && !pr.hit.has(e) && e.center().distanceTo(pr.pos) < pr.explode + e.radius) {
@@ -1446,8 +1469,10 @@ export class Game {
   }
 }
 
-function projectileMesh(kind: ProjectileKind, color = 0xb070ff, rune?: RuneId): THREE.Object3D {
+function projectileMesh(kind: ProjectileKind, color = 0xb070ff, rune?: RuneId, glow = false): THREE.Object3D {
   const g = new THREE.Group();
+  // A charged shot glows with its burst.
+  if (glow) g.add(glowSprite(color, 1.6));
   switch (kind) {
     case 'knife': {
       // Tumbling end over end about its local x.

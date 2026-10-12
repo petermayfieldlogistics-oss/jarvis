@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { RUNES, WEAPONS, type ClassId, type DamageElement, type RaceId, type RoleId, type RuneId, type SubclassId } from '../data/defs';
 import { SONG, SONGS, type SongId } from '../rules/weapons';
+import { BURST_COLOR, BURSTS, type Burst } from '../rules/power';
 import { BOSSES, ENEMIES, TRIALS, type BossId, type EnemyId } from '../data/world';
 import { mainWeapon } from '../rules/combat';
 import { newAnim, type AttackStyle } from './anim';
@@ -16,7 +17,7 @@ import { animateHumanoid, type Rig } from './humanoid';
 import type { Hero } from './hero';
 import { buildBoat, disposeObject } from './models';
 import { DEFAULT_SERVER, Net, type ServerMsg } from './net';
-import { attachGear, BLADE, buildPlayerRig, ELEMENT_COLOR, limbTrail, poseBowString, RAGE_RED, TIMING } from './player';
+import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, limbTrail, poseBowString, RAGE_RED, TIMING } from './player';
 import { WATER_LEVEL } from './terrain';
 import type { Game, ProjectileKind, ProjectileSpec } from './game';
 
@@ -100,6 +101,10 @@ interface HeroSample {
   rolling: number;
   /** What the roll is: a roll, a dash, a backflip or an air flip (AnimState.rollKind). */
   rollKind: number;
+  /** Holding a move's wind-up (charging a power strike), what it will burst with, and how charged it is. */
+  windup: number;
+  charge: Burst | undefined;
+  chargeLevel: number;
   fury: number;
   flags: number;
 }
@@ -251,6 +256,9 @@ export class RemoteHero implements Hero {
       draw: num(a[2]),
       rolling: num(a[3], -1),
       rollKind: Math.max(0, Math.min(3, Math.round(num(a[7])))),
+      windup: Math.max(0, Math.min(1, num(a[8]))),
+      charge: BURSTS[num(a[9], -1)],
+      chargeLevel: Math.max(0, Math.min(1, num(a[10]))),
       fury: num(a[4]),
       flags: num(a[6]),
     };
@@ -360,6 +368,9 @@ export class RemoteHero implements Hero {
     a.rolling = A.rolling >= 0 && B.rolling >= A.rolling ? A.rolling + (B.rolling - A.rolling) * k : A.rolling;
     a.rollKind = A.rolling >= 0 ? A.rollKind : B.rollKind;
     a.fury = A.fury;
+    a.windup = B.windup;
+    // A friend charging a power strike: sparks gather in its colour.
+    if (B.charge && this.alive) chargeSparks(g, this.center(this.tv), BURST_COLOR[B.charge], B.chargeLevel);
     a.blocking = (f & 1) !== 0;
     a.crouching = (f & 2) !== 0 || sailing;
     a.swimming = (f & 4) !== 0;
@@ -708,7 +719,7 @@ export class Coop {
       p: vec(p.pos),
       v: [r2(p.vel.x), r2(p.vel.y), r2(p.vel.z)],
       y: r2(p.yaw),
-      a: [r2(a.attack), STYLE_INDEX.get(a.attackStyle) ?? 0, r2(a.draw), r2(a.rolling), r2(a.fury), r2(a.landing), flags, a.rollKind],
+      a: [r2(a.attack), STYLE_INDEX.get(a.attackStyle) ?? 0, r2(a.draw), r2(a.rolling), r2(a.fury), r2(a.landing), flags, a.rollKind, r2(a.windup), p.charge ? BURSTS.indexOf(p.charge.burst) : -1, p.charge ? r2(p.charge.level) : 0],
       hp: r1(p.hp),
       mh: Math.round(p.maxHp),
       al: p.alive ? 1 : 0,
@@ -792,6 +803,7 @@ export class Coop {
       cl: spec.color ?? 0,
       ru: spec.rune ?? '',
       bk: spec.boomerang ? 1 : 0,
+      bu: spec.burst ? BURSTS.indexOf(spec.burst.kind) : -1,
     };
     if (spec.owner !== 'enemy') return this.queue('all', m);
     if (!this.isHost) return;
@@ -1054,6 +1066,8 @@ export class Coop {
         rune: runeOf(m.ru),
         // A friend's thunderbolt flies back to them.
         boomerang: num(m.bk) === 1,
+        // A friend's charged shot glows (its burst lands in their game, and its effects are shared).
+        glowing: BURSTS[num(m.bu, -1)],
         home: () => {
           const r = this.remotes.get(from);
           return r ? r.pos.clone().setY(r.pos.y + 1.3) : null;

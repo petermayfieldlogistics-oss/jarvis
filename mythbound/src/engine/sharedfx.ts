@@ -132,6 +132,11 @@ export class SharedFx {
     if (local) this.g.fx.beam(from, to, color, 0.12, life);
   }
 
+  /** Burning ground (a fire power strike), for friends to see. */
+  zone(x: number, z: number, radius: number, seconds: number) {
+    if (this.on) this.share('zn', [r2(x), r2(z), r2(radius), r2(seconds)], x, z);
+  }
+
   /** A rogue's smoke cloud: friends see it, and hide in it too. */
   smoke(x: number, z: number, radius: number, seconds: number) {
     if (this.on) this.share('sk', [r2(x), r2(z), r2(radius), r2(seconds)], x, z);
@@ -259,6 +264,9 @@ export class SharedFx {
         break;
       case 'bm':
         fx.beam(v(A[0], this.a), v(A[1], this.b), num(A[2], 0xffffff), 0.12, Math.min(0.5, num(A[3], 0.18)));
+        break;
+      case 'zn':
+        this.g.armory.addZone(this.g, num(A[0]), num(A[1]), Math.min(8, num(A[2], 3)), Math.min(12, num(A[3], 4)), 0, true);
         break;
       case 'sk':
         this.g.armory.addSmoke(this.g, num(A[0]), num(A[1]), Math.min(10, num(A[2], 4)), Math.min(12, num(A[3], 6)), true);
