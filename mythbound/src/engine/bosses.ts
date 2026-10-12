@@ -215,7 +215,6 @@ export class GreatBoss extends Boss {
         if (this.away > 6) this.disengage(g);
       } else this.away = 0;
     }
-    this.reach();
     if (this.alive && this.alt > 0 && !(this.attack === 'flight' && this.stage === 'strike')) {
       // Dropping from the canopy (or back to earth).
       this.alt = Math.max(0, this.alt - dt * 18);
@@ -226,6 +225,7 @@ export class GreatBoss extends Boss {
       }
     }
     super.update(dt, g);
+    this.reach();
     if (!this.alive) {
       if (!this.died) this.deathFx(g);
     } else this.tickHazards(dt, g);
@@ -234,8 +234,8 @@ export class GreatBoss extends Boss {
 
   updateMirror(dt: number, g: Game, at: number) {
     this.anim.flying = this.thread !== null && this.pos.y - heightAt(this.pos.x, this.pos.z) > 1.2;
-    this.reach();
     super.updateMirror(dt, g, at);
+    this.reach();
     // The host's pose carries the spider's hang and the dragon's flight (pos.y).
     this.cosmetics(dt, g);
   }
