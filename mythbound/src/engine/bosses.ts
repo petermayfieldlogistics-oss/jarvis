@@ -26,9 +26,10 @@ const CURVED = new Set<BossAttack>(['bite', 'claw', 'gust']);
  * The Leviathan's measurements in metres. Its neck rises from the sea `ring`
  * from the shoal's centre; its body (the hit box) is `body` across, so a hero
  * near that side of the shoal can reach it; its struck head lies `strike`
- * along the sand. The animator (creatures.ts) poses the same distances.
+ * along the sand until `lies` of the strike. The animator (creatures.ts)
+ * poses the same distances.
  */
-export const SERPENT = { ring: 30.5, sink: 1.6, body: 11, strike: 21, tailX: 7, tailZ: 14, tailR: 6 };
+export const SERPENT = { ring: 30.5, sink: 1.6, body: 11, strike: 21, lies: 0.7, tailX: 7, tailZ: 14, tailR: 6 };
 /** The Elder Dragon's flight: altitude and circle. */
 const SKY = { alt: 15, circle: 13, spin: 0.55 };
 
@@ -179,6 +180,18 @@ export class GreatBoss extends Boss {
     return this.bdef.model !== 'reaper';
   }
 
+  /**
+   * While the Leviathan's head lies on the sand after a strike, blows land all
+   * along its neck (its hit circle grows out to the head). Worked out from the
+   * pose, so a guest's copy agrees with the host's.
+   */
+  private reach() {
+    if (!this.serpent) return;
+    const a = this.anim;
+    const lying = a.attackStyle === 'strike' && a.attack > LANDS.strike![0] && a.attack < SERPENT.lies;
+    this.radius = lying ? SERPENT.strike - 2 : SERPENT.body;
+  }
+
   private placeSerpent() {
     const a = this.arena;
     this.pos.set(a.x + Math.sin(this.surf) * SERPENT.ring, WATER_LEVEL - SERPENT.sink, a.z + Math.cos(this.surf) * SERPENT.ring);
@@ -202,6 +215,7 @@ export class GreatBoss extends Boss {
         if (this.away > 6) this.disengage(g);
       } else this.away = 0;
     }
+    this.reach();
     if (this.alive && this.alt > 0 && !(this.attack === 'flight' && this.stage === 'strike')) {
       // Dropping from the canopy (or back to earth).
       this.alt = Math.max(0, this.alt - dt * 18);
@@ -220,6 +234,7 @@ export class GreatBoss extends Boss {
 
   updateMirror(dt: number, g: Game, at: number) {
     this.anim.flying = this.thread !== null && this.pos.y - heightAt(this.pos.x, this.pos.z) > 1.2;
+    this.reach();
     super.updateMirror(dt, g, at);
     // The host's pose carries the spider's hang and the dragon's flight (pos.y).
     this.cosmetics(dt, g);
