@@ -16,7 +16,8 @@ import {
   type WeaponInstance,
 } from '../data/defs';
 
-export const MAX_LEVEL = 20;
+/** Content tops out around level 13; the levels past it are a long road for those who keep playing. */
+export const MAX_LEVEL = 30;
 /** Real seconds per game minute: one game hour is one real minute. */
 export const GAME_MINUTES_PER_SECOND = 1;
 
@@ -29,6 +30,8 @@ export interface CharacterChoice {
   expansion: boolean;
   /** Elemental wizards pick theirs. */
   wizardElement?: Element;
+  /** Zombies may shamble (the default) or stand upright. */
+  hunched?: boolean;
 }
 
 export interface Character extends CharacterChoice {
@@ -43,6 +46,8 @@ export interface Character extends CharacterChoice {
   mysteryRevealed: boolean;
   /** Max HP lost forever to Soul or Power. */
   hpLost: number;
+  /** Zombie: Not Dead Yet has saved them since they last rested. */
+  riseSpent: boolean;
   gold: number;
   flasks: number;
   flasksMax: number;
@@ -60,6 +65,10 @@ export interface Character extends CharacterChoice {
   lightPowerReadyAt: number;
   tamed: CreatureKind[];
   items: Record<string, number>;
+  /** The last milestone level (every 5) whose bonus skill point was given. */
+  milestone: number;
+  /** Skill resets so far (the first is free). */
+  respecs: number;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -136,6 +145,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     elfMystery,
     mysteryRevealed: false,
     hpLost: 0,
+    riseSpent: false,
     gold: 50,
     flasks: 3,
     flasksMax: 3,
@@ -149,6 +159,8 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     lightPowerReadyAt: 0,
     tamed: [],
     items: {},
+    milestone: 0,
+    respecs: 0,
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -160,6 +172,7 @@ export function startingSpells(c: Pick<Character, 'classId' | 'raceId' | 'roleId
   if (c.classId === 'ranger') spells.push('wrath-of-thor', 'way-of-the-wind');
   if (c.raceId === 'elf') spells.push('deal-with-the-devil', 'imp-familiar');
   if (c.roleId === 'knight') spells.push('holy-smite', 'radiant-heal', 'aegis-of-light');
+  if (c.raceId === 'angelic') spells.push('holy-smite');
   return [...new Set(spells)];
 }
 
@@ -179,7 +192,7 @@ export function learnSpell(c: Character, spell: SpellId): boolean {
 export function canLearnSpell(c: Pick<Character, 'classId' | 'raceId' | 'roleId'>, spell: SpellId): boolean {
   const school = SPELLS[spell].school;
   if (c.classId === 'mage') return true;
-  if (school === 'light' && c.roleId === 'knight' && spell !== 'power-of-the-light') return true;
+  if (school === 'light' && (c.roleId === 'knight' || c.raceId === 'angelic') && spell !== 'power-of-the-light') return true;
   if (school === 'devil' && c.raceId === 'elf') return true;
   if (c.classId === 'ranger') return school === 'sky';
   return false;
@@ -200,12 +213,52 @@ export function treeFor(c: Pick<Character, 'classId' | 'subclassId'>): TreeId {
 
 export const rank = (c: Character, node: string) => c.skills[node] ?? 0;
 
+// ------------------------------------------------------------- milestones --
+
+export interface Milestone {
+  level: number;
+  name: string;
+  text: string;
+}
+
+/** Every 5 levels: a bonus skill point and one of these perks, for good. */
+export const MILESTONES: Milestone[] = [
+  { level: 5, name: 'Second Wind', text: 'Stamina recovers 20% faster.' },
+  { level: 10, name: 'Hardened', text: '+10% max health.' },
+  { level: 15, name: 'Reaper', text: 'Kills restore 50% more health, mana and stamina.' },
+  { level: 20, name: 'Deep Reserves', text: '+15% max mana and stamina.' },
+  { level: 25, name: 'Fleet of Foot', text: '+6% movement speed.' },
+  { level: 30, name: 'Mythbound', text: '+10% max health and mana.' },
+];
+
+const perk = (c: Pick<Character, 'level'>, level: number) => (c.level >= level ? 1 : 0);
+
+/** Skill points a hero of this level has earned in all: one to start, one a level, one more every 5 levels. */
+export function pointsEarned(level: number): number {
+  const l = Math.min(MAX_LEVEL, Math.max(1, level));
+  return l + Math.floor(l / 5);
+}
+
+/** Fills in what older saves lack, and pays the milestone points for levels reached before milestones existed. */
+export function normalizeCharacter(c: Character): Character {
+  if (typeof c.milestone !== 'number') {
+    const reached = Math.floor(Math.min(c.level, MAX_LEVEL) / 5);
+    c.skillPoints += reached;
+    c.milestone = reached * 5;
+  }
+  if (typeof c.respecs !== 'number') c.respecs = 0;
+  return c;
+}
+
 // ------------------------------------------------------------------ stats --
 
 export function maxHp(c: Character): number {
   const perLevel = c.classId === 'warrior' ? 12 : c.classId === 'ranger' ? 9 : 7;
-  const base = CLASSES[c.classId].hp + perLevel * (c.level - 1);
-  return Math.max(1, base - c.hpLost);
+  let base = CLASSES[c.classId].hp + perLevel * (c.level - 1);
+  base += 15 * rank(c, 'iron-hide') + 12 * rank(c, 'hardy');
+  base *= 1 + 0.1 * perk(c, 10) + 0.1 * perk(c, 30);
+  if (c.raceId === 'orc') base *= ORC.hp;
+  return Math.max(1, Math.round(base - c.hpLost));
 }
 
 export function maxMana(c: Character): number {
@@ -215,23 +268,31 @@ export function maxMana(c: Character): number {
   if (c.raceId === 'ancient') m += 15;
   m += 10 * rank(c, 'deep-well');
   if (c.raceId === 'elf') m *= 1.2;
+  m *= 1 + 0.15 * perk(c, 20) + 0.1 * perk(c, 30);
   return Math.round(m);
 }
 
 export function maxStamina(c: Character): number {
-  return 100 + (c.raceId === 'elf' ? 20 : 0) + (c.classId === 'warrior' ? 10 : 0) + 2 * (c.level - 1);
+  const s = 100 + (c.raceId === 'elf' ? 20 : 0) + (c.classId === 'warrior' ? 10 : 0) + 2 * (c.level - 1) + 15 * rank(c, 'trail-runner');
+  return Math.round(s * (1 + 0.15 * perk(c, 20)));
+}
+
+/** Stamina recovered per second while not spending it. */
+export function staminaRegen(c: Character): number {
+  return 38 * (1 + 0.2 * perk(c, 5)) * (rank(c, 'windrunner') ? 1.3 : 1);
 }
 
 export function moveSpeed(c: Character): number {
   let s = 7;
   if (c.raceId === 'elf') s *= 1.15;
   s *= 1 + 0.06 * rank(c, 'fleet-foot');
+  s *= (1 + 0.06 * perk(c, 25)) * (rank(c, 'windrunner') ? 1.1 : 1);
   return s;
 }
 
 export function manaRegen(c: Character): number {
   const base = c.classId === 'mage' ? 2.2 : c.classId === 'ranger' ? 1.3 : 0.8;
-  return base * (1 + 0.3 * rank(c, 'flow'));
+  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1);
 }
 
 /** Quick Draw: rangers draw every weapon faster. Multiplies draw/ready times. */
@@ -239,8 +300,16 @@ export function drawTimeMultiplier(c: Character): number {
   return c.classId === 'ranger' ? 0.5 : 1;
 }
 
+// ------------------------------------------------------------- experience --
+
+/**
+ * XP from one level to the next. Quadratic, so the steps grow smoothly (the
+ * old power curve nearly tripled from level 1 to 2, then made the trials
+ * grindy): about 4-6 kills of the right level for level 2, 15 at level 5 and
+ * 20 at level 10, with quests and trial bosses covering a good share.
+ */
 export function xpToNext(level: number): number {
-  return Math.round(60 * Math.pow(level, 1.55));
+  return Math.round((30 + 42 * level + 10.5 * level * level) / 5) * 5;
 }
 
 /** Adds experience; returns how many levels were gained. */
@@ -252,10 +321,77 @@ export function addXp(c: Character, amount: number): number {
     c.xp -= xpToNext(c.level);
     c.level++;
     c.skillPoints++;
+    if (c.level % 5 === 0) {
+      c.skillPoints++;
+      c.milestone = c.level;
+    }
     gained++;
   }
   if (c.level >= MAX_LEVEL) c.xp = 0;
   return gained;
+}
+
+/**
+ * What a kill teaches this hero: foes more than two levels below teach less
+ * (down to 40%), foes above teach more (up to 140%). Bosses always give it all.
+ */
+export function killXp(base: number, foeLevel: number, heroLevel: number, boss = false): number {
+  if (boss) return Math.round(base);
+  const d = foeLevel - heroLevel;
+  const k = d >= 0 ? Math.min(1.4, 1 + 0.08 * d) : Math.max(0.4, Math.min(1, 1 + 0.08 * (d + 2)));
+  return Math.round(base * k);
+}
+
+/** What a level-up gave: the stat gains, skill points and any milestone perk. */
+export interface LevelRewards {
+  hp: number;
+  mana: number;
+  stamina: number;
+  points: number;
+  milestones: Milestone[];
+}
+
+export function levelRewards(c: Character, fromLevel: number): LevelRewards {
+  const before = { ...c, level: fromLevel };
+  const milestones = MILESTONES.filter((m) => m.level > fromLevel && m.level <= c.level);
+  return {
+    hp: maxHp(c) - maxHp(before),
+    mana: maxMana(c) - maxMana(before),
+    stamina: maxStamina(c) - maxStamina(before),
+    points: c.level - fromLevel + milestones.length,
+    milestones,
+  };
+}
+
+// ------------------------------------------------------------ kill regen --
+
+export interface KillFoe {
+  level: number;
+  /** Model scale: bigger foes restore more. */
+  scale: number;
+  boss: boolean;
+  /** Summoned by a boss: worth little. */
+  minion?: boolean;
+}
+
+/** How much more kills restore, from skills and the Reaper perk. */
+export function killRegenMultiplier(c: Character): number {
+  return 1 + 0.5 * (rank(c, 'bloodlust') + rank(c, 'hunters-feast')) + 0.6 * rank(c, 'soul-harvest') + 0.5 * perk(c, 15);
+}
+
+/**
+ * Health, mana and stamina a kill restores: a few percent for a small low-level
+ * foe, more for big and high-level ones, and a big share for a boss.
+ */
+export function killRestore(c: Character, foe: KillFoe): { hp: number; mana: number; stamina: number } {
+  const size = Math.min(1.5, Math.max(0.8, foe.scale));
+  let k = foe.boss ? 0.4 : (0.04 + 0.003 * foe.level) * size * (foe.minion ? 0.4 : 1);
+  k *= killRegenMultiplier(c);
+  return {
+    hp: maxHp(c) * k,
+    mana: maxMana(c) * k * (foe.boss ? 1.25 : 0.8),
+    stamina: maxStamina(c) * Math.min(1, k * 2.5),
+  };
 }
 
 // ------------------------------------------------------------------ races --
@@ -273,6 +409,38 @@ export function dracoFlightHours(c: Character): number {
 export function dracoFireRegen(c: Character): number {
   return c.raceId === 'draco' && c.level >= 10 ? 10 : 0;
 }
+
+/** Zombie numbers: what a kill gives back, how the grave lets go once per rest, and the costs of being dead. */
+export const ZOMBIE = { killHeal: 0.08, riseHp: 0.3, riseIframes: 2, fireTaken: 1.5, lightHeal: 0.5, prices: 1.25 };
+
+/** Angelic numbers: wing flaps per jump, the glide, the Halo of Mercy, light and dark. */
+export const ANGELIC = { flaps: 2, flapSpeed: 7.5, flapStamina: 14, glideFall: 2.2, glideSpeed: 1.25, haloRadius: 8, haloHeal: 0.02, lightPower: 1.25, darkTaken: 1.3 };
+
+/** Orc numbers: hide, muscle, a thick skull, and the War Cry when badly hurt. */
+export const ORC = {
+  hp: 1.2, melee: 1.15, manaRegen: 0.65, spellPower: 0.85,
+  warCry: { below: 0.35, duration: 8, cooldown: 60, radius: 6, stun: 1.5, damage: 1.25 },
+};
+
+/** Draco wings (from level 6) and angel wings (always) are out and can open. */
+export function wingsGrown(c: Pick<Character, 'raceId' | 'level'>): boolean {
+  return c.raceId === 'angelic' || (c.raceId === 'draco' && c.level >= 6);
+}
+
+/** Extra wing beats an angel gets per jump. */
+export const airFlaps = (c: Pick<Character, 'raceId'>) => (c.raceId === 'angelic' ? ANGELIC.flaps : 0);
+
+/** Zombies have no breath to lose. */
+export const drowns = (c: Pick<Character, 'raceId'>) => c.raceId !== 'zombie';
+
+/** Share of max HP a kill gives back (the Hungry Dead). */
+export const killHeal = (c: Pick<Character, 'raceId'>) => (c.raceId === 'zombie' ? ZOMBIE.killHeal : 0);
+
+/** How well light magic and prayers mend the hero. */
+export const lightHealMultiplier = (c: Pick<Character, 'raceId'>) => (c.raceId === 'zombie' ? ZOMBIE.lightHeal : 1);
+
+/** What a merchant asks of this hero for something worth `cost`. */
+export const shopPrice = (c: Pick<Character, 'raceId'>, cost: number) => Math.round(cost * (c.raceId === 'zombie' ? ZOMBIE.prices : 1));
 
 export function tameableKinds(c: Character): CreatureKind[] {
   if (c.subclassId !== 'trainer') return [];

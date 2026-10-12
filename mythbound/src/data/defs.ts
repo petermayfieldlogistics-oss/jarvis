@@ -3,7 +3,7 @@
 
 export type ClassId = 'warrior' | 'ranger' | 'mage';
 export type SubclassId = 'swordsman' | 'axeman' | 'bowman' | 'trainer' | 'elemental';
-export type RaceId = 'elf' | 'draco' | 'human' | 'ancient';
+export type RaceId = 'elf' | 'draco' | 'human' | 'zombie' | 'angelic' | 'orc' | 'ancient';
 export type RoleId = 'historian' | 'blacksmith' | 'sailor' | 'darkslayer' | 'knight' | 'assassin';
 export type Element = 'fire' | 'water' | 'wind' | 'earth';
 export type DamageElement = Element | 'physical' | 'lightning' | 'dark' | 'light' | 'true';
@@ -161,6 +161,41 @@ export const RACES: Record<RaceId, RaceDef> = {
     name: 'Human',
     blurb: "Well, they're just… human.",
     traits: ['No buffs', 'No downsides either'],
+  },
+  zombie: {
+    id: 'zombie',
+    name: 'Zombie',
+    blurb: 'Dead, but not done. Stitched back together, and hungry.',
+    traits: [
+      'Not Dead Yet: once per rest, a killing blow leaves you standing at 30% HP',
+      'Hungry Dead: every kill you take part in heals 8% of your max HP',
+      'No breath, no blood: never drowns and never bleeds',
+      'Dry old bones: fire hurts 50% more',
+      'Light magic and prayers heal you only half as much',
+      'Merchants hold their noses: prices +25%',
+    ],
+  },
+  angelic: {
+    id: 'angelic',
+    name: 'Angelic',
+    blurb: 'A halo, white wings, and a light that mends your friends.',
+    traits: [
+      'Wings of Light: jump again in the air to flap (twice), hold Jump to glide',
+      'Radiant: +25% light damage, and knows Holy Smite',
+      'Halo of Mercy: co-op friends (and tamed beasts) within 8 m heal 2% of their max HP a second',
+      'Dark damage hurts 30% more',
+    ],
+  },
+  orc: {
+    id: 'orc',
+    name: 'Orc',
+    blurb: 'Big, green and loud. Hits like a falling tree.',
+    traits: [
+      'Thick hide: +20% max HP',
+      'Brute strength: +15% melee damage',
+      'War Cry: below 35% HP you roar, stunning foes nearby and dealing +25% damage for 8 s (once a minute)',
+      'Thick skull: mana comes back 35% slower and spells hit 15% softer',
+    ],
   },
   ancient: {
     id: 'ancient',
@@ -418,79 +453,170 @@ export interface SkillNode {
   maxRank: number;
   /** Level the hero must reach before the node opens. */
   level: number;
+  /** Row of the tree, 1-5: deeper tiers open as points go into the tree (TIER_POINTS) and cost more (TIER_COST). */
+  tier: number;
+  /** Column 0-2: loosely offence, sustain, defence. */
+  col: number;
+  /** Nodes of the same tree that need a rank first. */
+  req?: string[];
+  icon: string;
+  /** What the ranks add, each {n} multiplied by the rank: '+{10}% sword damage.' reads '+20%…' at rank 2. */
+  per?: string;
 }
+
+/** Points spent in a tree before each tier opens (indexed by tier). */
+export const TIER_POINTS = [0, 0, 2, 5, 9, 14];
+/** Skill points one rank costs at each tier. */
+export const TIER_COST = [0, 1, 1, 2, 2, 3];
 
 export type TreeId = 'swordsman' | 'axeman' | 'bowman' | 'ranger' | 'trainer' | 'mage' | 'elemental';
 
+type Shared = Omit<SkillNode, 'tier' | 'col'>;
+
+// Nodes several trees share (a hero only ever has one tree, so an id means the same thing everywhere).
+const BLOODLUST: Shared = { id: 'bloodlust', name: 'Bloodlust', icon: '🩸', maxRank: 2, level: 1, description: 'Kills restore 50% more health, mana and stamina per rank.', per: 'Kills restore {50}% more.' };
+const IRON_HIDE: Shared = { id: 'iron-hide', name: 'Iron Hide', icon: '🦾', maxRank: 3, level: 1, description: '+15 max health per rank.', per: '+{15} max health.' };
+const STALWART: Shared = { id: 'stalwart', name: 'Stalwart', icon: '🏰', maxRank: 2, level: 3, description: 'Take 8% less damage per rank.', per: 'Take {8}% less damage.' };
+const BATTLE_TRANCE: Shared = { id: 'battle-trance', name: 'Battle Trance', icon: '🔥', maxRank: 2, level: 5, description: 'BloodRage lasts 5 seconds longer per rank.', per: 'BloodRage lasts {5} s longer.' };
+const LAST_STAND: Shared = { id: 'last-stand', name: 'Last Stand', icon: '💢', maxRank: 1, level: 9, description: 'Below 30% health your weapon hits deal 25% more damage.' };
+const FLEET_FOOT: Shared = { id: 'fleet-foot', name: 'Fleet Foot', icon: '💨', maxRank: 2, level: 2, description: '+6% movement speed per rank.', per: '+{6}% movement speed.' };
+const EAGLE_EYE: Shared = { id: 'eagle-eye', name: 'Eagle Eye', icon: '🦅', maxRank: 2, level: 8, description: 'Fully drawn arrows deal 12% more damage per rank.', per: 'Fully drawn arrows deal {12}% more damage.' };
+const FEAST: Shared = { id: 'hunters-feast', name: "Hunter's Feast", icon: '🍖', maxRank: 2, level: 1, description: 'Kills restore 50% more health, mana and stamina per rank.', per: 'Kills restore {50}% more.' };
+const TRAIL_RUNNER: Shared = { id: 'trail-runner', name: 'Trail Runner', icon: '🥾', maxRank: 2, level: 1, description: '+15 max stamina per rank.', per: '+{15} max stamina.' };
+const HARDY: Shared = { id: 'hardy', name: 'Hardy', icon: '❤', maxRank: 2, level: 2, description: '+12 max health per rank.', per: '+{12} max health.' };
+const TUMBLE: Shared = { id: 'tumble', name: 'Tumble', icon: '🤸', maxRank: 2, level: 5, description: 'Rolls cost 25% less stamina per rank.', per: 'Rolls cost {25}% less stamina.' };
+const SOUL_HARVEST: Shared = { id: 'soul-harvest', name: 'Soul Harvest', icon: '👻', maxRank: 2, level: 1, description: 'Kills restore 60% more health, mana and stamina per rank.', per: 'Kills restore {60}% more.' };
+const DEEP_WELL: Shared = { id: 'deep-well', name: 'Deep Well', icon: '🔮', maxRank: 3, level: 1, description: '+10 max mana per rank.', per: '+{10} max mana.' };
+const SPELL_THRIFT: Shared = { id: 'spell-thrift', name: 'Spell Thrift', icon: '🪙', maxRank: 2, level: 2, description: 'Spells cost 8% less mana per rank.', per: 'Spells cost {8}% less mana.' };
+const FLOW: Shared = { id: 'flow', name: 'Flow', icon: '🌊', maxRank: 2, level: 2, description: 'Mana regenerates 30% faster per rank.', per: 'Mana regenerates {30}% faster.' };
+const HARMONY: Shared = { id: 'harmony', name: 'Harmony', icon: '☯', maxRank: 1, level: 5, description: 'Combined spells cost 20% less.' };
+const ARCANE_WARD: Shared = { id: 'arcane-ward', name: 'Arcane Ward', icon: '🔰', maxRank: 2, level: 5, description: 'Take 7% less damage per rank.', per: 'Take {7}% less damage.' };
+const ARCANE_MASTERY: Shared = { id: 'arcane-mastery', name: 'Arcane Mastery', icon: '📜', maxRank: 2, level: 8, description: '+8% spell power per rank.', per: '+{8}% spell power.' };
+
+const at = (n: Shared, tier: number, col: number, more: Partial<SkillNode> = {}): SkillNode => ({ ...n, tier, col, ...more });
+
+/**
+ * One tree per class (or subclass). Every id older saves may hold is kept, with
+ * the same effect; the newer nodes fill the gaps, and each class has one that
+ * makes kills restore more (Bloodlust, Hunter's Feast, Soul Harvest).
+ */
 export const TREES: Record<TreeId, { name: string; nodes: SkillNode[] }> = {
   swordsman: {
     name: "Swordsman's Tree",
     nodes: [
-      { id: 'keen-edge', name: 'Keen Edge', description: '+10% sword damage per rank.', maxRank: 3, level: 1 },
-      { id: 'wide-flourish', name: 'Wide Flourish', description: 'Spinner Flourish reaches 30% farther and hits 20% harder per rank.', maxRank: 2, level: 2 },
-      { id: 'riposte', name: 'Riposte', description: 'Blocking right before a hit staggers the attacker.', maxRank: 1, level: 3 },
-      { id: 'lunge', name: 'Lunge', description: 'Heavy attacks dash forward.', maxRank: 1, level: 4 },
-      { id: 'blade-dancer', name: 'Blade Dancer', description: 'Attacks cost 20% less stamina per rank.', maxRank: 2, level: 5 },
+      { id: 'keen-edge', name: 'Keen Edge', icon: '⚔', tier: 1, col: 0, maxRank: 3, level: 1, description: '+10% sword damage per rank.', per: '+{10}% sword damage.' },
+      at(BLOODLUST, 1, 1),
+      at(IRON_HIDE, 1, 2),
+      { id: 'wide-flourish', name: 'Wide Flourish', icon: '🌀', tier: 2, col: 0, maxRank: 2, level: 2, req: ['keen-edge'], description: 'Spinner Flourish reaches 30% farther and hits 20% harder per rank.', per: 'Spinner Flourish reaches {30}% farther and hits {20}% harder.' },
+      { id: 'riposte', name: 'Riposte', icon: '🛡', tier: 2, col: 2, maxRank: 1, level: 3, req: ['iron-hide'], description: 'Blocking a blow staggers the attacker.' },
+      { id: 'lunge', name: 'Lunge', icon: '➤', tier: 3, col: 0, maxRank: 1, level: 4, req: ['wide-flourish'], description: 'Heavy attacks and Spinner Flourish dash forward.' },
+      { id: 'blade-dancer', name: 'Blade Dancer', icon: '🍃', tier: 3, col: 1, maxRank: 2, level: 5, req: ['bloodlust'], description: 'Attacks cost 20% less stamina per rank.', per: 'Attacks cost {20}% less stamina.' },
+      at(STALWART, 3, 2, { req: ['riposte'], level: 5 }),
+      at(BATTLE_TRANCE, 4, 0, { req: ['lunge'], level: 8 }),
+      at(LAST_STAND, 4, 2, { req: ['stalwart'] }),
+      { id: 'blade-master', name: 'Blade Master', icon: '👑', tier: 5, col: 1, maxRank: 1, level: 12, req: ['blade-dancer'], description: '+15% melee damage, and attacks cost 15% less stamina.' },
     ],
   },
   axeman: {
     name: 'Axeman Tree',
     nodes: [
-      { id: 'heavy-hand', name: 'Heavy Hand', description: '+12% axe damage per rank.', maxRank: 3, level: 1 },
-      { id: 'rend', name: 'Rend', description: '+15% chance per rank to make enemies bleed.', maxRank: 2, level: 2 },
-      { id: 'cleave', name: 'Cleave', description: 'Swings hit everything in a wider arc.', maxRank: 1, level: 3 },
-      { id: 'throwing-axe', name: 'Throwing Axe', description: 'Heavy attack hurls a spinning axe.', maxRank: 1, level: 4 },
-      { id: 'earthsplitter', name: 'Earthsplitter', description: 'Jump attacks slam the ground around you.', maxRank: 1, level: 5 },
+      { id: 'heavy-hand', name: 'Heavy Hand', icon: '🪓', tier: 1, col: 0, maxRank: 3, level: 1, description: '+12% axe damage per rank.', per: '+{12}% axe damage.' },
+      at(BLOODLUST, 1, 1),
+      at(IRON_HIDE, 1, 2),
+      { id: 'rend', name: 'Rend', icon: '🔪', tier: 2, col: 0, maxRank: 2, level: 2, req: ['heavy-hand'], description: '+15% chance per rank to make enemies bleed.', per: '+{15}% chance to make enemies bleed.' },
+      { id: 'cleave', name: 'Cleave', icon: '🌙', tier: 2, col: 1, maxRank: 1, level: 3, req: ['heavy-hand'], description: 'Swings hit everything in a wider arc.' },
+      at(STALWART, 2, 2, { req: ['iron-hide'] }),
+      { id: 'throwing-axe', name: 'Throwing Axe', icon: '🪃', tier: 3, col: 0, maxRank: 1, level: 4, req: ['rend'], description: 'Heavy attack hurls a spinning axe.' },
+      { id: 'earthsplitter', name: 'Earthsplitter', icon: '💥', tier: 3, col: 1, maxRank: 1, level: 5, req: ['cleave'], description: 'Jump attacks slam the ground around you.' },
+      at(BATTLE_TRANCE, 3, 2, { req: ['stalwart'] }),
+      { id: 'executioner', name: 'Executioner', icon: '💀', tier: 4, col: 0, maxRank: 2, level: 8, req: ['throwing-axe'], description: 'Hits on foes below 30% health deal 15% more damage per rank.', per: 'Foes below 30% health take {15}% more damage.' },
+      at(LAST_STAND, 4, 2, { req: ['battle-trance'] }),
+      { id: 'berserker', name: 'Berserker', icon: '👹', tier: 5, col: 1, maxRank: 1, level: 12, req: ['earthsplitter'], description: '+15% melee damage and +25% chance to make enemies bleed.' },
     ],
   },
   bowman: {
     name: 'Bowman Tree',
     nodes: [
-      { id: 'steady-aim', name: 'Steady Aim', description: '+10% bow damage per rank.', maxRank: 3, level: 1 },
-      { id: 'shadow-step', name: 'Shadow Step', description: 'Enemies take 25% longer per rank to notice you.', maxRank: 2, level: 2 },
-      { id: 'piercing-shot', name: 'Piercing Shot', description: 'Arrows pass through the first enemy.', maxRank: 1, level: 3 },
-      { id: 'reclaim', name: 'Reclaim', description: '40% chance to keep an arrow.', maxRank: 1, level: 4 },
-      { id: 'deadeye', name: 'Deadeye', description: 'Power Shot reaches 50% farther.', maxRank: 1, level: 5 },
+      { id: 'steady-aim', name: 'Steady Aim', icon: '🎯', tier: 1, col: 0, maxRank: 3, level: 1, description: '+10% bow damage per rank.', per: '+{10}% bow damage.' },
+      at(BLOODLUST, 1, 1),
+      at(IRON_HIDE, 1, 2),
+      { id: 'piercing-shot', name: 'Piercing Shot', icon: '➶', tier: 2, col: 0, maxRank: 1, level: 3, req: ['steady-aim'], description: 'Arrows pass through the first enemy.' },
+      { id: 'shadow-step', name: 'Shadow Step', icon: '👣', tier: 2, col: 1, maxRank: 2, level: 2, description: 'Enemies take 25% longer per rank to notice you.', per: 'Enemies take {25}% longer to notice you.' },
+      at(FLEET_FOOT, 2, 2, { req: ['iron-hide'] }),
+      { id: 'reclaim', name: 'Reclaim', icon: '♻', tier: 3, col: 0, maxRank: 1, level: 4, req: ['piercing-shot'], description: '40% chance to keep an arrow.' },
+      { id: 'deadeye', name: 'Deadeye', icon: '👁', tier: 3, col: 1, maxRank: 1, level: 5, req: ['shadow-step'], description: 'Power Shot reaches 50% farther.' },
+      at(STALWART, 3, 2, { req: ['fleet-foot'], level: 5 }),
+      at(EAGLE_EYE, 4, 0, { req: ['reclaim'] }),
+      { id: 'ambusher', name: 'Ambusher', icon: '🌑', tier: 4, col: 1, maxRank: 2, level: 8, req: ['deadeye'], description: 'Hits on foes that have not noticed you deal 15% more damage per rank.', per: 'Unaware foes take {15}% more damage.' },
+      { id: 'killshot', name: 'Killshot', icon: '☄', tier: 5, col: 1, maxRank: 1, level: 12, req: ['ambusher'], description: 'Power Shot deals 8x damage instead of 6x.' },
     ],
   },
   ranger: {
     name: 'Ranger Tree',
     nodes: [
-      { id: 'fletcher', name: 'Fletcher', description: '+10% bow damage per rank.', maxRank: 3, level: 1 },
-      { id: 'fleet-foot', name: 'Fleet Foot', description: '+6% movement speed per rank.', maxRank: 2, level: 2 },
-      { id: 'volley', name: 'Volley', description: 'Fully drawn shots loose two extra arrows.', maxRank: 1, level: 3 },
-      { id: 'storm-caller', name: 'Storm Caller', description: 'Sky spells are 20% stronger.', maxRank: 1, level: 4 },
-      { id: 'hunters-mark', name: "Hunter's Mark", description: 'Arrows mark targets: +15% damage taken from all sources.', maxRank: 1, level: 5 },
+      { id: 'fletcher', name: 'Fletcher', icon: '🏹', tier: 1, col: 0, maxRank: 3, level: 1, description: '+10% bow damage per rank.', per: '+{10}% bow damage.' },
+      at(FEAST, 1, 1),
+      at(TRAIL_RUNNER, 1, 2),
+      { id: 'volley', name: 'Volley', icon: '🌧', tier: 2, col: 0, maxRank: 1, level: 3, req: ['fletcher'], description: 'Fully drawn shots loose two extra arrows.' },
+      at(HARDY, 2, 1, { req: ['hunters-feast'] }),
+      at(FLEET_FOOT, 2, 2, { req: ['trail-runner'] }),
+      { id: 'hunters-mark', name: "Hunter's Mark", icon: '✴', tier: 3, col: 0, maxRank: 1, level: 5, req: ['volley'], description: 'Arrows mark targets: +15% damage taken from all sources.' },
+      { id: 'storm-caller', name: 'Storm Caller', icon: '⛈', tier: 3, col: 1, maxRank: 1, level: 4, req: ['hardy'], description: 'Sky spells are 20% stronger.' },
+      at(TUMBLE, 3, 2, { req: ['fleet-foot'] }),
+      at(EAGLE_EYE, 4, 0, { req: ['hunters-mark'] }),
+      { id: 'thunderhead', name: 'Thunderhead', icon: '🌩', tier: 4, col: 1, maxRank: 2, level: 8, req: ['storm-caller'], description: 'Sky spells cost 15% less mana per rank.', per: 'Sky spells cost {15}% less mana.' },
+      { id: 'windrunner', name: 'Windrunner', icon: '🌬', tier: 5, col: 1, maxRank: 1, level: 12, req: ['thunderhead'], description: '+10% movement speed, and stamina recovers 30% faster.' },
     ],
   },
   trainer: {
     name: 'Trainer Tree',
     nodes: [
-      { id: 'pack-bond', name: 'Pack Bond', description: 'Tamed creatures have +25% health per rank.', maxRank: 2, level: 1 },
-      { id: 'feral-bite', name: 'Feral Bite', description: 'Tamed creatures deal +20% damage per rank.', maxRank: 2, level: 2 },
-      { id: 'whistle', name: 'Whistle', description: 'Tamed creatures regenerate when near you.', maxRank: 1, level: 3 },
-      { id: 'second-beast', name: 'Second Beast', description: 'Keep two tamed creatures at once.', maxRank: 1, level: 5 },
-      { id: 'fletcher', name: 'Fletcher', description: '+10% bow damage per rank.', maxRank: 2, level: 1 },
+      { id: 'pack-bond', name: 'Pack Bond', icon: '🐺', tier: 1, col: 0, maxRank: 2, level: 1, description: 'Tamed creatures have +25% health per rank.', per: 'Tamed creatures have +{25}% health.' },
+      at(FEAST, 1, 1),
+      { id: 'fletcher', name: 'Fletcher', icon: '🏹', tier: 1, col: 2, maxRank: 2, level: 1, description: '+10% bow damage per rank.', per: '+{10}% bow damage.' },
+      { id: 'feral-bite', name: 'Feral Bite', icon: '🦷', tier: 2, col: 0, maxRank: 2, level: 2, req: ['pack-bond'], description: 'Tamed creatures deal +20% damage per rank.', per: 'Tamed creatures deal +{20}% damage.' },
+      at(HARDY, 2, 1, { req: ['hunters-feast'] }),
+      at(TRAIL_RUNNER, 2, 2, { req: ['fletcher'], level: 2 }),
+      { id: 'whistle', name: 'Whistle', icon: '🎵', tier: 3, col: 0, maxRank: 1, level: 3, req: ['feral-bite'], description: 'Tamed creatures regenerate when near you.' },
+      { id: 'second-beast', name: 'Second Beast', icon: '🐾', tier: 3, col: 1, maxRank: 1, level: 5, req: ['feral-bite'], description: 'Keep two tamed creatures at once.' },
+      at(FLEET_FOOT, 3, 2, { req: ['trail-runner'], level: 4 }),
+      at(TUMBLE, 4, 0, { req: ['whistle'], level: 8 }),
+      at(EAGLE_EYE, 4, 2, { req: ['fleet-foot'] }),
+      { id: 'alpha-call', name: 'Alpha Call', icon: '🌕', tier: 5, col: 1, maxRank: 1, level: 12, req: ['second-beast'], description: 'Tamed creatures have 30% more health and deal 30% more damage.' },
     ],
   },
   mage: {
     name: 'Arcane Tree',
     nodes: [
-      { id: 'deep-well', name: 'Deep Well', description: '+10 max mana per rank.', maxRank: 3, level: 1 },
-      { id: 'focus', name: 'Focus', description: '+10% spell power per rank.', maxRank: 3, level: 2 },
-      { id: 'flow', name: 'Flow', description: 'Mana regenerates 30% faster per rank.', maxRank: 2, level: 2 },
-      { id: 'quickening', name: 'Quickening', description: 'Spell cooldowns 15% shorter per rank.', maxRank: 2, level: 4 },
-      { id: 'harmony', name: 'Harmony', description: 'Combined spells cost 20% less.', maxRank: 1, level: 5 },
+      { id: 'focus', name: 'Focus', icon: '🔆', tier: 1, col: 0, maxRank: 3, level: 2, description: '+10% spell power per rank.', per: '+{10}% spell power.' },
+      at(SOUL_HARVEST, 1, 1),
+      at(DEEP_WELL, 1, 2),
+      at(SPELL_THRIFT, 2, 0, { req: ['focus'] }),
+      at(FLOW, 2, 1, { req: ['soul-harvest'] }),
+      at(HARDY, 2, 2, { req: ['deep-well'] }),
+      { id: 'quickening', name: 'Quickening', icon: '⏳', tier: 3, col: 0, maxRank: 2, level: 4, req: ['spell-thrift'], description: 'Spell cooldowns 15% shorter per rank.', per: 'Spell cooldowns {15}% shorter.' },
+      at(HARMONY, 3, 1, { req: ['flow'] }),
+      at(ARCANE_WARD, 3, 2, { req: ['hardy'] }),
+      at(ARCANE_MASTERY, 4, 0, { req: ['quickening'] }),
+      { id: 'mana-shield', name: 'Mana Shield', icon: '💠', tier: 4, col: 2, maxRank: 1, level: 9, req: ['arcane-ward'], description: 'A fifth of the damage you take drains mana instead of health.' },
+      { id: 'archmage', name: 'Archmage', icon: '🧙', tier: 5, col: 1, maxRank: 1, level: 12, req: ['harmony'], description: '+15% spell power and 10% shorter cooldowns.' },
     ],
   },
   elemental: {
     name: 'Elemental Tree',
     nodes: [
-      { id: 'attunement', name: 'Attunement', description: 'Your element hits 10% harder per rank.', maxRank: 3, level: 1 },
-      { id: 'deep-well', name: 'Deep Well', description: '+10 max mana per rank.', maxRank: 3, level: 1 },
-      { id: 'flow', name: 'Flow', description: 'Mana regenerates 30% faster per rank.', maxRank: 2, level: 2 },
-      { id: 'elemental-ward', name: 'Elemental Ward', description: 'Immune to your own element.', maxRank: 1, level: 4 },
-      { id: 'harmony', name: 'Harmony', description: 'Combined spells cost 20% less.', maxRank: 1, level: 5 },
+      { id: 'attunement', name: 'Attunement', icon: '♨', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Your element hits 10% harder per rank.', per: 'Your element hits {10}% harder.' },
+      at(SOUL_HARVEST, 1, 1),
+      at(DEEP_WELL, 1, 2),
+      at(SPELL_THRIFT, 2, 0, { req: ['attunement'] }),
+      at(FLOW, 2, 1, { req: ['soul-harvest'] }),
+      at(HARDY, 2, 2, { req: ['deep-well'] }),
+      { id: 'focus', name: 'Focus', icon: '🔆', tier: 3, col: 0, maxRank: 2, level: 4, req: ['spell-thrift'], description: '+10% spell power per rank.', per: '+{10}% spell power.' },
+      at(HARMONY, 3, 1, { req: ['flow'] }),
+      { id: 'elemental-ward', name: 'Elemental Ward', icon: '🌡', tier: 3, col: 2, maxRank: 1, level: 4, req: ['hardy'], description: 'Immune to your own element.' },
+      at(ARCANE_MASTERY, 4, 0, { req: ['focus'] }),
+      at(ARCANE_WARD, 4, 2, { req: ['elemental-ward'], level: 8 }),
+      { id: 'elemental-avatar', name: 'Elemental Avatar', icon: '🌋', tier: 5, col: 1, maxRank: 1, level: 12, req: ['arcane-mastery'], description: 'Your element hits 20% harder and its spells cost 15% less.' },
     ],
   },
 };

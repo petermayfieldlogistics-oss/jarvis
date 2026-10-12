@@ -41,7 +41,7 @@ const PET_KINDS: AllyKind[] = ['wolf', 'boar', 'scorpion', 'magma-hound', 'drake
 const PROJECTILES = new Set<ProjectileKind>(['arrow', 'fireball', 'orb', 'water', 'bolt', 'axe']);
 const ELEMENTS = new Set<DamageElement>(['fire', 'water', 'wind', 'earth', 'physical', 'lightning', 'dark', 'light', 'true']);
 const CLASSES = new Set<ClassId>(['warrior', 'ranger', 'mage']);
-const RACES = new Set<RaceId>(['elf', 'draco', 'human', 'ancient']);
+const RACES = new Set<RaceId>(['elf', 'draco', 'human', 'zombie', 'angelic', 'orc', 'ancient']);
 const ROLES = new Set<RoleId>(['historian', 'blacksmith', 'sailor', 'darkslayer', 'knight', 'assassin']);
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -66,6 +66,9 @@ export interface KillInfo {
   z: number;
   /** Ids of the players who hurt it. */
   by: number[];
+  /** Its level (with any level bonus) and whether a boss summoned it; older hosts leave these out. */
+  lv?: number;
+  minion?: boolean;
 }
 
 // ------------------------------------------------------------ remote hero --
@@ -151,11 +154,13 @@ export class RemoteHero implements Hero {
     this.classId = c;
     this.raceId = r;
     this.roleId = ro;
-    const looks = `${c}/${r}/${ro}`;
+    // A zombie shambles unless its player stood it up straight.
+    const hunched = num(m.hu, 1) !== 0;
+    const looks = `${c}/${r}/${ro}/${hunched}`;
     if (looks !== this.looks) {
       this.looks = looks;
       this.disposeModel();
-      const rig = buildPlayerRig({ classId: c, raceId: r, roleId: ro });
+      const rig = buildPlayerRig({ classId: c, raceId: r, roleId: ro, hunched });
       rig.root.traverse((o) => (o.castShadow = true));
       rig.root.visible = false;
       this.rig = rig;
@@ -341,7 +346,13 @@ export class RemoteHero implements Hero {
     a.windup = 0;
     if (this.alive) a.dead = -1;
     else a.dead += dt;
-    if (rig.wings) rig.wings.userData.enabled = (f & 128) !== 0;
+    if (rig.wings) {
+      const w = rig.wings.userData;
+      w.enabled = (f & 128) !== 0;
+      // An angel's wing beat and glide.
+      w.spread = (f & 256) !== 0;
+      w.soar = (f & 512) !== 0;
+    }
 
     const root = rig.root;
     root.position.copy(view);
@@ -649,7 +660,7 @@ export class Coop {
 
   private sendHello(to: number | 'all') {
     const c = this.g.player.c;
-    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, r: c.raceId, ro: c.roleId, lv: c.level, w: mainWeapon(c).id });
+    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id });
   }
 
   /** Our hero's state, for everyone else to draw. */
@@ -657,7 +668,9 @@ export class Coop {
     const g = this.g;
     const p = g.player;
     const a = p.anim;
-    const flags = (a.blocking ? 1 : 0) | (p.crouching ? 2 : 0) | (a.swimming ? 4 : 0) | (a.flying ? 8 : 0) | (a.airborne ? 16 : 0) | (p.sailing ? 32 : 0) | (p.moonveil > 0 ? 64 : 0) | (p.rig.wings?.userData.enabled ? 128 : 0);
+    const w = p.rig.wings?.userData;
+    const flags = (a.blocking ? 1 : 0) | (p.crouching ? 2 : 0) | (a.swimming ? 4 : 0) | (a.flying ? 8 : 0) | (a.airborne ? 16 : 0) | (p.sailing ? 32 : 0) | (p.moonveil > 0 ? 64 : 0) |
+      (w?.enabled ? 128 : 0) | (w?.spread ? 256 : 0) | (w?.soar ? 512 : 0);
     const pets: number[][] = [];
     for (const al of g.allies) {
       if (pets.length >= 6 || !al.alive) continue;
@@ -1050,6 +1063,8 @@ export class Coop {
       x: num(m.x),
       z: num(m.z),
       by: arr(m.by).map((x) => num(x)),
+      lv: typeof m.lv === 'number' ? Math.max(1, Math.min(60, num(m.lv))) : undefined,
+      minion: m.minion === true,
     };
     const e = this.mirrors.get(num(m.nid));
     if (e) {

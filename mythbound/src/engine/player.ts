@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { SPELLS, WEAPONS, type ClassId, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
+import { SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
-  dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, manaRegen, maxHp, maxMana, maxStamina, maxTamed, moveSpeed, rank,
-  tameableKinds, weaponDamage, type Character,
+  airFlaps, ANGELIC, dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, drowns, lightHealMultiplier, manaRegen, maxHp, maxMana,
+  maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
 } from '../rules/character';
 import {
-  BLOODRAGE, bleedChance, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
+  BLOODRAGE, bleedChance, bloodrageDuration, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
   hasBloodsteal, immuneToBleed, mainWeapon, newFury, onMeleeLanded, onMeleeMissed, powerShot, retribution, spellCost, spellPowerMultiplier, strikeDevilDeal,
   type FuryState,
 } from '../rules/combat';
@@ -38,6 +38,8 @@ interface Attack {
   done: boolean;
   landed: boolean;
   combo: number;
+  /** An orc's War Cry rather than a BloodRage roar. */
+  warCry?: boolean;
   finisher: boolean;
   /** Facing chosen at the start of the swing. */
   aim: number;
@@ -147,6 +149,15 @@ export class Player {
   thunderCd = 0;
   waterHurt = 0;
   drown = 0;
+  /** Angelic: wing beats left before touching down, the last beat's spread, and a held glide. */
+  flapsLeft = 0;
+  flapT = 0;
+  gliding = false;
+  /** Orc: War Cry seconds left, and when it can sound again. */
+  warCry = 0;
+  warCryReadyAt = 0;
+  /** Halo of Mercy: seconds until the next sparkle on someone it mends. */
+  private mercyFx = 0;
   rig: Rig;
   anim = newAnim();
   boat: THREE.Object3D | null = null;
@@ -175,6 +186,7 @@ export class Player {
     this.rig.root.traverse((o) => (o.castShadow = true));
     this.equip();
     this.flightLeft = dracoFlightHours(c) * 60;
+    this.flapsLeft = airFlaps(c);
   }
 
   get roleId() {
@@ -286,6 +298,8 @@ export class Player {
     this.stoneSkin = Math.max(0, this.stoneSkin - dt);
     this.aegis = Math.max(0, this.aegis - dt);
     this.moonveil = Math.max(0, this.moonveil - dt);
+    this.flapT = Math.max(0, this.flapT - dt);
+    if (this.warCry > 0 && (this.warCry -= dt) <= 0) g.hud.toast('The War Cry fades.');
     if (this.fury.bloodrageActive && this.now > this.bloodrageUntil) {
       this.fury.bloodrageActive = false;
       this.fury.stacks = 0;
@@ -345,6 +359,8 @@ export class Player {
       const ahead = (wantX * Math.sin(this.yaw) + wantZ * Math.cos(this.yaw)) / wantLen;
       if (ahead < 0) speed *= 1 + 0.28 * ahead;
     }
+    // A glide carries an angel further than a jump.
+    if (this.gliding) speed *= ANGELIC.glideSpeed;
     if (busy) speed = 0;
 
     // Water.
@@ -356,8 +372,9 @@ export class Player {
       speed = c.roleId === 'sailor' ? 5.5 : 3.6;
       this.crouching = false;
       this.blocking = false;
-      if (c.roleId !== 'sailor') this.stamina = Math.max(0, this.stamina - 3.5 * dt);
-      if (this.stamina <= 0) {
+      // Zombies have no breath to lose: swimming doesn't tire them.
+      if (c.roleId !== 'sailor' && drowns(c)) this.stamina = Math.max(0, this.stamina - 3.5 * dt);
+      if (this.stamina <= 0 && drowns(c)) {
         this.drown += dt;
         if (this.drown > 1) {
           this.drown = 0;
@@ -416,7 +433,7 @@ export class Player {
       this.vel.x = tx;
       this.vel.z = tz;
     } else {
-      const accel = this.grounded || this.swimming || this.flying ? 14 : 3;
+      const accel = this.grounded || this.swimming || this.flying ? 14 : this.gliding ? 6 : 3;
       this.vel.x += (tx - this.vel.x) * Math.min(1, dt * accel);
       this.vel.z += (tz - this.vel.z) * Math.min(1, dt * accel);
     }
@@ -467,8 +484,13 @@ export class Player {
         this.grounded = false;
         this.crouching = false;
         this.spend(6);
+      } else if (input.pressed.has('jump') && !this.grounded && this.flapsLeft > 0 && canAct && !this.exhausted) {
+        this.flap(g);
       }
       this.vel.y -= 24 * dt;
+      // Wings of Light: holding Jump on the way down glides (and lands softly).
+      this.gliding = c.raceId === 'angelic' && !this.grounded && this.vel.y < 0 && input.held.has('jump') && !this.attack;
+      if (this.gliding) this.vel.y = Math.max(this.vel.y, -ANGELIC.glideFall);
       this.pos.y += this.vel.y * dt;
     }
     const floor = walksOnWater ? Math.max(ground, WATER_LEVEL) : ground;
@@ -484,6 +506,8 @@ export class Player {
       this.grounded = this.pos.y - floor < 0.05;
     }
     if (this.flying) this.grounded = false;
+    if (this.grounded || this.swimming || this.sailing || this.flying) this.gliding = false;
+    if (this.grounded || this.swimming) this.flapsLeft = airFlaps(c);
 
     // Hazards.
     if (inLava(this.pos.x, this.pos.z, this.pos.y) && !this.flying) {
@@ -507,7 +531,7 @@ export class Player {
     const spending = sprint || this.attack || this.rollT >= 0 || this.drawing > 0;
     if (sprint) this.spend(14 * dt);
     if (!spending) this.staminaWait = Math.max(0, this.staminaWait - dt);
-    if (!spending && this.staminaWait <= 0 && !(this.swimming && c.roleId !== 'sailor')) this.stamina = Math.min(this.maxStamina, this.stamina + 38 * dt * (this.blocking ? 0.4 : 1));
+    if (!spending && this.staminaWait <= 0 && !(this.swimming && c.roleId !== 'sailor' && drowns(c))) this.stamina = Math.min(this.maxStamina, this.stamina + staminaRegen(c) * dt * (this.blocking ? 0.4 : 1));
     if (this.exhausted && this.stamina >= this.maxStamina * 0.3) this.exhausted = false;
     if (!this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + manaRegen(c) * dt);
     else this.mana = 0;
@@ -537,6 +561,8 @@ export class Player {
 
     // Race passives.
     if (c.raceId === 'ancient') this.ancientPowers(dt, g);
+    if (c.raceId === 'orc' && this.hp < this.maxHp * ORC.warCry.below && this.now >= this.warCryReadyAt) this.startWarCry(g);
+    this.mercy(dt, g);
 
     // Interaction is handled by Game (it owns the world state).
     this.syncAnim(dt);
@@ -553,7 +579,7 @@ export class Player {
     this.backstep = wantLen <= 0.1;
     this.rollT = 0;
     this.rollTime = 0;
-    this.spend(this.backstep ? 12 : 18);
+    this.spend((this.backstep ? 12 : 18) * (1 - 0.25 * rank(this.c, 'tumble')));
     if (this.attack) this.finishAttack();
     this.queued = null;
     this.drawing = 0;
@@ -658,7 +684,7 @@ export class Player {
       const w = WEAPONS[mainWeapon(this.c).id];
       const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
       const dur = (1 / w.speed) * 0.9 * quick;
-      const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer');
+      const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer') - 0.15 * rank(this.c, 'blade-master');
       if (!heavy) {
         const chained = cur ? cur.kind === 'light' : this.lastKind === 'light' && this.now - this.lastSwingEnd < COMBO_WINDOW;
         this.comboStep = chained ? (this.comboStep + 1) % 3 : 0;
@@ -669,7 +695,7 @@ export class Player {
         this.spend(25 * thrift);
         this.comboStep = 0;
         if (this.c.subclassId === 'swordsman') {
-          this.startAttack('spin', 'spin', dur * 1.5);
+          this.startAttack('spin', 'spin', dur * 1.5, rank(this.c, 'lunge') ? { step: 2.2 } : {});
           g.hud.toast('Spinner Flourish!', 'skill');
         } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
           this.startAttack('throw', 'throw', 0.7);
@@ -755,7 +781,8 @@ export class Player {
       } else if (a.kind === 'throw') {
         this.throwWeapon(g);
       } else if (a.kind === 'roar') {
-        this.roarFx(g);
+        if (a.warCry) this.warCryFx(g);
+        else this.roarFx(g);
       }
       if (a.landed && this.c.subclassId === 'axeman' && a.kind === 'heavy' && !this.grounded && rank(this.c, 'earthsplitter')) {
         g.sfx.ring(this.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 5, 0xc8a070);
@@ -849,6 +876,97 @@ export class Player {
     g.sfx.shockwave(at, 3.5, 0xffa080, 0.3);
     g.sfx.dust(this.pos, 16, 0x8a6a5a);
     g.shake(0.35);
+  }
+
+  /** Angelic: a beat of the wings in mid-air, a burst upward. */
+  private flap(g: Game) {
+    this.flapsLeft--;
+    this.flapT = 0.35;
+    this.vel.y = ANGELIC.flapSpeed;
+    this.spend(ANGELIC.flapStamina);
+    g.sfx.emit(this.pos, { color: 0xfffaf0, count: 10, speed: 2.5, life: 0.7, size: 0.18, up: -1, drag: 2 });
+    g.audio.play('roll');
+  }
+
+  /** Orc War Cry: badly hurt, the orc roars. Foes close by reel, and its blows land harder for a while. */
+  private startWarCry(g: Game) {
+    const W = ORC.warCry;
+    this.warCry = W.duration;
+    this.warCryReadyAt = this.now + W.cooldown;
+    // Stunned at once, so the roar itself is safe; bosses don't flinch.
+    for (const e of g.enemies) {
+      if (e.alive && !(e instanceof Boss) && e.pos.distanceTo(this.pos) < W.radius) e.status.stun = Math.max(e.status.stun, W.stun);
+    }
+    g.hud.toast('WAR CRY! Foes reel and your blows land harder.', 'rage');
+    g.audio.play('roar');
+    if (this.grounded && !this.swimming && !this.sailing && !this.flying && this.rollT < 0) {
+      this.startAttack('roar', 'roar', 0.8);
+      this.attack!.warCry = true;
+      this.queued = null;
+    } else this.warCryFx(g);
+  }
+
+  private warCryFx(g: Game) {
+    const at = this.center(this.tv);
+    g.sfx.emit(at, { color: 0xc8e060, count: 30, speed: 4, life: 0.6, size: 0.4, up: 1.5, drag: 1.5 });
+    g.sfx.shockwave(at.set(this.pos.x, this.pos.y + 0.12, this.pos.z), ORC.warCry.radius, 0xd8c050, 0.5);
+    g.sfx.shockwave(at, 3.5, 0x9ad040, 0.3);
+    g.sfx.dust(this.pos, 18, 0x8a7a5a);
+    g.shake(0.4);
+  }
+
+  /** Zombie, Not Dead Yet: the first killing blow since the hero last rested only knocks them down. */
+  notDeadYet(g: Game): boolean {
+    if (this.c.raceId !== 'zombie' || this.c.riseSpent || !this.alive) return false;
+    this.c.riseSpent = true;
+    this.hp = Math.round(this.maxHp * ZOMBIE.riseHp);
+    this.iframes = ZOMBIE.riseIframes;
+    this.stagger = 0.5;
+    this.attack = null;
+    const at = this.center(this.tv);
+    g.sfx.emit(at, { color: 0x9cff60, count: 40, speed: 3, life: 0.9, up: 2 });
+    g.sfx.shockwave(at.set(this.pos.x, this.pos.y + 0.12, this.pos.z), 3, 0x8ae050, 0.5);
+    g.hud.toast('NOT DEAD YET! Rest at a shrine to cheat death again.', 'skill');
+    g.audio.play('devil');
+    return true;
+  }
+
+  /**
+   * Angelic Halo of Mercy: an angel mends friends close by. Each game heals its own hero (when an
+   * angel friend is near) and its own beasts (near any angel), so nothing extra crosses the network.
+   */
+  private mercy(dt: number, g: Game) {
+    const angel = this.c.raceId === 'angelic' && this.alive;
+    let angels = angel && g.allies.length > 0;
+    for (const r of g.coop.remotes.values()) if (r.raceId === 'angelic' || angel) angels = true;
+    if (!angels) return;
+    this.mercyFx -= dt;
+    const sparkle = this.mercyFx <= 0;
+    if (sparkle) this.mercyFx = 0.6;
+    const k = ANGELIC.haloHeal * dt;
+    if (this.alive && this.hp < this.maxHp && this.haloNear(g, this.pos, false)) {
+      this.heal(this.maxHp * k * lightHealMultiplier(this.c));
+      if (sparkle) g.fx.emit(this.center(this.tv), MERCY_SPARKLE);
+    }
+    for (const al of g.allies) {
+      if (!al.alive || al.hp >= al.maxHp || !this.haloNear(g, al.pos, angel)) continue;
+      al.hp = Math.min(al.maxHp, al.hp + al.maxHp * k);
+      if (sparkle) g.fx.emit(al.center(this.tv), MERCY_SPARKLE);
+    }
+    // The angel sees the friends it mends glow too.
+    if (angel && sparkle) {
+      for (const r of g.coop.remotes.values()) {
+        if (r.alive && r.ready && r.hp < r.maxHp && r.pos.distanceTo(this.pos) < ANGELIC.haloRadius) g.fx.emit(r.center(this.tv), MERCY_SPARKLE);
+      }
+    }
+  }
+
+  /** An angel's halo reaches this spot (`self`: our own hero counts as one). */
+  private haloNear(g: Game, at: THREE.Vector3, self: boolean) {
+    const R = ANGELIC.haloRadius;
+    if (self && Math.hypot(at.x - this.pos.x, at.z - this.pos.z) < R) return true;
+    for (const r of g.coop.remotes.values()) if (r.raceId === 'angelic' && r.alive && r.ready && Math.hypot(at.x - r.pos.x, at.z - r.pos.z) < R) return true;
+    return false;
   }
 
   private trailColor(): number {
@@ -954,7 +1072,7 @@ export class Player {
       if (!this.soulOrPower) this.mana -= BLOODRAGE.mana;
       this.fury.bloodrageActive = true;
       this.fury.stacks = 0;
-      this.bloodrageUntil = this.now + BLOODRAGE.duration;
+      this.bloodrageUntil = this.now + bloodrageDuration(c);
       this.bloodrageReadyAt = this.now + BLOODRAGE.cooldown;
       g.hud.toast(c.level >= 4 ? 'BLOODRAGE! Bloodsteal awakens.' : 'BLOODRAGE!', 'rage');
       // A planted roar; it can't be cut short by attacks or rolls.
@@ -988,7 +1106,8 @@ export class Player {
     target.tamed = true;
     g.coop.tamed(target);
     g.removeEnemy(target);
-    g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond'), 1 + 0.2 * rank(this.c, 'feral-bite')));
+    const alpha = 0.3 * rank(this.c, 'alpha-call');
+    g.addAlly(new Ally(kind, target.pos.x, target.pos.z, this.c.level, Infinity, 1 + 0.25 * rank(this.c, 'pack-bond') + alpha, 1 + 0.2 * rank(this.c, 'feral-bite') + alpha));
     if (!this.c.tamed.includes(kind)) this.c.tamed.push(kind);
     g.hud.toast(`Tamed a ${target.name}!`, 'skill');
     g.audio.play('pickup');
@@ -1202,7 +1321,7 @@ export class Player {
         g.damageEnemy(target, power, 'light', { source: 'spell' });
         break;
       case 'radiant-heal':
-        this.heal(power);
+        this.heal(power * lightHealMultiplier(c));
         g.sfx.emit(this.center(), { color: 0xfff0b0, count: 40, speed: 2, life: 1, up: 2 });
         break;
       case 'aegis-of-light':
@@ -1371,7 +1490,12 @@ export class Player {
       a.attack = Math.min(1, at.anim0 + ((1 - at.anim0) * at.t) / at.duration);
       a.attackStyle = at.style;
     } else a.attack = -1;
-    if (this.rig.wings) this.rig.wings.userData.enabled = dracoFlightHours(this.c) > 0;
+    if (this.rig.wings) {
+      const w = this.rig.wings.userData;
+      w.enabled = wingsGrown(this.c);
+      w.spread = this.flapT > 0 || this.gliding;
+      w.soar = this.gliding;
+    }
     if (this.sailing) {
       a.moving = 0;
       a.crouching = true;
@@ -1440,6 +1564,7 @@ export function attachGear(rig: Rig, classId: ClassId, weaponId: string): { weap
 }
 
 const NOCK = new THREE.Vector3();
+const MERCY_SPARKLE = { color: 0xfff0a0, count: 5, speed: 1, life: 0.8, size: 0.15, up: 1.5 };
 /** Draws a bow's string back to the pulling hand, with an arrow nocked while aiming. */
 export function poseBowString(rig: Rig, bow: THREE.Object3D, a: AnimState, arrows: boolean) {
   const pulling = a.draw > 0 || (a.attackStyle === 'bow' && a.attack >= 0 && a.attack < 0.12);
@@ -1455,8 +1580,15 @@ export function poseBowString(rig: Rig, bow: THREE.Object3D, a: AnimState, arrow
   setBowString(bow, n, a.draw > 0 && arrows);
 }
 
-export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId'>): Rig {
-  const skin = c.raceId === 'draco' ? 0x5a6a4a : c.raceId === 'elf' ? 0xe0c8a8 : c.raceId === 'ancient' ? 0x3a3a44 : 0xc89a78;
+const SKIN: Record<RaceId, number> = {
+  human: 0xc89a78, elf: 0xe0c8a8, draco: 0x5a6a4a, ancient: 0x3a3a44, zombie: 0x86967a, angelic: 0xf4e0c6, orc: 0x6c8c48,
+};
+const GRAVE_DUST = new THREE.Color(0x5e5a4a);
+/** A colour faded with grave dust. */
+const faded = (hex: number) => new THREE.Color(hex).lerp(GRAVE_DUST, 0.45).getHex();
+
+export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'>): Rig {
+  const skin = SKIN[c.raceId];
   const look = {
     warrior: { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy' as const, head: 'helmet' as const, cape: 0x5a1a14 },
     ranger: { armor: 0x4a5a3a, cloth: 0x2e3a26, accent: 0x8a7a4a, build: 'light' as const, head: 'hood' as const, cape: 0x2a3a22 },
@@ -1472,6 +1604,18 @@ export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId
     look.cape = 0x101012;
     if (c.classId !== 'warrior') look.armor = 0x24222a;
   }
+  if (c.raceId === 'zombie') {
+    look.cloth = faded(look.cloth);
+    look.armor = faded(look.armor);
+    if (look.cape !== undefined) look.cape = faded(look.cape);
+  }
+  if (c.raceId === 'angelic') {
+    // Gold trim, and the wings take the place of a cape.
+    look.accent = 0xffd36a;
+    look.cape = undefined;
+  }
+  const orc = c.raceId === 'orc';
+  // Race cues left undefined stay out of the model's cache key.
   return buildHumanoid({
     skin,
     ...look,
@@ -1480,6 +1624,14 @@ export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId
     horns: c.raceId === 'draco',
     tail: c.raceId === 'draco',
     wings: c.raceId === 'draco',
-    glowEyes: c.raceId === 'ancient' ? 0x40ff80 : undefined,
+    glowEyes: c.raceId === 'ancient' ? 0x40ff80 : c.raceId === 'zombie' ? 0xc8ff52 : undefined,
+    hair: c.raceId === 'angelic' ? 0xf2d27a : orc ? 0x1c1814 : undefined,
+    tusks: orc || undefined,
+    brawn: orc ? 1.14 : undefined,
+    scale: orc ? 1.05 : undefined,
+    halo: c.raceId === 'angelic' ? 0xffe28a : undefined,
+    featherWings: c.raceId === 'angelic' ? 0xfaf6ee : undefined,
+    stitches: c.raceId === 'zombie' || undefined,
+    hunch: c.raceId === 'zombie' && c.hunched !== false ? 0.36 : undefined,
   });
 }
