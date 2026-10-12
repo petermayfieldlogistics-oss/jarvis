@@ -554,6 +554,8 @@ export class Story {
       const r = RELICS[weaponId];
       g.claimLegendary(weaponId);
       c.items[weaponId] = 1;
+      // The pearl's boon: one more flask, filled at once.
+      if (weaponId === 'leviathan-pearl') (c.flasksMax++, (c.flasks = c.flasksMax));
       g.player.hp = Math.min(g.player.maxHp, g.player.hp);
       g.audio.play('victory');
       g.save();

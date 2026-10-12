@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SPELLS, WEAPONS, type ClassId, type DamageElement, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
 import {
   dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, manaRegen, maxHp, maxMana, maxStamina, maxTamed, moveSpeed, rank,
-  tameableKinds, weaponDamage, type Character,
+  swimsTireless, tameableKinds, weaponDamage, type Character,
 } from '../rules/character';
 import {
   BLOODRAGE, bleedChance, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
@@ -335,7 +335,7 @@ export class Player {
       speed = c.roleId === 'sailor' ? 5.5 : 3.6;
       this.crouching = false;
       this.blocking = false;
-      if (c.roleId !== 'sailor') this.stamina = Math.max(0, this.stamina - 3.5 * dt);
+      if (!swimsTireless(c)) this.stamina = Math.max(0, this.stamina - 3.5 * dt);
       if (this.stamina <= 0) {
         this.drown += dt;
         if (this.drown > 1) {
@@ -484,7 +484,7 @@ export class Player {
     // Stamina and mana.
     const spending = sprint || this.blocking || this.attack || this.rollT >= 0 || this.drawing > 0;
     if (sprint) this.stamina -= 14 * dt;
-    if (!spending && !(this.swimming && c.roleId !== 'sailor')) this.stamina = Math.min(this.maxStamina, this.stamina + 38 * dt);
+    if (!spending && !(this.swimming && !swimsTireless(c))) this.stamina = Math.min(this.maxStamina, this.stamina + 38 * dt);
     this.stamina = Math.max(0, this.stamina);
     if (!this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + manaRegen(c) * dt);
     else this.mana = 0;
