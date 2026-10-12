@@ -70,6 +70,20 @@ export interface HumanoidLook {
   glowEyes?: number;
   cape?: number;
   scale?: number;
+  /** Hair colour (otherwise picked from the other race cues). */
+  hair?: number;
+  /** Lower tusks, a heavy brow and jaw, short pointed ears, bare arms (orcs). */
+  tusks?: boolean;
+  /** Colour of a glowing halo floating over the head. */
+  halo?: number;
+  /** Feathered wings of this colour, instead of membrane wings. */
+  featherWings?: number;
+  /** Stitched scars, a sleeve torn off over a sewn-on arm, a patch, a ragged cape (zombies). */
+  stitches?: boolean;
+  /** Broader shoulders and thicker limbs (1 is normal). */
+  brawn?: number;
+  /** Stoops forward; a hunched hero also shambles (head cocked, arms drifting forward). */
+  hunch?: number;
 }
 
 interface Joints {
@@ -95,6 +109,7 @@ interface Joints {
   wings: THREE.Group | null;
   /** Left root, left tip, right root, right tip. */
   wing: THREE.Group[];
+  halo: THREE.Group | null;
 }
 
 /** Body proportions: torso width/depth, limb thickness, fist size, shoulder and hip spacing. */
@@ -112,6 +127,8 @@ interface Profile {
   robe: number;
   heavy: number;
   hunch: number;
+  /** Head cocked and arms drifting forward (zombies). */
+  shamble: number;
   capeLift: number;
 }
 
@@ -487,7 +504,7 @@ function cloneRig(t: Rig): Rig {
     body: m(tj.body), hips: m(tj.hips), spine: m(tj.spine), chest: m(tj.chest), head: m(tj.head),
     armL: m(tj.armL), foreL: m(tj.foreL), handL: m(tj.handL), armR: m(tj.armR), foreR: m(tj.foreR), handR: m(tj.handR),
     legL: m(tj.legL), shinL: m(tj.shinL), footL: m(tj.footL), legR: m(tj.legR), shinR: m(tj.shinR), footR: m(tj.footR),
-    cape: tj.cape.map(m), tail: tj.tail.map(m), wings: tj.wings && m(tj.wings), wing: tj.wing.map(m),
+    cape: tj.cape.map(m), tail: tj.tail.map(m), wings: tj.wings && m(tj.wings), wing: tj.wing.map(m), halo: tj.halo && m(tj.halo),
   };
   states.set(root, newState(j, ts.prof));
   return rigOf(root, j, t.height);
@@ -505,8 +522,10 @@ function rigOf(root: THREE.Group, j: Joints, height: number): Rig {
 }
 
 function makeRig(look: Omit<HumanoidLook, 'scale'>, o: BuildOpts = {}): Rig {
-  const B = o.bulk ?? 1;
-  const d: Dims = { B, BZ: 1 + (B - 1) * 0.7, L: o.limb ?? 1, F: o.fist ?? 1, SX: 0.235 * B, HX: 0.1 * (1 + (B - 1) * 0.6) };
+  // Brawny heroes get broad shoulders, thick limbs and big fists; the head stays the same size.
+  const brawn = look.brawn ?? 1;
+  const B = o.bulk ?? brawn;
+  const d: Dims = { B, BZ: 1 + (B - 1) * 0.7, L: o.limb ?? 1 + (brawn - 1) * 0.8, F: o.fist ?? brawn, SX: 0.235 * B, HX: 0.1 * (1 + (B - 1) * 0.6) };
   const root = new THREE.Group();
   const body = pivot(root, 0, 0, 0);
   const hips = pivot(body, 0, 0.98, 0);
@@ -531,18 +550,22 @@ function makeRig(look: Omit<HumanoidLook, 'scale'>, o: BuildOpts = {}): Rig {
   const shinR = pivot(legR, 0, -0.43, 0);
   const footL = pivot(shinL, 0, -0.415, 0);
   const footR = pivot(shinR, 0, -0.415, 0);
-  const j: Joints = { body, hips, spine, chest, head, armL, foreL, handL, armR, foreR, handR, legL, shinL, footL, legR, shinR, footR, cape: [], tail: [], wings: null, wing: [] };
+  const j: Joints = { body, hips, spine, chest, head, armL, foreL, handL, armR, foreR, handR, legL, shinL, footL, legR, shinR, footR, cape: [], tail: [], wings: null, wing: [], halo: null };
 
   const k = new Kit();
   buildBody(k, j, look, d, o);
-  if (!o.noHead) buildHead(k, j, look);
-  if (look.cape !== undefined) buildCape(k, j, look.cape, look.accent, d);
+  if (!o.noHead) buildHead(k, j, look, d);
+  if (look.cape !== undefined) buildCape(k, j, look.cape, look.accent, d, !!look.stitches);
   if (look.tail) buildTail(k, j, look.skin);
-  if (look.wings) buildWings(k, j, look.skin);
+  if (look.featherWings !== undefined) buildFeatherWings(k, j, look.featherWings);
+  else if (look.wings) buildWings(k, j, look.skin);
   o.extras?.(k, j, d);
   k.finish(root, 2.6);
 
-  const prof: Profile = { robe: look.build === 'robe' ? 1 : 0, heavy: look.build === 'heavy' ? 0.4 : 0, hunch: 0, capeLift: look.tail ? 0.3 : 0, ...o.posture };
+  const prof: Profile = {
+    robe: look.build === 'robe' ? 1 : 0, heavy: (look.build === 'heavy' ? 0.4 : 0) + (brawn - 1) * 2, hunch: look.hunch ?? 0, shamble: look.hunch ? 1 : 0, capeLift: look.tail ? 0.3 : 0,
+    ...o.posture,
+  };
   states.set(root, newState(j, prof));
   root.userData.tris = k.tris;
   return rigOf(root, j, 1.85);
@@ -578,6 +601,26 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     }
   };
   const armW = (arm: O3, fore: O3) => chain([arm, fore], [-1.205], 0.045, down);
+  // Zombies: the right sleeve is gone, showing an arm sewn back on; orcs go bare-armed.
+  const torn = !!look.stitches;
+  const bareArm = (side: number) => !!look.tusks || (torn && side < 0);
+  /** A seam of stitches round a limb at height y (radius r). */
+  const seam = (skinTo: O3 | Skin, x: number, y: number, r: number) => {
+    k.add(loft([[y - 0.005, r * 1.02, r * 0.98], [y + 0.005, r * 1.02, r * 0.98]], 10).translate(x, 0, 0), MATTE, shade(skin, 0.42), skinTo);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU;
+      k.add(cube(0.006, 0.03, 0.006), MATTE, 0x16120e, skinTo, x + Math.sin(a) * r * 1.05, y, Math.cos(a) * r * 1.0, 0, a, 0.25);
+    }
+  };
+  /** A mismatched square of cloth sewn on with big stitches. */
+  const patch = (skinTo: O3 | Skin, x: number, y: number, z: number, rx: number, ry: number, color: number) => {
+    const turn = new THREE.Euler(rx, ry, 0.12);
+    k.add(cube(0.075, 0.07, 0.008), MATTE, color, skinTo, x, y, z, rx, ry, 0.12);
+    for (const [u, v] of [[-1, -0.6], [-1, 0.6], [1, -0.6], [1, 0.6], [-0.4, 1], [0.4, 1], [-0.4, -1], [0.4, -1]]) {
+      const at = new THREE.Vector3(u * 0.037, v * 0.034, 0.005).applyEuler(turn);
+      k.add(cube(0.005, 0.022, 0.005), MATTE, 0x16120e, skinTo, x + at.x, y + at.y, z + at.z, rx, ry, 0.12 + (Math.abs(u) > 0.5 ? 0 : PI / 2));
+    }
+  };
   const boot = (x: number, foot: O3, color: number, surf: number, s = 1) => {
     // Built along +y, then laid along +z (ring depth becomes height).
     const g = loft([[-0.075, 0.042 * s, 0.035, -0.04], [-0.055, 0.052 * s, 0.052, -0.055], [0.0, 0.056 * s, 0.062, -0.062], [0.08, 0.057 * s, 0.047, -0.047], [0.15, 0.05 * s, 0.036, -0.036], [0.195, 0.028 * s, 0.022, -0.024]], 6, { bottom: true, top: true });
@@ -651,6 +694,7 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     const sk = skirt(hips, legL, legR, 0.95, 0.62, 0.55);
     k.add(cube(0.17, 0.42, 0.012), MATTE, cloth, sk, 0, 0.78, 0.136 * BZ, -0.07);
     k.add(cube(0.2, 0.44, 0.012), MATTE, shade(cloth, 0.85), sk, 0, 0.77, -0.134 * BZ, 0.07);
+    if (torn) patch(sk, 0.03, 0.72, 0.136 * BZ + 0.012, -0.07, 0, shade(cloth, 1.6));
     for (const [s, , , , leg] of sides) {
       const tw: Skin = (_x, y) => {
         const f = smooth(0.94, 0.7, y) * 0.6;
@@ -677,6 +721,7 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     k.add(cube(0.045, 0.24, 0.012), MATTE, shade(accent, 0.85), skirt(hips, legL, legR, 1.0, 0.7, 0.5), 0.135 * B, 0.88, 0.14 * BZ, -0.08, 0.3, 0.14);
     k.add(loft(T([[1.37, 0.27, 0.18, -0.01], [1.46, 0.252, 0.164, -0.004], [1.54, 0.182, 0.126, 0], [1.6, 0.11, 0.09, -0.005]]), 14), MATTE, shade(cloth, 0.78), chest);
     k.add(loft(T([[0.04, 0.303, 0.273, -0.02], [0.085, 0.299, 0.267, -0.019]]), 14), MATTE, accent, sk);
+    if (torn) patch(sk, 0.07 * B, 0.58, 0.212 * BZ, -0.18, 0.26, shade(cloth, 1.7));
     // An amulet on a chain below the mantle.
     for (const t of [-1, 1]) k.add(tube([[t * 0.075 * B, 1.375, 0.168 * BZ], [t * 0.04 * B, 1.335, 0.168 * BZ], [0, 1.31, 0.164 * BZ]], [0.004, 0.004, 0.004], 3), METAL, accent, chest);
     k.add(ball(6, 4), METAL, accent, chest, 0, 1.29, 0.16 * BZ, 0, 0, 0, 0.026, 0.032, 0.012);
@@ -702,6 +747,7 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
         k.add(ball(4, 3), METAL, accent, torsoW, Math.sin(a) * rx * B * 1.02, y, (cz + Math.cos(a) * rz * 1.02) * BZ, 0, 0, 0, 0.0095, 0.0095, 0.0095);
       }
     }
+    if (torn) patch(torsoW, -0.085 * B, 1.22, 0.136 * BZ, -0.05, -0.45, shade(armor, 1.6));
     // Laced up the left side of the chest.
     k.add(cube(0.008, 0.13, 0.006), MATTE, shade(armor, 0.35), torsoW, 0.075 * B, 1.265, 0.147 * BZ, -0.12, 0.3, 0);
     for (const [y, z] of [[1.22, 0.142], [1.265, 0.15], [1.31, 0.152]]) {
@@ -726,16 +772,25 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     const aw = armW(arm, fore);
     const x = s * SX;
     if (robe) {
-      // Wide sleeves with a shadowed opening.
-      k.add(loft([[0.965, 0.1 * L, 0.095 * L, 0.01], [1.05, 0.084 * L, 0.08 * L, 0.006], [1.2, 0.062 * L, 0.06 * L], [1.36, 0.062 * L, 0.06 * L], [1.47, 0.068 * L, 0.064 * L], [1.555, 0.035, 0.035]], 10, { top: true }).translate(x, 0, 0), MATTE, cloth, aw);
-      k.add(new THREE.CircleGeometry(1, 10), MATTE, shade(cloth, 0.25), fore, x, 0.975, 0.01, PI / 2, 0, 0, 0.09 * L, 0.085 * L, 1);
-      k.add(loft([[0.965, 0.103 * L, 0.098 * L, 0.01], [1.0, 0.098 * L, 0.093 * L, 0.009]], 10).translate(x, 0, 0), MATTE, look.accent, aw);
+      if (bareArm(s)) {
+        // The sleeve ripped away at the elbow, and a forearm sewn back on below it.
+        k.add(loft([[1.15, 0.074 * L, 0.07 * L, 0.004], [1.22, 0.064 * L, 0.06 * L], [1.36, 0.062 * L, 0.06 * L], [1.47, 0.068 * L, 0.064 * L], [1.555, 0.035, 0.035]], 10, { top: true, wave: (a, i) => (i === 0 ? 0.035 * Math.sin(a * 5 + 1) : 0) }).translate(x, 0, 0), MATTE, cloth, aw);
+        k.add(loft([[0.95, 0.036 * L, 0.033 * L, 0.004], [1.07, 0.044 * L, 0.041 * L, 0.006], [1.2, 0.046 * L, 0.044 * L], [1.26, 0.05 * L, 0.048 * L]], 8).translate(x, 0, 0), MATTE, skin, aw);
+        if (torn) seam(fore, x, 1.08, 0.044 * L);
+      } else {
+        // Wide sleeves with a shadowed opening.
+        k.add(loft([[0.965, 0.1 * L, 0.095 * L, 0.01], [1.05, 0.084 * L, 0.08 * L, 0.006], [1.2, 0.062 * L, 0.06 * L], [1.36, 0.062 * L, 0.06 * L], [1.47, 0.068 * L, 0.064 * L], [1.555, 0.035, 0.035]], 10, { top: true }).translate(x, 0, 0), MATTE, cloth, aw);
+        k.add(new THREE.CircleGeometry(1, 10), MATTE, shade(cloth, 0.25), fore, x, 0.975, 0.01, PI / 2, 0, 0, 0.09 * L, 0.085 * L, 1);
+        k.add(loft([[0.965, 0.103 * L, 0.098 * L, 0.01], [1.0, 0.098 * L, 0.093 * L, 0.009]], 10).translate(x, 0, 0), MATTE, look.accent, aw);
+      }
       k.add(loft([[0.94, 0.034, 0.03], [1.0, 0.038, 0.034]], 6, {}).translate(x, 0, 0.004), MATTE, skin, fore);
       fist(x, hand, skin, MATTE);
       continue;
     }
-    k.add(loft(armRings(L), 8, { top: true }).translate(x, 0, 0), MATTE, heavy ? shade(cloth, 0.8) : cloth, aw);
-    if (!heavy) k.add(ball(7, 5), MATTE, cloth, arm, x, 1.485, 0, 0, 0, 0, 0.068 * L, 0.068 * L, 0.064 * L);
+    const bare = bareArm(s);
+    k.add(loft(armRings(L), 8, { top: true }).translate(x, 0, 0), MATTE, bare ? skin : heavy ? shade(cloth, 0.8) : cloth, aw);
+    if (!heavy) k.add(ball(7, 5), MATTE, bare ? skin : cloth, arm, x, 1.485, 0, 0, 0, 0, 0.068 * L, 0.068 * L, 0.064 * L);
+    if (bare && torn) seam(arm, x, 1.36, 0.054 * L);
     if (heavy) {
       // Layered pauldron with a trim, rerebrace, couter, vambrace, gauntlet.
       const pw: Skin = (_x, y) => {
@@ -744,12 +799,15 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
         put(arm, 1 - t);
       };
       const px = s * SX * 1.03;
-      k.add(dome(9, 4), armorS, armor, pw, px, 1.5, 0, 0, 0, -s * 0.32, 0.135 * B, 0.1, 0.13 * BZ);
-      if (!o.stone) rivets(pw, s, [px, 1.5, 0], [0.135 * B, 0.1, 0.13 * BZ], -s * 0.32, accent);
-      k.add(new THREE.TorusGeometry(1, 0.07, 3, 10), METAL, accent, pw, px, 1.5, 0, PI / 2, -s * 0.32, 0, 0.137 * B, 0.132 * BZ, 0.12);
-      k.add(dome(9, 2, 0.4), armorS, shade(armor, 0.85), arm, s * SX * 1.06, 1.445, 0, 0, 0, -s * 0.42, 0.13 * B, 0.07, 0.125 * BZ);
-      k.add(dome(9, 2, 0.4), armorS, shade(armor, 0.75), arm, s * SX * 1.08, 1.395, 0, 0, 0, -s * 0.5, 0.12 * B, 0.06, 0.115 * BZ);
-      k.add(loft([[1.25, 0.058 * L, 0.056 * L], [1.33, 0.064 * L, 0.062 * L], [1.4, 0.066 * L, 0.064 * L]], 8).translate(x, 0, 0), armorS, shade(armor, 0.9), arm);
+      // A zombie's sewn-on arm has lost its pauldron; an orc's shows the bicep.
+      if (!(bare && torn)) {
+        k.add(dome(9, 4), armorS, armor, pw, px, 1.5, 0, 0, 0, -s * 0.32, 0.135 * B, 0.1, 0.13 * BZ);
+        if (!o.stone) rivets(pw, s, [px, 1.5, 0], [0.135 * B, 0.1, 0.13 * BZ], -s * 0.32, accent);
+        k.add(new THREE.TorusGeometry(1, 0.07, 3, 10), METAL, accent, pw, px, 1.5, 0, PI / 2, -s * 0.32, 0, 0.137 * B, 0.132 * BZ, 0.12);
+        k.add(dome(9, 2, 0.4), armorS, shade(armor, 0.85), arm, s * SX * 1.06, 1.445, 0, 0, 0, -s * 0.42, 0.13 * B, 0.07, 0.125 * BZ);
+        k.add(dome(9, 2, 0.4), armorS, shade(armor, 0.75), arm, s * SX * 1.08, 1.395, 0, 0, 0, -s * 0.5, 0.12 * B, 0.06, 0.115 * BZ);
+      }
+      if (!bare) k.add(loft([[1.25, 0.058 * L, 0.056 * L], [1.33, 0.064 * L, 0.062 * L], [1.4, 0.066 * L, 0.064 * L]], 8).translate(x, 0, 0), armorS, shade(armor, 0.9), arm);
       k.add(ball(6, 4), armorS, armor, splitY(arm, fore, 1.205, 0.08), x, 1.205, -0.01, 0, 0, 0, 0.056 * L, 0.05 * L, 0.056 * L);
       if (!o.stone) k.add(cube(0.012, 0.075 * L, 0.075 * L), armorS, shade(armor, 1.05), splitY(arm, fore, 1.205, 0.08), x + s * 0.056 * L, 1.205, -0.01, PI / 4, 0, 0);
       k.add(loft([[0.975, 0.047 * L, 0.044 * L, 0.004], [1.07, 0.054 * L, 0.051 * L, 0.006], [1.17, 0.057 * L, 0.054 * L, 0.006]], 8).translate(x, 0, 0), armorS, armor, fore);
@@ -793,14 +851,27 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
   }
 }
 
-function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
+function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims) {
   const H = j.head;
   const hy = 1.735;
   const hz = 0.012;
   const skin = look.skin;
   const metalS = look.build === 'heavy' ? METAL : MATTE;
   const elfHair = 0xd8c8a0;
-  const hairColor = look.ears ? elfHair : look.glowEyes !== undefined ? shade(skin, 0.45) : 0x2a1e14;
+  const hairColor = look.hair ?? (look.ears ? elfHair : look.glowEyes !== undefined ? shade(skin, 0.45) : 0x2a1e14);
+  /** Depth of the face's surface at (x, y), so scars lie on it. */
+  const onFace = (x: number, y: number) => hz + 0.112 * Math.sqrt(Math.max(0, 1 - (x / 0.1) ** 2 - ((y - hy) / 0.122) ** 2));
+  const turnAt = (x: number) => Math.asin(clamp(x / 0.1, -1, 1)) * 0.85;
+  /** A scar from (x0, y0) to (x1, y1) across the face, sewn shut with n stitches. */
+  const scar = (x0: number, y0: number, x1: number, y1: number, n: number, tone: number) => {
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    const rz = Math.atan2(y1 - y0, x1 - x0);
+    k.add(cube(Math.hypot(x1 - x0, y1 - y0), 0.007, 0.006), MATTE, shade(tone, 0.5), H, mx, my, onFace(mx, my) + 0.001, 0, turnAt(mx), rz);
+    for (let i = 0; i < n; i++) {
+      const x = lerp(x0, x1, (i + 0.5) / n), y = lerp(y0, y1, (i + 0.5) / n);
+      k.add(cube(0.005, 0.026, 0.005), MATTE, 0x16120e, H, x, y, onFace(x, y) + 0.002, 0, turnAt(x), rz);
+    }
+  };
   const eyes = (z: number, dark: number) => {
     for (const s of [-1, 1]) {
       if (look.glowEyes !== undefined) k.add(ball(6, 4), GLOW, look.glowEyes, H, s * 0.038, 1.746, z, 0, 0, 0, 0.018, 0.012, 0.01);
@@ -809,19 +880,44 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
   };
   const face = (tone: number, withEyes = true, w = 12, h = 9) => {
     k.add(ball(w, h), MATTE, tone, H, 0, hy, hz, 0, 0, 0, 0.1, 0.122, 0.112);
-    k.add(cube(0.024, 0.044, 0.03), MATTE, shade(tone, 0.95), H, 0, 1.722, 0.118, -0.35);
-    k.add(cube(0.095, 0.018, 0.024), MATTE, shade(tone, 0.86), H, 0, 1.763, 0.104);
-    k.add(cube(0.048, 0.012, 0.02), MATTE, shade(tone, 0.7), H, 0, 1.68, 0.105);
+    if (look.tusks) {
+      // A heavy brow, a broad flat nose and an underbite jaw for the tusks.
+      k.add(cube(0.12, 0.026, 0.034), MATTE, shade(tone, 0.78), H, 0, 1.768, 0.098, 0.15);
+      k.add(cube(0.046, 0.03, 0.034), MATTE, shade(tone, 0.92), H, 0, 1.716, 0.112, -0.25);
+      k.add(cube(0.124, 0.054, 0.08), MATTE, shade(tone, 0.94), H, 0, 1.663, 0.064);
+      k.add(cube(0.07, 0.01, 0.02), MATTE, shade(tone, 0.45), H, 0, 1.684, 0.1);
+    } else {
+      k.add(cube(0.024, 0.044, 0.03), MATTE, shade(tone, 0.95), H, 0, 1.722, 0.118, -0.35);
+      k.add(cube(0.095, 0.018, 0.024), MATTE, shade(tone, 0.86), H, 0, 1.763, 0.104);
+      k.add(cube(0.048, 0.012, 0.02), MATTE, shade(tone, 0.7), H, 0, 1.68, 0.105);
+    }
+    if (look.stitches) {
+      // Sunken sockets, a grimace of teeth, scars sewn shut (too dark to see in a hood).
+      for (const s of [-1, 1]) k.add(cube(0.038, 0.028, 0.01), MATTE, shade(tone, 0.45), H, s * 0.038, 1.745, 0.099);
+      for (const x of [-0.015, 0, 0.015]) k.add(cube(0.01, 0.012, 0.006), MATTE, 0xd2c8a2, H, x, 1.681, 0.113);
+      if (withEyes) {
+        scar(-0.07, 1.802, 0.035, 1.79, 5, tone);
+        scar(0.05, 1.735, 0.068, 1.678, 3, tone);
+      }
+    }
     if (withEyes) eyes(0.104, 0x16100c);
   };
   const ears = (tone: number) => {
     for (const s of [-1, 1]) {
       if (look.ears) k.add(spike(0.026, 0.2, 4), MATTE, tone, H, s * 0.13, 1.765, -0.02, -0.35, 0, -s * 1.2);
+      else if (look.tusks) k.add(spike(0.024, 0.09, 4), MATTE, tone, H, s * 0.108, 1.752, -0.012, -0.55, 0, -s * 1.3);
       else k.add(ball(6, 5), MATTE, tone, H, s * 0.1, 1.735, 0.0, 0, 0, 0, 0.016, 0.03, 0.022);
     }
   };
   const hair = () => {
     if (look.horns) return;
+    if (look.tusks) {
+      // A shaved head with a warrior's topknot (a braid under a hat).
+      k.add(dome(12, 6, 0.5), MATTE, shade(skin, 0.7), H, 0, hy + 0.01, hz - 0.01, -0.3, 0, 0, 0.104, 0.126, 0.118);
+      if (look.head !== 'hat') k.add(ball(7, 5), MATTE, hairColor, H, 0, 1.862, -0.05, 0, 0, 0, 0.036, 0.03, 0.036);
+      k.add(tube([[0, 1.85, -0.07], [0, 1.78, -0.13], [0, 1.67, -0.145], [0, 1.57, -0.13]], [0.024, 0.021, 0.017, 0.006], 5), MATTE, hairColor, H);
+      return;
+    }
     k.add(dome(12, 6, 0.56), MATTE, hairColor, H, 0, hy + 0.014, hz - 0.016, -0.42, 0, 0, 0.108, 0.13, 0.122);
     k.add(ball(8, 6), MATTE, hairColor, H, 0, 1.7, -0.062, 0, 0, 0, 0.095, 0.085, 0.06);
   };
@@ -830,6 +926,7 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
       // Great helm: visor slit, centre ridge, crest.
       k.add(loft([[1.6, 0.116, 0.125, 0.012], [1.64, 0.123, 0.131, 0.012], [1.7, 0.128, 0.138, 0.014], [1.78, 0.128, 0.138, 0.012], [1.84, 0.113, 0.123, 0.006], [1.88, 0.08, 0.09, 0], [1.9, 0.03, 0.035, 0]], 10, { bottom: true, top: true }), metalS, look.armor, H);
       k.add(cube(0.17, 0.02, 0.03), MATTE, SLIT, H, 0, 1.755, 0.146);
+      if (look.glowEyes !== undefined) for (const s of [-1, 1]) k.add(ball(5, 3), GLOW, look.glowEyes, H, s * 0.036, 1.755, 0.161, 0, 0, 0, 0.015, 0.007, 0.004);
       k.add(cube(0.022, 0.13, 0.03), metalS, shade(look.armor, 1.15), H, 0, 1.69, 0.145, -0.08);
       k.add(new THREE.TorusGeometry(0.135, 0.016, 4, 10, PI), METAL, look.accent, H, 0, 1.745, 0.0, 0, PI / 2, 0, 0.6, 1, 1);
       k.add(loft([[1.775, 0.134, 0.144, 0.012], [1.797, 0.133, 0.143, 0.011]], 10), metalS, shade(look.armor, 0.85), H);
@@ -854,7 +951,7 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
       const shell = hoodShell(1);
       k.add(inside(hoodShell(0.94)), MATTE, shade(look.cloth, 0.22), H);
       k.add(shell, MATTE, look.cloth, H);
-      k.add(loft([[1.38, 0.26, 0.175, -0.008], [1.47, 0.245, 0.16, -0.002], [1.55, 0.19, 0.15, -0.01], [1.6, 0.16, 0.17, -0.02]], 12), MATTE, shade(look.cloth, 0.9), j.chest);
+      k.add(loft([[1.38, 0.26 * d.B, 0.175 * d.BZ, -0.008], [1.47, 0.245 * d.B, 0.16 * d.BZ, -0.002], [1.55, 0.19 * d.B, 0.15 * d.BZ, -0.01], [1.6, 0.16, 0.17, -0.02]], 12), MATTE, shade(look.cloth, 0.9), j.chest);
       k.add(new THREE.CylinderGeometry(1, 1, 1, 8), METAL, look.accent, j.chest, 0, 1.5, 0.154, PI / 2 - 0.1, 0, 0, 0.026, 0.008, 0.026);
       k.add(ball(5, 4), METAL, shade(look.accent, 0.6), j.chest, 0, 1.5, 0.161, 0, 0, 0, 0.011, 0.011, 0.007);
       if (look.ears) ears(skin);
@@ -908,9 +1005,29 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
     }
     k.add(cube(0.03, 0.02, 0.12), MATTE, shade(skin, 0.75), H, 0, 1.85, 0.0);
   }
+  if (look.tusks) {
+    // Up from the jaw beside the nose, or out through a great helm's mouth guard.
+    const helm = look.head === 'helmet';
+    for (const s of [-1, 1]) {
+      const path = helm ? [[s * 0.04, 1.632, 0.128], [s * 0.05, 1.668, 0.16], [s * 0.06, 1.712, 0.172]] : [[s * 0.034, 1.66, 0.1], [s * 0.043, 1.694, 0.122], [s * 0.05, 1.728, 0.13]];
+      k.add(tube(path, [helm ? 0.015 : 0.0125, helm ? 0.011 : 0.009, 0], 5), MATTE, 0xeee2c4, H);
+    }
+  }
+  if (look.halo !== undefined) {
+    // Floating clear of whatever is on the head, its back tipped up toward the camera; a wizard's
+    // hat wears it round the crown (above the tip it would leave the frame).
+    const hat = look.head === 'hat';
+    const y = hat ? 1.99 : look.head === 'bare' || look.head === 'skull' ? 1.93 : look.head === 'hood' || look.head === 'plume' ? 2.0 : 1.97;
+    const z = hat ? -0.04 : -0.03;
+    const r = hat ? 0.15 : 0.115;
+    const halo = pivot(H, 0, y - 1.6, z);
+    halo.userData.y = halo.position.y;
+    j.halo = halo;
+    k.add(new THREE.TorusGeometry(1, 0.085, 4, 24), GLOW, look.halo, halo, 0, y, z, PI / 2 + 0.2, 0, 0, r, r, r);
+  }
 }
 
-function buildCape(k: Kit, j: Joints, color: number, clasp: number, d: Dims) {
+function buildCape(k: Kit, j: Joints, color: number, clasp: number, d: Dims, ragged = false) {
   const z0 = -0.165 * d.BZ;
   const c0 = pivot(j.chest, 0, 0.2, z0);
   const c1 = pivot(c0, 0, -0.29, 0);
@@ -924,9 +1041,10 @@ function buildCape(k: Kit, j: Joints, color: number, clasp: number, d: Dims) {
     const u = (c / (cols - 1)) * 2 - 1;
     const half = lerp(0.17, 0.33, Math.sqrt(t)) * d.B;
     const bow = lerp(0.12, 0.05, t);
-    // Pleats down the length and a ragged hem.
+    // Pleats down the length and a ragged hem (torn to tatters on the dead).
     const pleat = 0.018 * t * Math.cos(u * PI * 3.5);
-    const y = 1.53 - t * 1.17 + (t === 1 ? 0.045 * Math.sin(u * 9 + 1) : 0);
+    const hem = ragged ? 0.13 * Math.abs(Math.sin(u * 6.5 + 2)) + 0.04 * Math.sin(u * 17) + 0.03 : 0.045 * Math.sin(u * 9 + 1);
+    const y = 1.53 - t * 1.17 + (t === 1 ? hem : 0);
     return [u * half, y, z0 + bow * u * u - bow + pleat + (t === 0 ? 0.02 : 0)];
   }, 0.014);
   const w = chain([c0, c1, c2, c3], [-1.24, -0.95, -0.66], 0.1, down);
@@ -984,6 +1102,57 @@ function buildWings(k: Kit, j: Joints, skin: number) {
     k.add(tube([E, F1], [0.014, 0.004], 4), MATTE, strut, tip);
     k.add(tube([E, F2], [0.014, 0.004], 4), MATTE, strut, ww);
     k.add(spike(0.022, 0.08, 4), MATTE, 0x2a2420, tip, E[0], E[1] + 0.05, E[2], 0, 0, -s * 0.3);
+  }
+}
+
+function buildFeatherWings(k: Kit, j: Joints, color: number) {
+  // The same joints as membrane wings (so they fold, open and beat the same way), dressed in feathers.
+  const wings = pivot(j.chest, 0, 0.12, -0.15);
+  wings.userData.feather = true;
+  j.wings = wings;
+  const edge = shade(color, 0.9);
+  for (const s of [1, -1]) {
+    const root = pivot(wings, s * 0.07, 0, -0.02);
+    const tip = pivot(root, s * 0.55, 0.32, -0.08);
+    root.userData.side = s;
+    j.wing.push(root, tip);
+    const ww: Skin = (x) => {
+      const t = smooth(0.4, 0.75, Math.abs(x));
+      put(root, 1 - t);
+      put(tip, t);
+    };
+    // Bind pose (spread), model space: the leading edge from the shoulder up to the wrist and out to the tip.
+    const R = [s * 0.07, 1.44, -0.17];
+    const M = [s * 0.34, 1.66, -0.21];
+    const E = [s * 0.62, 1.78, -0.25];
+    const T = [s * 1.16, 1.84, -0.3];
+    k.add(tube([R, M, E], [0.042, 0.036, 0.03], 6), MATTE, edge, ww);
+    k.add(tube([E, [s * 0.9, 1.83, -0.28], T], [0.03, 0.022, 0.008], 5), MATTE, edge, ww);
+    /** A feather from (x, y) pointing at angle a (0 = straight out from the body, -PI/2 = down). */
+    const feather = (x: number, y: number, a: number, len: number, w: number, tone: number, dz: number) => {
+      const dx = s * Math.cos(a), dy = Math.sin(a);
+      const cx = x + dx * len * 0.5, cy = y + dy * len * 0.5;
+      k.add(shard(), MATTE, shade(color, tone), ww, cx, cy, -0.17 - 0.1 * Math.abs(cx) + dz, 0, 0, Math.atan2(dy, dx) - PI / 2, w * 0.5, len * 0.5, 0.012);
+    };
+    const along = (a: number[], b: number[], t: number) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
+    // Primaries fan from the hand, longest at the tip.
+    for (let i = 0; i < 6; i++) {
+      const t = i / 5;
+      const [x, y] = along(E, T, t);
+      feather(x, y - 0.02, lerp(-1.25, -0.32, t), lerp(0.6, 0.7, t), 0.11, lerp(0.95, 0.88, t), 0.004);
+    }
+    // Secondaries hang from the arm.
+    for (let i = 0; i < 7; i++) {
+      const t = i / 6;
+      const [x, y] = along(t < 0.5 ? R : M, t < 0.5 ? M : E, t < 0.5 ? t * 2 : t * 2 - 1);
+      feather(x, y - 0.02, lerp(-1.7, -1.35, t), lerp(0.42, 0.62, t), 0.12, 0.97, 0);
+    }
+    // Coverts: a shorter layer over the roots, on the back of the wing.
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8;
+      const [x, y] = t < 0.6 ? along(R, E, t / 0.6) : along(E, T, (t - 0.6) / 0.4);
+      feather(x, y - 0.015, lerp(-1.6, -0.75, t), lerp(0.24, 0.3, t), 0.11, 1.04, -0.014);
+    }
   }
 }
 
@@ -1696,13 +1865,24 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   g[LRZ] -= 0.05 * prof.heavy;
   g[ALZ] += 0.1 * prof.heavy;
   g[ARZ] -= 0.1 * prof.heavy;
-  g[SPX] += 0.5 * prof.hunch;
-  g[CHX] += 0.35 * prof.hunch;
-  g[HDX] -= 0.7 * prof.hunch;
-  g[KLX] += 0.3 * prof.hunch;
-  g[KRX] += 0.3 * prof.hunch;
-  g[LLX] -= 0.15 * prof.hunch;
-  g[LRX] -= 0.15 * prof.hunch;
+  // A shambler half straightens to swing, so its moves still read.
+  const hunch = prof.hunch * (prof.shamble > 0 ? 1 - 0.5 * s.act : 1);
+  g[SPX] += 0.5 * hunch;
+  g[CHX] += 0.35 * hunch;
+  g[HDX] -= 0.7 * hunch;
+  g[KLX] += 0.3 * hunch;
+  g[KRX] += 0.3 * hunch;
+  g[LLX] -= 0.15 * hunch;
+  g[LRX] -= 0.15 * hunch;
+  // Shambling: the head lolls to one side and idle arms reach forward.
+  if (prof.shamble > 0) {
+    const sh = prof.shamble * (1 - s.act) * (1 - s.aim) * (1 - s.block);
+    g[HDZ] += 0.16 * prof.shamble;
+    g[ALX] -= 0.5 * sh;
+    g[ARX] -= 0.3 * sh;
+    g[FLX] -= 0.35 * sh;
+    g[FRX] -= 0.2 * sh;
+  }
   // Fury: an aggressive, coiled stance.
   const f = s.fury;
   if (f > 0.001) {
@@ -1981,22 +2161,39 @@ function secondary(s: State, a: AnimState, o: Float32Array, dt: number, snap: bo
     }
   }
   if (j.wings) {
-    const on = j.wings.userData.enabled !== false;
+    const w = j.wings.userData;
+    const on = w.enabled !== false;
     j.wings.visible = on;
     j.wings.scale.setScalar(on ? 1 : 1e-4);
-    s.wing += ((a.flying ? 1 : 0) - s.wing) * damp(5, dt);
+    // Open in flight, spread for a single beat (an angel's flap), held wide and nearly still in a glide (soar).
+    s.wing += ((a.flying || w.spread ? 1 : 0) - s.wing) * damp(w.spread ? 10 : 5, dt);
     const open = s.wing;
-    const flap = Math.sin(t * (open > 0.5 ? 7 : 1.6));
+    const soar = !!w.soar;
+    const flap = Math.sin(t * (open > 0.5 ? (soar ? 2.4 : 7) : 1.6));
     for (let i = 0; i < 2; i++) {
       const root = j.wing[i * 2];
       const tip = j.wing[i * 2 + 1];
       const sd = root.userData.side as number;
-      const beat = open * flap * (0.75 - 0.3 * s.mv);
+      const beat = open * flap * (soar ? 0.12 : 0.75 - 0.3 * s.mv);
+      if (w.feather) {
+        // Feathered wings fold by gathering in toward the spine (a squash along the arm keeps every
+        // feather hanging down), swept back a little, the hand drooping to the knees.
+        root.rotation.set(lerp(-0.1, 0, open), sd * lerp(0.7, 0.12, open), sd * (lerp(0.1, 0.1, open) + beat + (1 - open) * 0.02 * flap));
+        root.scale.set(lerp(0.48, 1, open), lerp(1.12, 1, open), 1);
+        tip.rotation.set(0, sd * lerp(0.25, 0.05, open), sd * (lerp(-0.3, 0, open) + open * (soar ? 0.1 : 0.4) * Math.sin(t * (soar ? 2.4 : 7) - 0.9)));
+        tip.scale.setScalar(1);
+        continue;
+      }
       // Folded: swept back and gathered small; open: spread and beating.
       root.rotation.set(lerp(-0.3, 0, open), sd * lerp(1.15, 0.12, open), sd * (lerp(-0.85, 0.1, open) + beat + (1 - open) * 0.03 * flap));
       root.scale.setScalar(lerp(0.72, 1, open));
       tip.rotation.set(0, sd * lerp(0.7, 0.05, open), sd * open * 0.45 * Math.sin(t * 7 - 0.9));
       tip.scale.setScalar(lerp(0.32, 1, open));
     }
+  }
+  if (j.halo) {
+    // The halo bobs and sways gently over the head.
+    j.halo.position.y = j.halo.userData.y + 0.012 * Math.sin(t * 2.1);
+    j.halo.rotation.z = 0.05 * Math.sin(t * 1.3);
   }
 }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, WEAPONS, type DamageElement } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
-import { addXp, dracoFlightHours, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
+import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -448,6 +448,7 @@ export class Game {
       draw: o.draw,
       heroHp: this.player.hp / this.player.maxHp,
       targetHp: e.hp / e.maxHp,
+      warCry: this.player.warCry > 0,
     });
     this.damageEnemy(e, r.amount, element, { source: 'player', tags: r.tags });
     if (kind === 'bow' && c.skills['hunters-mark']) e.status.marked = 8;
@@ -524,6 +525,13 @@ export class Game {
     const credited = this.coop.credited(info);
     if (credited) {
       const c = this.player.c;
+      // The Hungry Dead: a zombie feeds on every kill it took part in.
+      const fed = killHeal(c) * this.player.maxHp;
+      if (fed > 0 && this.player.alive && this.player.hp < this.player.maxHp) {
+        this.player.heal(fed);
+        this.fx.damageNumber(this.player.center().add(new THREE.Vector3(0, 0.9, 0)), `+${Math.round(fed)}`, 'heal');
+        this.fx.emit(this.player.center(), { color: 0x9cff60, count: 12, speed: 1.5, life: 0.7, up: 1.5 });
+      }
       const def = bossDef ? null : ENEMIES[info.id as EnemyId];
       const level = info.lv ?? (bossDef ? bossDef.level : def!.level);
       c.gold += info.gold;
@@ -658,7 +666,7 @@ export class Game {
       this.hud.toast('You are bleeding.', 'warn');
       this.addPlayerBleed();
     }
-    if (p.hp <= 0) this.playerDied();
+    if (p.hp <= 0 && !p.notDeadYet(this)) this.playerDied();
   }
 
   private bleedTimer = 0;
@@ -698,6 +706,7 @@ export class Game {
     p.mana = p.maxMana;
     p.refillStamina();
     p.soulOrPower = false;
+    p.c.riseSpent = false;
     p.sailing = false;
     p.flying = false;
     p.boat = null;
@@ -1097,7 +1106,7 @@ export class Game {
     if (pr.powerShot && !e.aware) {
       // Power Shot: 6x damage while undetected, and 0.5 NDP to everything nearby.
       const p = this.player;
-      const r = outgoingDamage(p.c, { base: pr.damage, kind: 'bow', element: pr.element, targetDark: e.dark, undetected: true, fromBehind: false, draw: pr.draw, heroHp: p.hp / p.maxHp, targetHp: e.hp / e.maxHp });
+      const r = outgoingDamage(p.c, { base: pr.damage, kind: 'bow', element: pr.element, targetDark: e.dark, undetected: true, fromBehind: false, draw: pr.draw, heroHp: p.hp / p.maxHp, targetHp: e.hp / e.maxHp, warCry: p.warCry > 0 });
       this.damageEnemy(e, r.amount * pr.powerShot.multiplier, pr.element, { source: 'player', tags: ['power'] });
       this.fx.ring(e.center(), pr.powerShot.radius, 0xffd070, 0.5);
       this.hud.toast('POWER SHOT!', 'skill');

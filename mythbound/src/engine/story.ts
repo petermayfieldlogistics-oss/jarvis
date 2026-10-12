@@ -1,12 +1,19 @@
 // Conversations and everything the hero can interact with.
 
-import { ANCIENT_GLYPH, CLASSES, RACES, ROLES, SPELLS, WEAPONS, type SpellId } from '../data/defs';
+import { ANCIENT_GLYPH, CLASSES, RACES, ROLES, SPELLS, WEAPONS, type RaceId, type SpellId } from '../data/defs';
 import { BOSSES, ITEMS, LORE, PAGES, QUESTS, SHRINES, TOMES, TRIALS, type QuestId } from '../data/world';
-import { canLearnSpell, dracoFlightHours, learnSpell, MAX_WEAPON_LEVEL, upgradeCost } from '../rules/character';
+import { canLearnSpell, dracoFlightHours, learnSpell, lightHealMultiplier, MAX_WEAPON_LEVEL, shopPrice, upgradeCost } from '../rules/character';
 import { canWield, isLightSealed } from '../rules/combat';
 import type { DialogOption, DialogSpec } from '../ui/dialog';
 import type { Game } from './game';
 import type { Interactable } from './world';
+
+/** What the chronicler mutters on meeting the newer races. */
+const CHRONICLER_ASIDE: Partial<Record<RaceId, string>> = {
+  zombie: ' A zombie. Could you, umm, not drip on the pages?',
+  angelic: ' An angel? The glow is lovely. Very good for reading.',
+  orc: ' An orc! Please mind the ink. And the desk. And me.',
+};
 
 export class Story {
   constructor(private g: Game) {}
@@ -209,9 +216,10 @@ export class Story {
         return this.open({
           title: 'Brann',
           subtitle: 'Smith',
-          text: smith
+          text: (smith
             ? "Another smith! Use my anvil whenever you like, half the usual cost. Some say a smith can even wield the Hammer of Hephaestus."
-            : "Need an edge? I can improve your weapons, for embers and Ember Ore. A blacksmith would do it for half, mind.",
+            : "Need an edge? I can improve your weapons, for embers and Ember Ore. A blacksmith would do it for half, mind.") +
+            (c.raceId === 'orc' ? "\n\nAn orc, eh? Mind the doorframe. Your lot never bring a blade back with an edge left on it… good for business." : ''),
           options: opts([
             { label: 'Upgrade my weapons', action: () => this.forge(true) },
             this.questOption('ore', 'Need anything?', 'Here is your Ember Ore.', 'Ember Ore'),
@@ -230,12 +238,17 @@ export class Story {
               ? `You have made a deal with the Devil (${c.devilDeals} so far). Your light is sealed for now. Every deal seals it longer, and the fourth seals it forever. Please… be careful.`
               : knight
                 ? 'A Knight of the Light! The chapel is yours. May your light never be sealed.'
-                : 'Be welcome in the light. If you hear of the Deal with the Devil: every deal seals your light magic longer. The fourth, forever.',
+                : c.raceId === 'angelic'
+                  ? 'Oh! Wings, and a halo… the old books spoke of your kind. Stay close to your friends, child, and your light will mend them.'
+                  : c.raceId === 'zombie'
+                    ? 'Oh! Oh my. You are… not quite alive, are you? The light still welcomes you, child. It just has to work a little harder.'
+                    : 'Be welcome in the light. If you hear of the Deal with the Devil: every deal seals your light magic longer. The fourth, forever.',
           options: opts([
             { label: 'Pray (restore health)', action: () => {
-              g.player.hp = g.player.maxHp;
+              // The light mends the dead less well.
+              g.player.heal((g.player.maxHp - g.player.hp) * lightHealMultiplier(c));
               g.fx.pillar(g.player.pos.clone(), 0xfff0b0, 1.5);
-              g.hud.toast('The light restores you.');
+              g.hud.toast(lightHealMultiplier(c) < 1 ? 'The light mends you… a little. It stings.' : 'The light restores you.');
             } },
             this.questOption('dead', 'Can I help the chapel?', 'The restless dead are at peace.', 'Restless dead'),
           ]),
@@ -246,7 +259,11 @@ export class Story {
         return this.open({
           title: 'Quill',
           subtitle: 'Merchant',
-          text: `Embers for goods, goods for embers. You have ${c.gold} embers.`,
+          text: c.raceId === 'zombie'
+            ? `Phew! What is that smell? Oh. It's you. Fine, I'll trade with the dead, but the dead pay extra. You have ${c.gold} embers.`
+            : c.raceId === 'orc'
+              ? `Embers for goods, goods for embers. And please, don't lean on the shelves. You have ${c.gold} embers.`
+              : `Embers for goods, goods for embers. You have ${c.gold} embers.`,
           options: opts([
             this.buy('20 arrows', 30, () => (c.arrows.wood += 20)),
             this.buy('2 fish', 25, () => (c.items.fish = (c.items.fish ?? 0) + 2)),
@@ -279,7 +296,7 @@ export class Story {
           text: this.chronicle(
             g.state.flags.eyesSeen
               ? 'You… you looked at them, didn’t you? Umm. So I was paid to not ask questions, and just write. Sooo I’m just gonna ignore that.'
-              : `Oh! A hero. ${RACES[c.raceId].name}, ${CLASSES[c.classId].name}, ${ROLES[c.roleId].name}… let me write that down. Seriously, who comes up with these things? I lost some pages of an old manuscript. The wind took them. I'm sure it was the wind.`,
+              : `Oh! A hero. ${RACES[c.raceId].name}, ${CLASSES[c.classId].name}, ${ROLES[c.roleId].name}… let me write that down.${CHRONICLER_ASIDE[c.raceId] ?? ''} Seriously, who comes up with these things? I lost some pages of an old manuscript. The wind took them. I'm sure it was the wind.`,
           ),
           options: opts([
             this.questOption('pages', 'I can look for your pages.', 'I found your pages.', 'Missing pages'),
@@ -303,8 +320,9 @@ export class Story {
     }
   }
 
-  private buy(label: string, cost: number, give: () => void): DialogOption {
+  private buy(label: string, base: number, give: () => void): DialogOption {
     const c = this.c;
+    const cost = shopPrice(c, base);
     return {
       label: `Buy ${label} (${cost})`,
       disabled: c.gold < cost,
@@ -341,6 +359,8 @@ export class Story {
     p.mana = p.maxMana;
     p.refillStamina();
     p.c.flasks = p.c.flasksMax;
+    if (p.c.raceId === 'zombie' && p.c.riseSpent) g.hud.toast('Rested, the grave lets go of you again: Not Dead Yet is ready.', 'skill');
+    p.c.riseSpent = false;
     if (p.soulOrPower) {
       p.soulOrPower = false;
       g.hud.toast('Your soul is your own again. What you lost stays lost.');
@@ -535,6 +555,13 @@ export class Story {
       text: this.chronicle(
         `${c.name} wakes beside the shrine of Hearthhold. Far to the north, beyond the smoking peak, the Giant still holds the world in its palm.\n\n` +
           'Orrin, Keeper of the Archive (west side of the square), knows of the six trials. The townsfolk all have work for a hero.\n\n' +
+          (c.raceId === 'angelic'
+            ? `Your wings are ready: ${touch ? 'tap ⤒' : 'press Space'} again in the air to beat them, and hold it to glide.\n\n`
+            : c.raceId === 'zombie'
+              ? 'Death has already tried once. Between rests at a shrine, it will let go of you one more time.\n\n'
+              : c.raceId === 'orc'
+                ? 'Hurt badly, an orc roars: foes nearby reel, and your blows land harder.\n\n'
+                : '') +
           (touch
             ? 'Left thumb: move (push past the ring to sprint). Right thumb: look. ⚔ attack, ⤿ roll, 🛡 block, ✦ cast, ❂ ability, 🔒 shift lock. ✋ appears when you can talk, rest or pick something up. ☰ for the menu and controls.'
             : 'WASD to move, mouse to look (click to capture it). Left click attacks, C rolls, hold Shift to sprint, tap Shift for shift lock, Q casts, R uses your ability. Esc for the menu and the full controls.'),

@@ -74,6 +74,8 @@ export function normalizeSave(data: SaveData): SaveData {
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
   normalizeCharacter(data.character);
+  // Heroes from before the zombie race have never cheated death.
+  data.character.riseSpent ??= false;
   return data;
 }
 

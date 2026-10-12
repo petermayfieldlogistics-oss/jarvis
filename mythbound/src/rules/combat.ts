@@ -1,5 +1,5 @@
 import { SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId, type SpellId, type ComboDef, type Element } from '../data/defs';
-import { rank, type Character } from './character';
+import { ANGELIC, ORC, ZOMBIE, rank, type Character } from './character';
 
 // -------------------------------------------------------- warrior fury --
 
@@ -111,6 +111,8 @@ export interface HitContext {
   /** The hero's and the target's health, 0-1 (Last Stand, Executioner). */
   heroHp?: number;
   targetHp?: number;
+  /** An orc's War Cry is still ringing. */
+  warCry?: boolean;
 }
 
 export interface HitResult {
@@ -133,6 +135,7 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
     if (weapon?.kind === 'axe') dmg *= 1 + 0.12 * rank(c, 'heavy-hand');
     if (rank(c, 'blade-master')) dmg *= 1.15;
     if (rank(c, 'berserker')) dmg *= 1.15;
+    if (c.raceId === 'orc') dmg *= ORC.melee;
   }
   if (hit.kind === 'bow') {
     if (c.classId === 'ranger') dmg *= 1.3;
@@ -146,6 +149,13 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
   }
   if (hit.kind === 'spell') {
     dmg *= spellPowerMultiplier(c, hit.element);
+  } else if (hit.element === 'light' && c.raceId === 'angelic') {
+    // Spells get this through spellPowerMultiplier; arrows of light here.
+    dmg *= ANGELIC.lightPower;
+  }
+  if (hit.warCry && hit.kind !== 'spell') {
+    dmg *= ORC.warCry.damage;
+    tags.push('warcry');
   }
   if (hit.undetected) dmg *= 1 + 0.15 * rank(c, 'ambusher');
   if (hit.targetHp !== undefined && hit.targetHp < 0.3) dmg *= 1 + 0.15 * rank(c, 'executioner');
@@ -173,6 +183,8 @@ export function spellPowerMultiplier(c: Character, element: DamageElement): numb
   if (c.subclassId === 'elemental' && c.wizardElement === element) m *= (1.5 + 0.1 * rank(c, 'attunement')) * (rank(c, 'elemental-avatar') ? 1.2 : 1);
   if (legendaryEquipped(c, 'staff-of-hecate')) m *= 1.4;
   if (c.classId === 'ranger' && (element === 'lightning' || element === 'wind') && rank(c, 'storm-caller')) m *= 1.2;
+  if (c.raceId === 'angelic' && element === 'light') m *= ANGELIC.lightPower;
+  if (c.raceId === 'orc') m *= ORC.spellPower;
   return m;
 }
 
@@ -190,6 +202,8 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   let dmg = amount;
   if (ctx.blocking) dmg *= 0.4;
   if (element === 'fire' && c.raceId === 'draco') dmg *= 0.5;
+  if (element === 'fire' && c.raceId === 'zombie') dmg *= ZOMBIE.fireTaken;
+  if (element === 'dark' && c.raceId === 'angelic') dmg *= ANGELIC.darkTaken;
   if (c.raceId === 'elf' && c.elfElement === element) dmg *= 0.5;
   if (c.subclassId === 'elemental' && c.wizardElement === element) dmg *= rank(c, 'elemental-ward') ? 0 : 0.5;
   if (ctx.stoneSkin) dmg *= 0.5;
@@ -197,9 +211,9 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   return Math.round(dmg);
 }
 
-/** Bleeding can't touch a warrior with Bloodsteal. */
+/** Bleeding can't touch a warrior with Bloodsteal, or a zombie (no blood to lose). */
 export function immuneToBleed(c: Character, fury: FuryState): boolean {
-  return hasBloodsteal(c, fury);
+  return c.raceId === 'zombie' || hasBloodsteal(c, fury);
 }
 
 export function bleedChance(c: Character): number {

@@ -9,7 +9,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&
 type Step = 'class' | 'subclass' | 'race' | 'role' | 'name';
 
 const CLASS_ICON: Record<ClassId, string> = { warrior: '⚔', ranger: '🏹', mage: '✦' };
-const RACE_ICON: Record<RaceId, string> = { elf: '🌿', draco: '🐉', human: '🛡', ancient: '◉' };
+const RACE_ICON: Record<RaceId, string> = { elf: '🌿', draco: '🐉', human: '🛡', zombie: '🧟', angelic: '😇', orc: '👹', ancient: '◉' };
 const ROLE_ICON: Record<RoleId, string> = { historian: '📜', blacksmith: '⚒', sailor: '⚓', darkslayer: '☠', knight: '☀', assassin: '🗡' };
 
 /** Lines from the chronicler, shown as you choose. */
@@ -57,7 +57,11 @@ export function showCreator(root: HTMLElement, onDone: (c: Character) => void, o
         if (r.secret && !unlocks.ancient) {
           return card(id, '?', '▓▓▓ ▓▓', 'A race so old its language has been lost to time.', ['It is assumed that they are humanoid.', 'In the oldest of books and scrolls…', '…there are eyes. Lots of eyes.'], false, '<div class="lock">Locked. Somewhere in the world, the eyes are waiting.</div>', true);
         }
-        return card(id, RACE_ICON[id], r.name, r.blurb, r.traits, choice.raceId === id);
+        // A zombie may shamble (the default) or stand tall.
+        const extra = id === 'zombie' && choice.raceId === 'zombie'
+          ? `<div class="elements">${[[1, 'Shamble'], [0, 'Stand tall']].map(([v, label]) => `<span class="el${(choice.hunched !== false ? 1 : 0) === v ? ' on' : ''}" data-hunch="${v}">${label}</span>`).join('')}</div>`
+          : '';
+        return card(id, RACE_ICON[id], r.name, r.blurb, r.traits, choice.raceId === id, extra);
       }).join('');
     } else if (step === 'role') {
       cards = (Object.keys(ROLES) as RoleId[]).map((id) => card(id, ROLE_ICON[id], ROLES[id].name, ROLES[id].blurb, ROLES[id].traits, choice.roleId === id)).join('');
@@ -97,7 +101,11 @@ export function showCreator(root: HTMLElement, onDone: (c: Character) => void, o
           choice.subclassId = key as SubclassId;
           if (elPick) choice.wizardElement = elPick.dataset.el as Element;
           if (key !== 'elemental') choice.wizardElement = undefined;
-        } else if (step === 'race') choice.raceId = key as RaceId;
+        } else if (step === 'race') {
+          choice.raceId = key as RaceId;
+          const hunch = (e.target as HTMLElement).closest<HTMLElement>('[data-hunch]');
+          choice.hunched = key === 'zombie' ? (hunch ? hunch.dataset.hunch === '1' : choice.hunched) : undefined;
+        }
         else if (step === 'role') choice.roleId = key as RoleId;
         render();
       }),
