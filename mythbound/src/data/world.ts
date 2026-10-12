@@ -145,7 +145,7 @@ export const BOSSES: Record<BossId, BossDef> = {
   // The elder foes: beyond the six trials, each guards a relic.
   leviathan: {
     id: 'leviathan', name: 'The Leviathan', title: 'Coil of the Abyss', model: 'serpent', hp: 2600, damage: 30, level: 12, affinity: 'water', dark: false,
-    xp: 1800, gold: 700, scale: 1, color: 0x24525e, speed: 0, attacks: ['strike', 'tail', 'breath', 'wave', 'volley', 'dive'], projectile: 'water', reward: 'leviathan-pearl',
+    xp: 1800, gold: 700, scale: 1.4, color: 0x24525e, speed: 0, attacks: ['strike', 'tail', 'breath', 'wave', 'volley', 'dive'], projectile: 'water', reward: 'leviathan-pearl',
     rage: 'The Leviathan thrashes, and the sea boils!',
   },
   'sea-queen': {
@@ -219,7 +219,7 @@ export interface LairDef {
 /** Where the hunted great foes dwell. */
 export const LAIRS: LairDef[] = [
   { id: 'hollow', name: 'Silken Hollow', boss: 'giant-spider', x: -220, z: -115, leash: 30, hint: 'Deep in Whisperwood, webs as wide as sails. Look up.' },
-  { id: 'graves', name: 'Mourner’s Rest', boss: 'reaper', x: -290, z: 160, leash: 32, night: true, hint: 'A graveyard in the Weeping Mire. The Reaper walks it after dark.' },
+  { id: 'graves', name: 'Mourner’s Rest', boss: 'reaper', x: -290, z: 140, leash: 32, night: true, hint: 'A graveyard in the Weeping Mire. The Reaper walks it after dark.' },
 ];
 
 export interface ShrineDef {
@@ -335,7 +335,7 @@ export const LORE: LoreDef[] = [
     text: 'Older than the mountain’s fire, it roosts on the far side of Molten Peak. When its throat glows, get out of the way. When it takes to the sky, watch the ground for falling fire.',
   },
   {
-    id: 'mourners', x: -276, z: 148, title: 'Mourner’s Rest',
+    id: 'mourners', x: -274, z: 126, title: 'Mourner’s Rest',
     text: 'When the moon is up, the Reaper comes to collect what the Mire owes. It steps through shadow to stand behind you, and drinks the life of any who stand too long in its gaze.',
   },
   {

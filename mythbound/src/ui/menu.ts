@@ -1,5 +1,6 @@
 import { CLASSES, COMBOS, RACES, ROLES, SPELLS, SUBCLASSES, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { EYES_RUINS, ITEMS, LORE, PAGES, QUESTS, SHRINES, TRIALS, BOSSES, type QuestId } from '../data/world';
+import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
+import { rewardName } from '../engine/bosses';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, rank, treeFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { saveSettings } from '../engine/state';
@@ -103,7 +104,7 @@ export class Menu {
         <div>Stamina <b>${maxStamina(c)}</b></div>
         <div>XP <b>${c.xp} / ${xpToNext(c.level)}</b></div>
         <div>Embers <b>${c.gold}</b></div>
-        <div>Trials <b>${this.g.state.trialsDone.length} / 6</b></div>
+        <div>Trials <b>${WEAPON_TRIALS.filter((t) => this.g.state.trialsDone.includes(t.id)).length} / ${WEAPON_TRIALS.length}</b></div>
       </div>
       ${lines.length ? `<ul class="notes">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
       <div class="cols traits">
@@ -172,9 +173,15 @@ export class Menu {
     const active = ids.filter((id) => st[id].state === 'active');
     const done = ids.filter((id) => st[id].state === 'done');
     const row = (id: QuestId) => `<div class="row${st[id].state === 'done' ? ' done' : ''}"><div><b>${esc(QUESTS[id].name)}</b> <small>${st[id].state === 'done' ? 'complete' : `${st[id].progress}/${QUESTS[id].goal}`}</small><div class="desc">${esc(QUESTS[id].description)}</div></div></div>`;
-    const trials = TRIALS.map((t) => `<div class="row${this.g.state.trialsDone.includes(t.id) ? ' done' : ''}"><div><b>${esc(t.name)}</b> <small>level ${t.level}</small><div class="desc">${esc(BOSSES[t.boss].name)} guards the ${esc(WEAPONS[BOSSES[t.boss].reward].name)}.</div></div></div>`);
+    const arena = (t: (typeof TRIALS)[number]) => `<div class="row${this.g.state.trialsDone.includes(t.id) ? ' done' : ''}"><div><b>${esc(t.name)}</b> <small>level ${t.level}</small><div class="desc">${esc(BOSSES[t.boss].name)} guards the ${esc(rewardName(BOSSES[t.boss].reward, WEAPONS))}.</div></div></div>`;
+    // The elder foes and the hunted show once someone has told you of them.
+    const elders = st.elders.state !== 'none' ? `<h3>The Elder Foes</h3>${ELDER_TRIALS.map(arena).join('')}` : '';
+    const hunts = st.hunts.state !== 'none'
+      ? `<h3>Monster Hunts</h3>${LAIRS.map((l) => `<div class="row${this.g.state.flags[`hunted-${l.boss}`] ? ' done' : ''}"><div><b>${esc(BOSSES[l.boss].name)}</b> <small>${esc(l.name)}</small><div class="desc">${esc(l.hint)}</div></div></div>`).join('')}`
+      : '';
     return `<h3>Active</h3>${active.map(row).join('') || '<p class="hint">Talk to the people of Hearthhold.</p>'}
-      <h3>The Six Trials</h3>${trials.join('')}
+      <h3>The Six Trials</h3>${WEAPON_TRIALS.map(arena).join('')}
+      ${elders}${hunts}
       ${done.length ? `<h3>Completed</h3>${done.map(row).join('')}` : ''}`;
   }
 
@@ -377,6 +384,7 @@ export class Menu {
     };
     label(0, 20, 'Hearthhold', '#d8c8a0', 5);
     for (const t of TRIALS) label(t.x, t.z, t.name.replace('Trial of ', '').replace('the ', ''), g.state.trialsDone.includes(t.id) ? '#8a8a8a' : '#ff5a40', 6);
+    if (g.state.quests.hunts.state !== 'none') for (const l of LAIRS) label(l.x, l.z, `☠ ${l.name}`, g.state.flags[`hunted-${l.boss}`] ? '#8a8a8a' : '#c080ff', 5);
     for (const s of SHRINES) if (g.state.shrinesFound.includes(s.id)) label(s.x, s.z, '', '#ffd070', 5);
     if (g.state.flags.eyesRevealed) label(EYES_RUINS.x, EYES_RUINS.z, '◉ ◉ ◉', '#60ff90', 5);
     if (g.state.lostEmbers) label(g.state.lostEmbers.x, g.state.lostEmbers.z, 'Lost embers', '#ffb040', 4);

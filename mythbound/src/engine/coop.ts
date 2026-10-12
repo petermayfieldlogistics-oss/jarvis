@@ -10,6 +10,7 @@ import { BOSSES, ENEMIES, TRIALS, type BossId, type EnemyId } from '../data/worl
 import { mainWeapon } from '../rules/combat';
 import { newAnim, type AttackStyle } from './anim';
 import { allyModel, Boss, Enemy, STATUS_KEYS, newStatus, type AllyKind, type MirrorSample, type Model } from './entities';
+import { makeBoss } from './bosses';
 import { animateHumanoid, type Rig } from './humanoid';
 import type { Hero } from './hero';
 import { buildBoat, disposeObject } from './models';
@@ -35,6 +36,8 @@ const MAX_SNAPSHOT = 70;
 const STYLES: AttackStyle[] = [
   'slash', 'slash2', 'slash3', 'overhead', 'thrust', 'spin', 'heavy', 'cast', 'bow', 'throw', 'roar',
   'bite', 'claw', 'sting', 'sweep', 'charge', 'slam', 'leap', 'stomp', 'volley', 'ring', 'summon', 'teleport', 'strikes', 'combo',
+  // The great foes' moves (appended: the indices above must not move).
+  'breath', 'gust', 'flight', 'strike', 'tail', 'dive', 'wave', 'whirlpool', 'trident', 'geyser', 'reap', 'drain', 'web',
 ];
 const STYLE_INDEX = new Map(STYLES.map((s, i) => [s, i]));
 const PET_KINDS: AllyKind[] = ['wolf', 'boar', 'scorpion', 'magma-hound', 'drake', 'imp', 'lizard'];
@@ -703,7 +706,7 @@ export class Coop {
         if (idle && known.has(e.nid) && (this.snapTick + e.nid) % 3 !== 0) continue;
         if (!known.has(e.nid)) {
           known.add(e.nid);
-          if (e instanceof Boss) fresh.push([e.nid, 'boss', e.bdef.id, g.activeTrial?.id ?? '', Math.round(e.maxHp)]);
+          if (e instanceof Boss) fresh.push([e.nid, 'boss', e.bdef.id, e.place || (g.activeTrial?.id ?? ''), Math.round(e.maxHp)]);
           else fresh.push([e.nid, e.def.id, e.levelBonus, Math.round(e.maxHp), e.summoned ? 1 : 0]);
         }
         const a = e.anim;
@@ -1018,13 +1021,13 @@ export class Coop {
     let e: Enemy;
     if (n[1] === 'boss') {
       const def = BOSSES[str(n[2]) as BossId];
-      const trial = TRIALS.find((x) => x.id === str(n[3]));
-      if (!def || !trial) return;
-      const boss = new Boss(def, { x: trial.x, z: trial.z, radius: trial.radius });
+      // A trial's boss, or a hunted foe in its lair.
+      const boss = def ? makeBoss(def, str(n[3])) : null;
+      if (!def || !boss) return;
       boss.scaleHealth(num(n[4], def.hp) / def.hp);
       boss.roarLeft = 0;
       e = boss;
-      g.boss = boss;
+      if (!def.mini) g.boss = boss;
     } else {
       const id = str(n[1]) as EnemyId;
       if (!ENEMIES[id]) return;
