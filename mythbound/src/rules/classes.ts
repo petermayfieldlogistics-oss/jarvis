@@ -151,9 +151,12 @@ export const VANISH = { seconds: 6, cooldown: 30 };
 export const vanishSeconds = (c: Character) => VANISH.seconds + (c.subclassId === 'shadow' ? 2 : 0) + 2 * rank(c, 'shadow-veil') + (has(c, 'master-thief') ? 3 : 0);
 export const vanishCooldown = (c: Character) => VANISH.cooldown * (has(c, 'escape-artist') ? 0.75 : 1);
 
-/** An ambush (the first strike out of Vanish, or on an unaware foe) multiplies a rogue's blow by this. */
+/**
+ * An ambush (the first strike out of Vanish) multiplies a rogue's blow by this,
+ * on top of the backstab that striking unseen already earns.
+ */
 export function ambushPower(c: Character): number {
-  return (c.subclassId === 'shadow' ? 2.5 : 2) * (1 + 0.2 * rank(c, 'night-blade')) * (has(c, 'living-shadow') ? 1.25 : 1);
+  return (c.subclassId === 'shadow' ? 1.5 : 1.3) * (1 + 0.2 * rank(c, 'night-blade')) * (has(c, 'living-shadow') ? 1.25 : 1);
 }
 
 /** Assassinate: an ambush on a foe this badly hurt kills it outright. */

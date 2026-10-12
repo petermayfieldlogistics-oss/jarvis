@@ -23,7 +23,7 @@ describe('new weapons', () => {
   it('keeps class-only weapons to their class', () => {
     const w = createCharacter(choice());
     expect(canWield(w, 'iron-greatsword').ok).toBe(true);
-    expect(canWield(w, 'willow-wand')).toMatchObject({ ok: false, reason: 'Only a Mage can wield the Willow Wand.' });
+    expect(canWield(w, 'willow-wand')).toMatchObject({ ok: false, reason: 'Only a Mage or Sorcerer can wield the Willow Wand.' });
     expect(canWield(mage(), 'battle-axe').ok).toBe(false);
     expect(canWield(mage(), 'rune-circle').ok).toBe(true);
     // Anyone can play an instrument or throw knives.

@@ -1,7 +1,7 @@
 import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
 import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
 import { rewardName } from '../engine/bosses';
-import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treeFor, xpToNext } from '../rules/character';
+import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treesFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCost, type NodeView } from '../rules/skills';
 import { questLines, trackedId } from '../engine/questlog';
@@ -29,6 +29,8 @@ export class Menu {
   private pickSpell: SpellId | null = null;
   /** The skill node whose details show beside the tree. */
   private pickNode: string | null = null;
+  /** Which of the hero's trees the Skills tab shows (the newer classes have a class tree and a subclass tree). */
+  private treeTab = 0;
   /** The reset button waits for a second tap. */
   private respecArmed = false;
   private coopCode = '';
@@ -148,8 +150,14 @@ export class Menu {
   /** The class's skill tree: tiers as rows, prerequisites as lines, the picked node's ranks beside it. */
   private skills(): string {
     const c = this.g.player.c;
-    const treeId = treeFor(c);
+    const ids = treesFor(c);
+    this.treeTab = Math.min(this.treeTab, ids.length - 1);
+    const treeId = ids[this.treeTab];
     const tree = TREES[treeId];
+    // A point spent in either tree counts against the same pool; each tree opens its own tiers.
+    const tabs = ids.length > 1
+      ? `<div class="streetabs">${ids.map((id, i) => `<button data-tree="${i}" class="${i === this.treeTab ? 'on' : ''}">${esc(TREES[id].name)}<small>${pointsSpent(c, id)} spent</small></button>`).join('')}</div>`
+      : '';
     const views = tree.nodes.map((n) => nodeView(c, n, treeId));
     const pick = views.find((v) => v.node.id === this.pickNode) ?? views.find((v) => v.ready) ?? views[0];
     this.pickNode = pick.node.id;
@@ -175,6 +183,7 @@ export class Menu {
     const cost = respecCost(c);
     const resetLabel = this.respecArmed ? `Tap again to reset${cost ? ` (${cost} embers)` : ''}` : `Reset skills (${cost ? `${cost} embers` : 'free'})`;
     return `<div class="skilltab">
+      ${tabs}
       <div class="shead"><h3>${esc(tree.name)}</h3><div class="spts${c.skillPoints ? ' have' : ''}"><b>${c.skillPoints}</b> point${c.skillPoints === 1 ? '' : 's'} to spend <small>· ${spent} spent</small></div></div>
       <div class="sbody">
         <div class="stree" style="--rows:${rows}">
@@ -184,7 +193,7 @@ export class Menu {
         ${this.skillDetail(pick)}
       </div>
       <div class="sfoot"><button data-act="respec" class="${this.respecArmed ? 'armed' : ''}" ${!spent || c.gold < cost ? 'disabled' : ''}>${resetLabel}</button>
-        <p class="hint">A point every level, and a bonus point every 5 levels. Deeper tiers open as you spend points in the tree, and cost more per rank. The first reset is free.</p></div>
+        <p class="hint">A point every level, and a bonus point every 5 levels. Deeper tiers open as you spend points in the tree, and cost more per rank.${ids.length > 1 ? ' Your class and subclass trees share your points.' : ''} The first reset is free.</p></div>
       <h3>Milestones</h3>
       <div class="miles">${MILESTONES.map((m) => `<div class="mile${c.level >= m.level ? ' on' : ''}"><b>★ ${m.level}</b><span>${esc(m.name)}<small>${esc(m.text)}</small></span></div>`).join('')}</div>
     </div>`;
@@ -194,7 +203,7 @@ export class Menu {
     const c = this.g.player.c;
     const n = v.node;
     const ranks = Array.from({ length: n.maxRank }, (_, i) => `<li class="${i < v.rank ? 'on' : i === v.rank ? 'next' : ''}">${n.maxRank > 1 ? `<b>Rank ${i + 1}</b> ` : ''}${esc(rankText(n, i + 1))}</li>`).join('');
-    const req = n.req?.map((id) => `${esc(findNode(treeFor(c), id)?.name ?? id)}${rank(c, id) ? ' ✔' : ''}`).join(', ');
+    const req = n.req?.map((id) => `${esc(treesFor(c).map((t) => findNode(t, id)).find(Boolean)?.name ?? id)}${rank(c, id) ? ' ✔' : ''}`).join(', ');
     const status = v.maxed ? '<p class="sok">Mastered.</p>' : v.reason ? `<p class="swarn">🔒 ${esc(v.reason)}.</p>` : !v.ready ? `<p class="swarn">Needs ${v.cost} skill point${v.cost === 1 ? '' : 's'}.</p>` : '';
     return `<div class="sdetail">
       <div class="sdh"><span class="si">${n.icon}</span><div><b>${esc(n.name)}</b><small>Tier ${ROMAN[n.tier - 1]} · ${v.cost} point${v.cost === 1 ? '' : 's'} a rank · rank ${v.rank}/${n.maxRank}</small></div></div>
@@ -219,7 +228,10 @@ export class Menu {
     });
     const combos = canCombine(c)
       ? `<h3>Combinations</h3><p class="hint">Turn on Combine (G / ⊕), then cast: the selected spell joins the one in the next slot.</p>${COMBOS.filter((k) => k.spells.every((s) => c.knownSpells.includes(s))).map((k) => `<div class="row"><div><b>${esc(k.name)}</b> <small>${esc(SPELLS[k.spells[0]].name)} + ${esc(SPELLS[k.spells[1]].name)}</small><div class="desc">${esc(k.description)}</div></div></div>`).join('')}`
-      : c.classId === 'mage' ? '<p class="hint">At level 3 you can combine two spells into one.</p>' : '';
+      : c.classId === 'mage' ? '<p class="hint">At level 3 you can combine two spells into one.</p>'
+        : c.classId === 'monk' ? '<p class="hint">Techniques spend chi (your mana). Every blow that lands brings some back.</p>'
+          : c.classId === 'sorcerer' ? '<p class="hint">Hold cast on a channelled spell to keep its beam flowing; it drains mana while held.</p>'
+            : c.classId === 'rogue' ? '<p class="hint">Tricks spend your mana. Vanish (R) first, and your next strike is an ambush.</p>' : '';
     return `<h3>Spell bar</h3><div class="sslots">${slots}</div><p class="hint">Tap cast for the main form; hold it for the alternate (Inferno: ring of fire, Way of the Wind: slowing gale, Deal with the Devil: lock on to take a single foe).</p><h3>Known spells</h3>${list.join('')}${combos}`;
   }
 
@@ -343,6 +355,13 @@ export class Menu {
       b.addEventListener('click', () => {
         c.mainHand = Number(b.dataset.equip);
         g.player.equip();
+        this.render();
+      }),
+    );
+    this.el.querySelectorAll<HTMLButtonElement>('[data-tree]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.treeTab = Number(b.dataset.tree);
+        this.pickNode = null;
         this.render();
       }),
     );

@@ -5,7 +5,7 @@
 // own game, and characters, items and progress stay on each player's device.
 
 import * as THREE from 'three';
-import { RUNES, WEAPONS, type ClassId, type DamageElement, type RaceId, type RoleId, type RuneId } from '../data/defs';
+import { RUNES, WEAPONS, type ClassId, type DamageElement, type RaceId, type RoleId, type RuneId, type SubclassId } from '../data/defs';
 import { SONG, SONGS, type SongId } from '../rules/weapons';
 import { BOSSES, ENEMIES, TRIALS, type BossId, type EnemyId } from '../data/world';
 import { mainWeapon } from '../rules/combat';
@@ -16,7 +16,7 @@ import { animateHumanoid, type Rig } from './humanoid';
 import type { Hero } from './hero';
 import { buildBoat, disposeObject } from './models';
 import { DEFAULT_SERVER, Net, type ServerMsg } from './net';
-import { attachGear, BLADE, buildPlayerRig, ELEMENT_COLOR, poseBowString, RAGE_RED, TIMING } from './player';
+import { attachGear, BLADE, buildPlayerRig, ELEMENT_COLOR, limbTrail, poseBowString, RAGE_RED, TIMING } from './player';
 import { WATER_LEVEL } from './terrain';
 import type { Game, ProjectileKind, ProjectileSpec } from './game';
 
@@ -41,12 +41,16 @@ const STYLES: AttackStyle[] = [
   'breath', 'gust', 'flight', 'strike', 'tail', 'dive', 'wave', 'whirlpool', 'trident', 'geyser', 'reap', 'drain', 'web',
   // Added later: new entries go on the end so indexes stay stable.
   'cleave', 'strum', 'song', 'blow',
+  // The Monk, the Sorcerer and the Rogue.
+  'jab', 'cross', 'kick', 'palm', 'flurry', 'meditate', 'cyclone', 'channel', 'parry',
 ];
 const STYLE_INDEX = new Map(STYLES.map((s, i) => [s, i]));
-const PET_KINDS: AllyKind[] = ['wolf', 'boar', 'scorpion', 'magma-hound', 'drake', 'imp', 'lizard'];
+const PET_KINDS: AllyKind[] = ['wolf', 'boar', 'scorpion', 'magma-hound', 'drake', 'imp', 'lizard', 'shade'];
 const PROJECTILES = new Set<ProjectileKind>(['arrow', 'fireball', 'orb', 'water', 'bolt', 'axe', 'knife', 'wand']);
 const ELEMENTS = new Set<DamageElement>(['fire', 'water', 'wind', 'earth', 'physical', 'lightning', 'dark', 'light', 'true']);
-const CLASSES = new Set<ClassId>(['warrior', 'ranger', 'mage']);
+const CLASSES = new Set<ClassId>(['warrior', 'ranger', 'mage', 'monk', 'sorcerer', 'rogue']);
+/** Subclasses that change how a hero looks (the newer classes dress for their path). */
+const LOOK_SUBCLASSES = new Set<SubclassId>(['ironfist', 'windwalker', 'darkmage', 'lightmage', 'shadow', 'duelist']);
 const RACES = new Set<RaceId>(['elf', 'draco', 'human', 'zombie', 'angelic', 'orc', 'ancient']);
 const ROLES = new Set<RoleId>(['historian', 'blacksmith', 'sailor', 'darkslayer', 'knight', 'assassin']);
 
@@ -94,6 +98,8 @@ interface HeroSample {
   style: AttackStyle;
   draw: number;
   rolling: number;
+  /** What the roll is: a roll, a dash, a backflip or an air flip (AnimState.rollKind). */
+  rollKind: number;
   fury: number;
   flags: number;
 }
@@ -118,6 +124,7 @@ export class RemoteHero implements Hero {
   crouching = false;
   roleId: RoleId = 'historian';
   classId: ClassId = 'warrior';
+  subclassId: SubclassId | null = null;
   raceId: RaceId = 'human';
   hp = 100;
   maxHp = 100;
@@ -163,13 +170,15 @@ export class RemoteHero implements Hero {
     this.classId = c;
     this.raceId = r;
     this.roleId = ro;
+    const sc = str(m.sc) as SubclassId;
+    this.subclassId = LOOK_SUBCLASSES.has(sc) ? sc : null;
     // A zombie shambles unless its player stood it up straight.
     const hunched = num(m.hu, 1) !== 0;
-    const looks = `${c}/${r}/${ro}/${hunched}`;
+    const looks = `${c}/${this.subclassId}/${r}/${ro}/${hunched}`;
     if (looks !== this.looks) {
       this.looks = looks;
       this.disposeModel();
-      const rig = buildPlayerRig({ classId: c, raceId: r, roleId: ro, hunched });
+      const rig = buildPlayerRig({ classId: c, subclassId: this.subclassId, raceId: r, roleId: ro, hunched });
       rig.root.traverse((o) => (o.castShadow = true));
       rig.root.visible = false;
       this.rig = rig;
@@ -241,6 +250,7 @@ export class RemoteHero implements Hero {
       style: STYLES[num(a[1])] ?? 'slash',
       draw: num(a[2]),
       rolling: num(a[3], -1),
+      rollKind: Math.max(0, Math.min(3, Math.round(num(a[7])))),
       fury: num(a[4]),
       flags: num(a[6]),
     };
@@ -348,6 +358,7 @@ export class RemoteHero implements Hero {
     a.attackStyle = A.attack >= 0 ? A.style : B.style;
     a.draw = A.draw + (B.draw - A.draw) * k;
     a.rolling = A.rolling >= 0 && B.rolling >= A.rolling ? A.rolling + (B.rolling - A.rolling) * k : A.rolling;
+    a.rollKind = A.rolling >= 0 ? A.rollKind : B.rollKind;
     a.fury = A.fury;
     a.blocking = (f & 1) !== 0;
     a.crouching = (f & 2) !== 0 || sailing;
@@ -392,6 +403,10 @@ export class RemoteHero implements Hero {
     const w = this.weapon;
     const def = WEAPONS[this.weaponId];
     if (!w || !def || def.kind === 'bow' || a.attack < 0) return;
+    // A monk's fists and feet streak as their own game draws them.
+    if (this.rig && (def.kind === 'wraps' || a.attackStyle === 'flurry' || a.attackStyle === 'cyclone')) {
+      return limbTrail(g, this.rig, a.attackStyle, a.attack, this.subclassId === 'ironfist' ? 0xffc27a : this.subclassId === 'windwalker' ? 0xa8fff0 : 0x9af0d0);
+    }
     const tm = TIMING[a.attackStyle];
     if (!tm || a.attackStyle === 'cast' || a.attackStyle === 'roar' || a.attackStyle === 'bow') return;
     if (a.attack < tm.from - 0.04 || a.attack > (a.attackStyle === 'throw' ? tm.hit : tm.to)) return;
@@ -672,7 +687,7 @@ export class Coop {
 
   private sendHello(to: number | 'all') {
     const c = this.g.player.c;
-    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '' });
+    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, sc: c.subclassId ?? '', r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '' });
   }
 
   /** Our hero's state, for everyone else to draw. */
@@ -681,7 +696,7 @@ export class Coop {
     const p = g.player;
     const a = p.anim;
     const w = p.rig.wings?.userData;
-    const flags = (a.blocking ? 1 : 0) | (p.crouching ? 2 : 0) | (a.swimming ? 4 : 0) | (a.flying ? 8 : 0) | (a.airborne ? 16 : 0) | (p.sailing ? 32 : 0) | (p.moonveil > 0 ? 64 : 0) |
+    const flags = (a.blocking ? 1 : 0) | (p.crouching ? 2 : 0) | (a.swimming ? 4 : 0) | (a.flying ? 8 : 0) | (a.airborne ? 16 : 0) | (p.sailing ? 32 : 0) | (p.unseen ? 64 : 0) |
       (w?.enabled ? 128 : 0) | (w?.spread ? 256 : 0) | (w?.soar ? 512 : 0);
     const pets: number[][] = [];
     for (const al of g.allies) {
@@ -693,7 +708,7 @@ export class Coop {
       p: vec(p.pos),
       v: [r2(p.vel.x), r2(p.vel.y), r2(p.vel.z)],
       y: r2(p.yaw),
-      a: [r2(a.attack), STYLE_INDEX.get(a.attackStyle) ?? 0, r2(a.draw), r2(a.rolling), r2(a.fury), r2(a.landing), flags],
+      a: [r2(a.attack), STYLE_INDEX.get(a.attackStyle) ?? 0, r2(a.draw), r2(a.rolling), r2(a.fury), r2(a.landing), flags, a.rollKind],
       hp: r1(p.hp),
       mh: Math.round(p.maxHp),
       al: p.alive ? 1 : 0,
@@ -785,6 +800,21 @@ export class Coop {
   /** A song from a lyre or war horn: friends close enough to hear it take it up. */
   shareSong(id: SongId, pos: THREE.Vector3) {
     if (this.sharing) this.queue('all', { k: 'song', s: id, p: vec(pos) });
+  }
+
+  /** A heal or a ward of light for friends within `radius` of `pos`. */
+  shareBuff(kind: 'mend' | 'ward', pos: THREE.Vector3, amount: number, radius: number) {
+    if (this.sharing) this.queue('all', { k: 'buff', b: kind, p: vec(pos), a: r1(amount), r: r1(radius) });
+  }
+
+  /** Guest: knock one of the host's monsters back (and up); the host's game moves it. */
+  shove(e: Enemy, dx: number, dz: number, force: number, up: number) {
+    if (this.isGuest && e.net) this.queue('host', { k: 'shv', id: e.nid, x: r2(dx), z: r2(dz), f: r1(force), u: r1(up) });
+  }
+
+  /** Our hero vanished: the host's monsters within `range` (Infinity: all) stop hunting us. */
+  dropAggro(range: number) {
+    if (this.isGuest) this.queue('host', { k: 'drop', r: Number.isFinite(range) ? r1(range) : 0 });
   }
 
   /** A whirlwind (spell) for the others to see. */
@@ -883,6 +913,15 @@ export class Coop {
         pl.applySong(g, id, r?.name ?? 'A friend');
         return;
       }
+      case 'buff': {
+        const p = arr(m.p);
+        const pl = g.player;
+        if (!pl.alive || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > Math.min(30, num(m.r, 12))) return;
+        const amount = Math.max(0, Math.min(500, num(m.a)));
+        if (m.b === 'ward') pl.receiveWard(g, amount, r?.name ?? 'A friend');
+        else if (m.b === 'mend') pl.receiveMend(g, amount, r?.name ?? 'A friend');
+        return;
+      }
       case 'tor': {
         const p = arr(m.p);
         g.addTornado(new THREE.Vector3(num(p[0]), num(p[1]), num(p[2])), Math.min(10, num(m.r, 3)), 0, num(m.c, 0x9ab0c8), Math.min(10, num(m.l, 3)), num(m.s) === 1, true);
@@ -905,6 +944,22 @@ export class Coop {
           const e = this.find(num(m.id));
           const key = str(m.s) as (typeof STATUS_KEYS)[number];
           if (e && STATUS_KEYS.includes(key)) e.status[key] = Math.max(e.status[key], Math.min(20, num(m.v)));
+          return;
+        }
+        case 'shv': {
+          const e = this.find(num(m.id));
+          if (e) e.shove(num(m.x), num(m.z), Math.min(30, num(m.f)), Math.min(14, num(m.u)));
+          return;
+        }
+        case 'drop': {
+          // A friend vanished: monsters hunting them (near them, or all) lose the trail.
+          const range = num(m.r) || Infinity;
+          for (const e of g.enemies) {
+            if (!e.alive || e instanceof Boss || !e.aware || e.target !== r || e.pos.distanceTo(r.pos) > range) continue;
+            e.aware = false;
+            e.awareness = 0;
+            e.state = 'return';
+          }
           return;
         }
         case 'tame': {

@@ -108,7 +108,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
       'Daggers and throwing knives hit 15% harder. Fights with daggers, knives, swords and bows',
       'Evasive: rolls are quicker, cheaper and safer',
       'Quiet feet: harder to notice, even more so crouched',
-      'Vanish (R): vanish from every foe; your next strike is an ambush',
+      'Vanish (R): vanish from every foe; your next strike is an ambush (a backstab, and then some)',
       'Tricks: Smoke Bomb and Poison Blades (poison stacks on foes)',
     ],
   },
@@ -459,12 +459,12 @@ export const WEAPONS: Record<string, WeaponDef> = {
     description: 'Thrown in quick volleys (heavy: three at once). Pick them back up where they land; resting at a shrine refills them.',
   },
   'willow-wand': {
-    id: 'willow-wand', name: 'Willow Wand', kind: 'wand', damage: 7, speed: 2.4, range: 40, element: 'physical', classes: ['mage'], price: 150, shop: 'quill',
-    description: 'Quick arcane bolts for 2 mana (heavy: a bursting bolt for 7). Your spells hit 15% harder while it is in hand. Mages only.',
+    id: 'willow-wand', name: 'Willow Wand', kind: 'wand', damage: 7, speed: 2.4, range: 40, element: 'physical', classes: ['mage', 'sorcerer'], price: 150, shop: 'quill',
+    description: 'Quick arcane bolts for 2 mana (heavy: a bursting bolt for 7). Your spells hit 15% harder while it is in hand. Mages and sorcerers only.',
   },
   'rune-circle': {
-    id: 'rune-circle', name: 'Circle of Runes', kind: 'runecircle', damage: 10, speed: 1.1, range: 24, element: 'physical', classes: ['mage'], price: 190, shop: 'quill',
-    description: 'A ring of runes orbits your hand. Draw rune traps on the ground that burn and slow foes inside (heavy: a binding seal around you). Mages only.',
+    id: 'rune-circle', name: 'Circle of Runes', kind: 'runecircle', damage: 10, speed: 1.1, range: 24, element: 'physical', classes: ['mage', 'sorcerer'], price: 190, shop: 'quill',
+    description: 'A ring of runes orbits your hand. Draw rune traps on the ground that burn and slow foes inside (heavy: a binding seal around you). Mages and sorcerers only.',
   },
   'bards-lyre': {
     id: 'bards-lyre', name: "Bard's Lyre", kind: 'lyre', damage: 9, speed: 1.3, range: 8, element: 'physical', price: 160, shop: 'quill',
@@ -679,7 +679,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     description: 'A fast bolt of shadow. Hold to loose three in a fan (for triple the mana).',
   },
   'life-drain': {
-    id: 'life-drain', name: 'Life Drain', school: 'shadow', element: 'dark', mana: 3, cooldown: 1, power: 7, channel: true,
+    id: 'life-drain', name: 'Life Drain', school: 'shadow', element: 'dark', mana: 3, cooldown: 1, power: 6, channel: true,
     description: 'Hold to pour a dark beam into a foe: it withers, and you heal half of what it loses. Costs mana while held.',
   },
   hex: {
@@ -692,7 +692,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
   },
   // ---- Light Mage.
   'radiant-beam': {
-    id: 'radiant-beam', name: 'Radiant Beam', school: 'light', element: 'light', mana: 3, cooldown: 1, power: 7, channel: true,
+    id: 'radiant-beam', name: 'Radiant Beam', school: 'light', element: 'light', mana: 3, cooldown: 1, power: 6, channel: true,
     description: 'Hold to pour a lance of light into a foe (double against dark creatures). Costs mana while held.',
   },
   'smite-undead': {
@@ -1047,7 +1047,7 @@ export const TREES: Record<TreeId, { name: string; nodes: SkillNode[] }> = {
   shadow: {
     name: 'Shadow Tree',
     nodes: [
-      { id: 'night-blade', name: 'Night Blade', icon: '🌒', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Ambushes (from Vanish or unseen) deal 20% more per rank.', per: 'Ambushes deal {20}% more.' },
+      { id: 'night-blade', name: 'Night Blade', icon: '🌒', tier: 1, col: 0, maxRank: 3, level: 1, description: 'Ambushes out of Vanish deal 20% more per rank.', per: 'Ambushes deal {20}% more.' },
       { id: 'blink', name: 'Blink', icon: '✨', tier: 1, col: 1, maxRank: 2, level: 1, description: 'Shadowstep recharges 20% sooner per rank.', per: 'Shadowstep recharges {20}% sooner.' },
       { id: 'thick-smoke', name: 'Thick Smoke', icon: '🌫', tier: 1, col: 2, maxRank: 2, level: 1, description: 'Smoke Bomb clouds are 30% wider per rank.', per: 'Smoke clouds are {30}% wider.' },
       { id: 'knife-rain', name: 'Knife Rain', icon: '🌧', tier: 2, col: 0, maxRank: 1, level: 3, req: ['night-blade'], description: 'Heavy throws loose two more knives.' },

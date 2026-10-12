@@ -36,6 +36,18 @@ interface Trap extends TrapSpec {
   at: THREE.Vector3;
 }
 
+/** A rogue's smoke cloud: foes inside are blinded, heroes inside hide. */
+interface Smoke {
+  x: number;
+  z: number;
+  y: number;
+  radius: number;
+  left: number;
+  puff: number;
+  /** A friend's: drawn here, and hidden in, but their game blinds the monsters. */
+  remote: boolean;
+}
+
 interface Dropped {
   obj: THREE.Object3D;
   age: number;
@@ -53,6 +65,7 @@ function knifeModel(rune?: RuneId) {
 export class Armory {
   private dropped: Dropped[] = [];
   private traps: Trap[] = [];
+  private smokes: Smoke[] = [];
   private v = new THREE.Vector3();
 
   constructor(private scene: THREE.Scene) {}
@@ -79,15 +92,59 @@ export class Armory {
     g.sfx.magicCircle(at, spec.color, spec.radius, spec.seconds);
   }
 
+  /** A smoke bomb bursts here. Friends are told, so they see the cloud and can hide in it too. */
+  addSmoke(g: Game, x: number, z: number, radius: number, seconds: number, remote = false) {
+    if (!remote) g.sfx.smoke(x, z, radius, seconds);
+    if (this.smokes.length >= 6) this.smokes.shift();
+    const y = Math.max(heightAt(x, z), WATER_LEVEL);
+    this.smokes.push({ x, z, y, radius, left: seconds, puff: 0, remote });
+    // The burst: a ring of smoke rolling out, and a pop.
+    for (let i = 0; i < 18; i++) g.fx.smokePuff(this.v.set(x, y, z), radius * 0.8);
+    g.fx.shockwave(this.v.set(x, y + 0.2, z), radius, 0x8a8690, 0.4);
+    g.audio.play('throw');
+  }
+
+  /** Whether a spot lies inside a smoke cloud. */
+  inSmoke(x: number, z: number): boolean {
+    for (const s of this.smokes) if (Math.hypot(x - s.x, z - s.z) < s.radius) return true;
+    return false;
+  }
+
   update(dt: number, g: Game) {
     this.updateKnives(dt, g);
     this.updateTraps(dt, g);
+    this.updateSmokes(dt, g);
     this.statusWisps(dt, g);
   }
 
   clear() {
     while (this.dropped.length) this.removeKnife(0);
     this.traps.length = 0;
+    this.smokes.length = 0;
+  }
+
+  private updateSmokes(dt: number, g: Game) {
+    for (let i = this.smokes.length - 1; i >= 0; i--) {
+      const s = this.smokes[i];
+      s.left -= dt;
+      if (s.left <= 0) {
+        this.smokes.splice(i, 1);
+        continue;
+      }
+      // Keep the cloud billowing (thinner as it clears).
+      s.puff -= dt;
+      if (s.puff <= 0) {
+        s.puff = 0.12;
+        const n = s.left > 1 ? 3 : 1;
+        for (let k = 0; k < n; k++) g.fx.smokePuff(this.v.set(s.x, s.y, s.z), s.radius);
+      }
+      // Monsters inside lose sight (the host's, through this guest's copies too).
+      if (s.remote && !g.coop.isHost) continue;
+      for (const e of g.enemies) {
+        if (!e.alive || Math.abs(e.pos.y - s.y) > 4) continue;
+        if (Math.hypot(e.pos.x - s.x, e.pos.z - s.z) < s.radius + e.radius * 0.5) e.status.blind = Math.max(e.status.blind, 0.6);
+      }
+    }
   }
 
   private updateKnives(dt: number, g: Game) {

@@ -189,11 +189,16 @@ export interface Status {
   stun: number;
   fear: number;
   marked: number;
-  /** From a venom rune. */
+  /** From a venom rune or a rogue's Poison Blades. */
   poison: number;
+  /** A Dark Mage's Hex: takes more, deals less. */
+  hex: number;
+  /** Lost in a rogue's smoke: can't see to strike, and stumbles slowly. */
+  blind: number;
 }
 
-export const newStatus = (): Status => ({ bleed: 0, burn: 0, wet: 0, slow: 0, root: 0, stun: 0, fear: 0, marked: 0, poison: 0 });
+// New keys go on the end: co-op sends these in this order.
+export const newStatus = (): Status => ({ bleed: 0, burn: 0, wet: 0, slow: 0, root: 0, stun: 0, fear: 0, marked: 0, poison: 0, hex: 0, blind: 0 });
 export const STATUS_KEYS = Object.keys(newStatus()) as (keyof Status)[];
 
 const _v = new THREE.Vector3();
@@ -334,6 +339,9 @@ export class Enemy extends Actor {
   net: MirrorState | null = null;
   /** The move being performed (windup/strike/recover). */
   move: Move | null = null;
+  /** Thrown into the air (a cyclone kick, an earth shockwave): height above the ground and rising speed. */
+  air = 0;
+  airVel = 0;
   private timing: Timing = { a0: 0, hits: [0.22] };
   private hitIdx = 0;
   private combo = 0;
@@ -411,12 +419,13 @@ export class Enemy extends Actor {
       const sight = 30 * (g.isNight ? 0.7 : 1);
       let rate = 0;
       if (dist < sight && (facing > 0.3 || dist < 7) && !g.world.blocked(this.pos.x, this.pos.z, p.pos.x, p.pos.z)) {
-        rate = (1.4 * (1 - dist / sight) + (dist < 4 ? 2 : 0)) * p.stealthFactor();
+        rate = (1.4 * (1 - dist / sight) + (dist < 4 ? 2 : 0)) * p.stealthFactor() * (this.status.blind > 0 ? 0 : 1);
       }
       this.awareness = Math.max(0, Math.min(1, this.awareness + (rate > 0 ? rate * dt : -0.25 * dt)));
       if (this.awareness >= 1) this.becomeAware(g);
     } else if (this.aware) {
       if (dist > 70 || !p.alive || (p.stealthFactor() === 0 && dist > 6)) this.lostSight += dt;
+      else if (this.status.blind > 0) this.lostSight += dt * 2;
       else this.lostSight = 0;
       if (this.lostSight > 6) {
         this.aware = false;
@@ -428,7 +437,9 @@ export class Enemy extends Actor {
 
     const fury = this.enraged;
     a.fury += ((fury ? 1 : 0) - a.fury) * Math.min(1, dt * 3);
-    let speed = this.def.speed * (this.status.slow > 0 ? 0.5 : 1) * (this.status.root > 0 ? 0 : 1) * (fury ? 1.15 : 1);
+    let speed = this.def.speed * (this.status.slow > 0 ? 0.5 : 1) * (this.status.root > 0 ? 0 : 1) * (this.status.blind > 0 ? 0.4 : 1) * (fury ? 1.15 : 1);
+    // Blinded by smoke: no blows until it clears.
+    if (this.status.blind > 0) this.attackCd = Math.max(this.attackCd, 0.3);
     let moveX = 0, moveZ = 0;
     // Root motion (lunges, knockback) is added on top of steering.
     let rootX = 0, rootZ = 0;
@@ -679,7 +690,14 @@ export class Enemy extends Actor {
       this.pos.x -= this.vel.x * dt * 1.5;
       this.pos.z -= this.vel.z * dt * 1.5;
     }
-    this.pos.y = Math.max(heightAt(this.pos.x, this.pos.z), this.def.affinity === 'water' ? -3 : WATER_LEVEL - 0.6);
+    if (this.air > 0 || this.airVel > 0) {
+      // Thrown up: fall back down (stunned while airborne).
+      this.airVel -= 22 * dt;
+      this.air = Math.max(0, this.air + this.airVel * dt);
+      if (this.air <= 0) this.airVel = 0;
+      else this.status.stun = Math.max(this.status.stun, 0.1);
+    }
+    this.pos.y = Math.max(heightAt(this.pos.x, this.pos.z), this.def.affinity === 'water' ? -3 : WATER_LEVEL - 0.6) + this.air;
     const sp = Math.hypot(this.vel.x, this.vel.z);
     this.setMotion(this.vel.x, this.vel.z);
     a.phase += sp * dt * (this.def.body === 'quad' ? 2.2 : 2.6);
@@ -764,6 +782,23 @@ export class Enemy extends Actor {
     const p = g.player.pos;
     const d = Math.abs(p.x - this.pos.x) + Math.abs(p.z - this.pos.z);
     this.syncModel(dt, this.aware ? 1 : d > 90 ? 4 : d > 45 ? 2 : 1);
+  }
+
+  /**
+   * Knocked back (a palm strike, a gust) and maybe thrown up into the air.
+   * Only the game that runs the monster calls this (Coop.shove routes a guest's to the host).
+   */
+  shove(dx: number, dz: number, force: number, up = 0) {
+    if (!this.alive || this.net) return;
+    const d = Math.hypot(dx, dz) || 1;
+    this.endMove();
+    this.knock.set((dx / d) * force, 0, (dz / d) * force);
+    this.staggerFor = 0.4 + Math.min(1.2, up / 10);
+    this.staggerImmune = this.staggerFor + 0.3;
+    this.attackCd = Math.max(this.attackCd, this.staggerFor + 0.3);
+    this.setState('stagger');
+    this.anim.hurt = 1;
+    if (up > 0) this.airVel = Math.max(this.airVel, up);
   }
 
   becomeAware(g: Game) {
@@ -1048,6 +1083,9 @@ export class Boss extends Enemy {
   damage() {
     return Math.round(this.bdef.damage * (this.phase === 2 ? 1.15 : 1));
   }
+
+  /** Great foes don't budge. */
+  override shove() {}
   dispose() {
     this.auraFx?.stop();
     this.auraFx = null;
@@ -1089,7 +1127,7 @@ export class Boss extends Enemy {
       if (!this.attack || this.stage === 'recover') this.startRoar(1.2);
     }
     a.fury += ((this.phase === 2 ? 1 : 0) - a.fury) * Math.min(1, dt * 2);
-    const speedMul = (this.phase === 2 ? 1.25 : 1) * (this.status.slow > 0 ? 0.6 : 1) * (this.status.root > 0 ? 0 : 1);
+    const speedMul = (this.phase === 2 ? 1.25 : 1) * (this.status.slow > 0 || this.status.blind > 0 ? 0.6 : 1) * (this.status.root > 0 ? 0 : 1);
     let moveX = 0, moveZ = 0;
     let speed = this.bdef.speed * speedMul;
     a.attack = -1;
@@ -1559,7 +1597,7 @@ export class Boss extends Enemy {
 
 // ------------------------------------------------------------------ allies --
 
-export type AllyKind = CreatureKind | 'imp' | 'lizard';
+export type AllyKind = CreatureKind | 'imp' | 'lizard' | 'shade';
 
 export class Ally extends Actor {
   kind: AllyKind;
@@ -1577,18 +1615,18 @@ export class Ally extends Actor {
 
   constructor(kind: AllyKind, x: number, z: number, level: number, ttl = Infinity, hpMul = 1, dmgMul = 1) {
     const model = allyModel(kind);
-    const def = kind === 'imp' || kind === 'lizard' ? null : ENEMIES[kind === 'magma-hound' ? 'magma-hound' : kind];
-    const hp = def ? def.hp * 1.5 : kind === 'imp' ? 60 : 40;
+    const def = kind === 'imp' || kind === 'lizard' || kind === 'shade' ? null : ENEMIES[kind === 'magma-hound' ? 'magma-hound' : kind];
+    const hp = def ? def.hp * 1.5 : kind === 'imp' ? 60 : kind === 'shade' ? 50 + level * 6 : 40;
     super(model, Math.round(hp * hpMul));
     this.kind = kind;
     this.ttl = ttl;
     this.lvl = level;
-    this.baseDamage = (def ? def.damage : kind === 'imp' ? 9 : 6) * dmgMul * (1 + level * 0.06);
+    this.baseDamage = (def ? def.damage : kind === 'imp' ? 9 : kind === 'shade' ? 10 : 6) * dmgMul * (1 + level * 0.06);
     this.ranged = kind === 'imp' || kind === 'drake';
     this.speed = def ? def.speed * 1.1 : 8;
     this.pos.set(x, heightAt(x, z), z);
     this.radius = 0.5;
-    this.anim.attackStyle = this.ranged ? (kind === 'imp' ? 'throw' : 'volley') : kind === 'scorpion' ? 'sting' : 'bite';
+    this.anim.attackStyle = this.ranged ? (kind === 'imp' ? 'throw' : 'volley') : kind === 'scorpion' ? 'sting' : kind === 'shade' ? 'claw' : 'bite';
   }
   get name() {
     return this.kind;
@@ -1600,7 +1638,7 @@ export class Ally extends Actor {
     return false;
   }
   get affinity(): Affinity {
-    return this.kind === 'imp' || this.kind === 'magma-hound' || this.kind === 'drake' ? 'fire' : 'none';
+    return this.kind === 'imp' || this.kind === 'magma-hound' || this.kind === 'drake' ? 'fire' : this.kind === 'shade' ? 'dark' : 'none';
   }
 
   update(dt: number, g: Game) {
@@ -1637,7 +1675,7 @@ export class Ally extends Actor {
     this.pos.z += mz * sp * dt;
     g.world.resolve(this.pos, this.radius);
     const ground = heightAt(this.pos.x, this.pos.z);
-    this.pos.y = this.kind === 'imp' ? Math.max(ground, 0) + 1.6 + Math.sin(this.anim.t * 3) * 0.2 : Math.max(ground, WATER_LEVEL - 0.6);
+    this.pos.y = this.kind === 'imp' ? Math.max(ground, 0) + 1.6 + Math.sin(this.anim.t * 3) * 0.2 : this.kind === 'shade' ? Math.max(ground, WATER_LEVEL) + 0.3 + Math.sin(this.anim.t * 2.4) * 0.12 : Math.max(ground, WATER_LEVEL - 0.6);
     this.faceTowards(goal.x, goal.z, dt);
     if (this.target && d <= stopAt + 0.5 && this.attackCd <= 0 && this.attacking <= 0) {
       this.attackCd = this.ranged ? 1.6 : 1.1;
@@ -1651,7 +1689,7 @@ export class Ally extends Actor {
       if (this.ranged) {
         g.spawnProjectile({ from: this.center(), to: this.target.center(), speed: 26, kind: 'fireball', owner: 'ally', damage: Math.round(this.baseDamage), element: 'fire', source: this, gravity: 0 });
       } else {
-        g.damageEnemy(this.target, this.baseDamage, this.affinity === 'fire' ? 'fire' : 'physical', { source: 'ally' });
+        g.damageEnemy(this.target, this.baseDamage, this.affinity === 'fire' ? 'fire' : this.affinity === 'dark' ? 'dark' : 'physical', { source: 'ally' });
       }
     }
     this.attacking = Math.max(0, this.attacking - dt);
@@ -1681,5 +1719,8 @@ export function allyModel(kind: AllyKind): Model {
       return creatureModel(buildInsect(0x8a6a3a, 1.1));
     case 'drake':
       return creatureModel(buildQuad(0x4a2a24, 'drake', 1.2));
+    case 'shade':
+      // The Dark Mage's own shadow, torn loose: a wraith of violet-black smoke.
+      return creatureModel(buildFloater(0x241a34, 'wraith', 0.95));
   }
 }
