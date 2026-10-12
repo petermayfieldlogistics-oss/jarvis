@@ -1,5 +1,5 @@
 import { SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId, type SpellId, type ComboDef, type Element } from '../data/defs';
-import { rank, type Character } from './character';
+import { hasRelic, rank, type Character } from './character';
 
 // -------------------------------------------------------- warrior fury --
 
@@ -178,6 +178,8 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   let dmg = amount;
   if (ctx.blocking) dmg *= 0.4;
   if (element === 'fire' && c.raceId === 'draco') dmg *= 0.5;
+  if (element === 'fire' && hasRelic(c, 'dragon-heart')) dmg *= 0.5;
+  if (element === 'water' && hasRelic(c, 'tide-crown')) dmg *= 0.5;
   if (c.raceId === 'elf' && c.elfElement === element) dmg *= 0.5;
   if (c.subclassId === 'elemental' && c.wizardElement === element) dmg *= rank(c, 'elemental-ward') ? 0 : 0.5;
   if (ctx.stoneSkin) dmg *= 0.5;

@@ -286,12 +286,32 @@ export const WEAPONS: Record<string, WeaponDef> = {
     id: 'trident-of-poseidon', name: "Poseidon's Trident", kind: 'trident', damage: 28, speed: 1.3, range: 3.6, element: 'water', legendary: 'trident-of-poseidon',
     description: 'Commands the sea. Sailors only; lets you walk on water.',
   },
+  // Unique drops: anyone can wield them.
+  'reapers-edge': {
+    id: 'reapers-edge', name: "Reaper's Edge", kind: 'sword', damage: 20, speed: 1.5, range: 2.9, element: 'dark',
+    description: "Forged from the Reaper's scythe. Cold as the grave; it cuts with darkness.",
+  },
+  venomfang: {
+    id: 'venomfang', name: 'Venomfang', kind: 'dagger', damage: 12, speed: 2.6, range: 2, element: 'earth',
+    description: "The Giant Spider's fang, wrapped for a grip. Quick, and it bites with the earth.",
+  },
 };
 
 export interface WeaponInstance {
   id: string;
   level: number;
 }
+
+// ------------------------------------------------------------------ relics --
+
+export type RelicId = 'leviathan-pearl' | 'dragon-heart' | 'tide-crown';
+
+/** Won from the three elder foes: kept in the pack, each grants a lasting boon to any hero. */
+export const RELICS: Record<RelicId, { id: RelicId; name: string; boon: string }> = {
+  'leviathan-pearl': { id: 'leviathan-pearl', name: 'Pearl of the Leviathan', boon: '+1 flask, and you swim without tiring.' },
+  'tide-crown': { id: 'tide-crown', name: 'Crown of the Tides', boon: '+20 max mana, mana flows 30% faster, and water hurts you half as much.' },
+  'dragon-heart': { id: 'dragon-heart', name: 'Heart of the Elder Dragon', boon: '+30 max HP, and fire hurts you half as much.' },
+};
 
 // ------------------------------------------------------------------ spells --
 

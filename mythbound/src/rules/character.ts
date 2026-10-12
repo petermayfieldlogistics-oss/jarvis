@@ -9,6 +9,7 @@ import {
   type CreatureKind,
   type Element,
   type RaceId,
+  type RelicId,
   type RoleId,
   type SpellId,
   type SubclassId,
@@ -200,11 +201,14 @@ export function treeFor(c: Pick<Character, 'classId' | 'subclassId'>): TreeId {
 
 export const rank = (c: Character, node: string) => c.skills[node] ?? 0;
 
+/** Relics from the elder foes live in the pack and work as long as they are carried. */
+export const hasRelic = (c: Pick<Character, 'items'>, id: RelicId) => (c.items[id] ?? 0) > 0;
+
 // ------------------------------------------------------------------ stats --
 
 export function maxHp(c: Character): number {
   const perLevel = c.classId === 'warrior' ? 12 : c.classId === 'ranger' ? 9 : 7;
-  const base = CLASSES[c.classId].hp + perLevel * (c.level - 1);
+  const base = CLASSES[c.classId].hp + perLevel * (c.level - 1) + (hasRelic(c, 'dragon-heart') ? 30 : 0);
   return Math.max(1, base - c.hpLost);
 }
 
@@ -213,9 +217,15 @@ export function maxMana(c: Character): number {
   let m = CLASSES[c.classId].mana + perLevel * (c.level - 1);
   if (c.roleId === 'knight') m += 10;
   if (c.raceId === 'ancient') m += 15;
+  if (hasRelic(c, 'tide-crown')) m += 20;
   m += 10 * rank(c, 'deep-well');
   if (c.raceId === 'elf') m *= 1.2;
   return Math.round(m);
+}
+
+/** Sailors, and whoever carries the Leviathan's pearl, swim without tiring. */
+export function swimsTireless(c: Character): boolean {
+  return c.roleId === 'sailor' || hasRelic(c, 'leviathan-pearl');
 }
 
 export function maxStamina(c: Character): number {
@@ -231,7 +241,7 @@ export function moveSpeed(c: Character): number {
 
 export function manaRegen(c: Character): number {
   const base = c.classId === 'mage' ? 2.2 : c.classId === 'ranger' ? 1.3 : 0.8;
-  return base * (1 + 0.3 * rank(c, 'flow'));
+  return base * (1 + 0.3 * rank(c, 'flow')) * (hasRelic(c, 'tide-crown') ? 1.3 : 1);
 }
 
 /** Quick Draw: rangers draw every weapon faster. Multiplies draw/ready times. */
