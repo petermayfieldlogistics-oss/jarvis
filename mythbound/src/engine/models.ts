@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { WeaponKind } from '../data/defs';
+import { RUNES, type RuneId, type WeaponKind } from '../data/defs';
 
 const matCache = new Map<string, THREE.Material>();
 
@@ -150,6 +150,8 @@ export function glowSprite(color: number, size: number, opacity = 1): THREE.Spri
 
 // --------------------------------------------------------------- weapons --
 
+const PI_2 = Math.PI / 2;
+
 /** A flat blade outline (x across, y along) extruded thin with bevelled edges that catch the light. */
 function bladeGeo(outline: [number, number][], thick: number): THREE.BufferGeometry {
   const shape = new THREE.Shape();
@@ -166,7 +168,64 @@ function bladeGeo(outline: [number, number][], thick: number): THREE.BufferGeome
 const straightBlade = (w: number, y0: number, y1: number, tip: number, thick: number) =>
   bladeGeo([[-w / 2, y0], [w / 2, y0], [w * 0.42, y1 - tip], [0, y1], [-w * 0.42, y1 - tip]], thick);
 
-export function buildWeapon(kind: WeaponKind, legendary = false): THREE.Group {
+/** A tapered tube through points (x, y, z) with a radius at each point, as one cone per span. */
+function bentTube(pts: number[][], radii: number[], m: THREE.Material, parent: THREE.Object3D, seg = 8) {
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < pts.length - 1; i++) {
+    a.fromArray(pts[i]);
+    b.fromArray(pts[i + 1]);
+    const len = a.distanceTo(b);
+    // Overlap the spans a little so the joints stay closed when bent.
+    const p = part(cyl(radii[i + 1], radii[i], len * 1.06, seg), m, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2, parent);
+    p.quaternion.setFromUnitVectors(up, b.sub(a).normalize());
+  }
+}
+
+/** Strokes of each rune's glyph, x and y from -0.5 to 0.5. */
+const GLYPHS: Record<RuneId, number[][]> = {
+  fire: [[0.25, 0.5, -0.25, 0], [-0.25, 0, 0.25, -0.5]],
+  frost: [[0, -0.5, 0, 0.5], [-0.36, -0.3, 0.36, 0.3], [-0.36, 0.3, 0.36, -0.3]],
+  storm: [[-0.2, 0.5, 0.22, 0.17], [0.22, 0.17, -0.22, -0.17], [-0.22, -0.17, 0.2, -0.5]],
+  venom: [[0, -0.5, 0, 0.5], [0, 0.1, -0.3, 0.46], [0, 0.1, 0.3, 0.46]],
+};
+
+/** A rune glyph `s` tall at (x, y, z), drawn in the x-y plane turned `turn` about y. */
+function glyph(rune: RuneId, m: THREE.Material, parent: THREE.Object3D, x: number, y: number, z: number, s: number, turn = 0) {
+  const c = Math.cos(turn), sn = Math.sin(turn);
+  for (const [x0, y0, x1, y1] of GLYPHS[rune]) {
+    const len = Math.hypot(x1 - x0, y1 - y0) * s;
+    const mx = ((x0 + x1) / 2) * s, my = ((y0 + y1) / 2) * s;
+    const p = part(box(s * 0.14, len + s * 0.12, 0.003), m, x + mx * c, y + my, z - mx * sn, parent);
+    p.rotation.set(0, turn, Math.atan2(-(x1 - x0), y1 - y0));
+    p.castShadow = false;
+  }
+}
+
+/**
+ * Where an inscribed rune glows on each weapon: [x, y, z, size, turn], one
+ * entry per visible face. The rune circle carries its runes in the ring.
+ */
+const RUNE_SPOTS: Record<WeaponKind, number[][]> = {
+  sword: [[0, 0.42, 0.0215, 0.095, 0], [0, 0.42, -0.0215, 0.095, 0]],
+  dagger: [[0, 0.22, 0.018, 0.06, 0], [0, 0.22, -0.018, 0.06, 0]],
+  axe: [[0.038, 0.8, 0.1, 0.09, PI_2], [-0.038, 0.8, 0.1, 0.09, -PI_2]],
+  hammer: [[0.123, 0.98, 0, 0.13, PI_2], [-0.123, 0.98, 0, 0.13, -PI_2]],
+  staff: [[0, 1.0, 0.04, 0.09, 0], [0, 1.0, -0.04, 0.09, Math.PI]],
+  trident: [[0, 1.0, 0.033, 0.08, 0], [0, 1.0, -0.033, 0.08, Math.PI]],
+  bolt: [],
+  bow: [[0, 0.3, -0.03, 0.06, 0], [0, 0.3, -0.088, 0.06, Math.PI], [0, -0.3, -0.03, 0.06, 0], [0, -0.3, -0.088, 0.06, Math.PI]],
+  greatsword: [[0, 0.5, 0.0225, 0.11, 0], [0, 0.5, -0.0225, 0.11, 0], [0, 0.8, 0.0225, 0.11, 0], [0, 0.8, -0.0225, 0.11, 0]],
+  longsword: [[0, 0.42, 0.0205, 0.09, 0], [0, 0.42, -0.0205, 0.09, 0]],
+  spear: [[0, 1.62, 0.017, 0.075, 0], [0, 1.62, -0.017, 0.075, Math.PI]],
+  battleaxe: [[0.036, 0.93, 0.1, 0.085, PI_2], [-0.036, 0.93, 0.1, 0.085, -PI_2], [0.036, 0.93, -0.1, 0.085, PI_2], [-0.036, 0.93, -0.1, 0.085, -PI_2]],
+  knives: [[0, 0.14, 0.0085, 0.05, 0]],
+  wand: [[0, 0.02, 0.019, 0.05, 0], [0, 0.02, -0.019, 0.05, Math.PI]],
+  runecircle: [],
+  lyre: [[0, 0.07, 0.042, 0.08, 0]],
+  horn: [],
+};
+
+export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId): THREE.Group {
   const g = new THREE.Group();
   // The animator reads this to carry the weapon the right way.
   g.userData.kind = kind;
@@ -351,8 +410,253 @@ export function buildWeapon(kind: WeaponKind, legendary = false): THREE.Group {
       g.rotation.x = Math.PI / 2;
       break;
     }
+    case 'longsword': {
+      // A hand-and-a-half grip with room for the second hand, a scent-stopper
+      // pommel and a long straight cross with flared ends.
+      part(cyl(0.021, 0.024, 0.27, 8), wrap, 0, -0.035, 0, g);
+      cord(0.0245, [-0.14, -0.095, -0.05, -0.005, 0.04]);
+      part(cyl(0.028, 0.021, 0.03, 8), brass, 0, -0.183, 0, g);
+      part(new THREE.OctahedronGeometry(0.034, 0), brass, 0, -0.222, 0, g).scale.set(1, 1.4, 1);
+      part(cone(0.011, 0.03, 6), brass, 0, -0.272, 0, g).rotation.x = PI;
+      part(box(0.05, 0.04, 0.05), brass, 0, 0.105, 0, g);
+      part(box(0.27, 0.022, 0.03), brass, 0, 0.11, 0, g);
+      for (const s of [-1, 1]) {
+        part(box(0.035, 0.032, 0.038), brass, s * 0.145, 0.104, 0, g).rotation.z = s * 0.35;
+        part(sphere(0.011, 6, 4), gem, 0, 0.105, s * 0.026, g).scale.z = 0.5;
+      }
+      // Long, evenly tapering blade with a ricasso and a fuller.
+      part(bladeGeo([[-0.032, 0.125], [0.032, 0.125], [0.024, 1.14], [0, 1.36], [-0.024, 1.14]], 0.015), steel, 0, 0, 0, g);
+      part(box(0.07, 0.06, 0.04), darkSteel, 0, 0.155, 0, g);
+      fuller(0.014, 0.24, 1.04, 0.0198);
+      break;
+    }
+    case 'greatsword': {
+      // A long two-hand grip bound in cord and a heavy faceted pommel.
+      part(cyl(0.024, 0.027, 0.38, 8), wrap, 0, -0.1, 0, g);
+      cord(0.0275, [-0.26, -0.2, -0.14, -0.08, -0.02, 0.04]);
+      part(cyl(0.033, 0.024, 0.035, 8), brass, 0, -0.305, 0, g);
+      part(new THREE.OctahedronGeometry(0.052, 0), brass, 0, -0.352, 0, g).scale.set(1, 1.2, 0.75);
+      // A broad cross with swept quillons, ball ends and a stone each side.
+      part(box(0.1, 0.06, 0.075), brass, 0, 0.1, 0, g);
+      for (const s of [-1, 1]) {
+        part(box(0.22, 0.032, 0.048), brass, s * 0.15, 0.118, 0, g).rotation.z = s * 0.14;
+        part(sphere(0.03, 8, 6), brass, s * 0.262, 0.142, 0, g);
+        part(sphere(0.02, 6, 4), gem, 0, 0.1, s * 0.037, g).scale.z = 0.5;
+      }
+      // A leather-bound ricasso, parrying lugs, then the broad blade with a deep fuller.
+      part(box(0.1, 0.14, 0.05), wrap, 0, 0.2, 0, g);
+      for (const y of [0.15, 0.2, 0.25]) part(box(0.104, 0.012, 0.054), grip, 0, y, 0, g);
+      for (const s of [-1, 1]) part(bladeGeo([[0, 0], [0.06, 0.012], [0.07, 0.04], [0, 0.05]], 0.012), steel, s * 0.05, 0.27, 0, g).rotation.y = s > 0 ? 0 : PI;
+      part(bladeGeo([[-0.056, 0.26], [0.056, 0.26], [0.046, 1.54], [0, 1.82], [-0.046, 1.54]], 0.018), steel, 0, 0, 0, g);
+      fuller(0.024, 0.36, 1.42, 0.0215);
+      break;
+    }
+    case 'spear': {
+      const ash = mat(0x8a6c46, { rough: 0.8 });
+      // An ash shaft with a leather grip, bronze bands and a butt spike.
+      part(cyl(0.023, 0.026, 1.86, 8), ash, 0, 0.42, 0, g);
+      part(cyl(0.029, 0.029, 0.3, 8), wrap, 0, 0, 0, g);
+      cord(0.0305, [-0.13, -0.065, 0, 0.065, 0.13]);
+      for (const y of [-0.38, 0.5, 1.05]) part(cyl(0.028, 0.028, 0.025, 8), brass, 0, y, 0, g);
+      part(cyl(0.027, 0.02, 0.08, 8), darkSteel, 0, -0.52, 0, g);
+      part(cone(0.02, 0.11, 6), darkSteel, 0, -0.615, 0, g).rotation.x = PI;
+      // A red horsehair tassel under a bronze collar.
+      part(cone(0.052, 0.15, 8), mat(0x8a1c18, { rough: 1 }), 0, 1.28, 0, g);
+      part(cyl(0.031, 0.028, 0.04, 8), brass, 0, 1.37, 0, g);
+      // Socket with small wings, and a leaf head with a raised midrib.
+      part(cyl(0.02, 0.028, 0.13, 8), steel, 0, 1.45, 0, g);
+      part(box(0.1, 0.014, 0.014), steel, 0, 1.42, 0, g);
+      part(bladeGeo([[0, 1.47], [0.048, 1.56], [0.042, 1.66], [0, 1.82], [-0.042, 1.66], [-0.048, 1.56]], 0.01), legendary ? glow : steel, 0, 0, 0, g);
+      part(box(0.012, 0.3, 0.032), steel, 0, 1.64, 0, g);
+      break;
+    }
+    case 'battleaxe': {
+      // A long haft, iron-shod at the foot, with a wrapped grip.
+      part(cyl(0.027, 0.033, 1.36, 8), grip, 0, 0.47, 0, g);
+      part(cyl(0.034, 0.034, 0.2, 8), wrap, 0, -0.03, 0, g);
+      cord(0.0355, [-0.11, -0.06, -0.01, 0.04]);
+      part(cyl(0.038, 0.03, 0.05, 8), darkSteel, 0, -0.19, 0, g);
+      part(sphere(0.032, 8, 6), brass, 0, -0.23, 0, g);
+      // Two crescent bits back to back, each with a forge-dark cheek.
+      const bit = [[0.03, 0.85], [0.12, 0.82], [0.19, 0.74], [0.235, 0.69], [0.27, 0.78], [0.285, 0.93], [0.27, 1.08], [0.235, 1.17], [0.19, 1.12], [0.12, 1.04], [0.03, 1.01]];
+      const cheek = [[0.03, 0.86], [0.11, 0.85], [0.15, 0.93], [0.11, 1.01], [0.03, 1.0]];
+      for (const s of [-1, 1]) {
+        const edge = bladeGeo(bit as [number, number][], 0.028);
+        edge.rotateY(-s * PI_2);
+        part(edge, legendary ? glow : steel, 0, 0, 0, g);
+        const ch = bladeGeo(cheek as [number, number][], 0.046);
+        ch.rotateY(-s * PI_2);
+        part(ch, darkSteel, 0, 0, 0, g);
+        part(sphere(0.012, 5, 4), brass, 0.0, 0.93, s * 0.075, g);
+      }
+      // The socket between the bits, langets down the haft and a top spike.
+      part(box(0.075, 0.2, 0.08), darkSteel, 0, 0.93, 0, g);
+      for (const x of [-1, 1]) {
+        for (const y of [0.87, 0.99]) part(sphere(0.012, 5, 4), brass, x * 0.04, y, 0, g);
+        part(box(0.012, 0.22, 0.03), darkSteel, x * 0.029, 0.74, 0, g);
+      }
+      part(cone(0.034, 0.14, 6), darkSteel, 0, 1.1, 0, g);
+      break;
+    }
+    case 'knives': {
+      // The knife in hand, and two more fanned behind it, ready to follow.
+      for (const [rz, dz] of [[0.42, -0.016], [-0.42, -0.008], [0, 0.002]]) {
+        const put = (geo: THREE.BufferGeometry, m: THREE.Material, y: number) => part(geo.translate(0, y, 0).rotateZ(rz).translate(0, 0, dz), m, 0, 0, 0, g);
+        put(cyl(0.011, 0.013, 0.1, 6), wrap, 0);
+        put(new THREE.TorusGeometry(0.017, 0.005, 4, 10), darkSteel, -0.066);
+        put(box(0.046, 0.012, 0.02), darkSteel, 0.055);
+        put(bladeGeo([[-0.017, 0.06], [0.017, 0.06], [0.025, 0.14], [0, 0.27], [-0.025, 0.14]], 0.004), steel, 0);
+      }
+      break;
+    }
+    case 'wand': {
+      const wood = mat(0x4a2e1c, { rough: 0.7 });
+      const silver = mat(0xc8ccd4, { rough: 0.3, metal: 0.6 });
+      // A leather handle between a silver pommel and collar.
+      part(cyl(0.015, 0.017, 0.15, 8), wrap, 0, 0, 0, g);
+      cord(0.0175, [-0.05, -0.017, 0.017, 0.05]);
+      part(sphere(0.021, 8, 6), silver, 0, -0.09, 0, g);
+      part(cone(0.011, 0.03, 6), silver, 0, -0.118, 0, g).rotation.x = PI;
+      part(cyl(0.016, 0.019, 0.02, 8), silver, 0, 0.083, 0, g);
+      // A tapering shaft wound with a silver spiral.
+      part(cyl(0.007, 0.013, 0.3, 8), wood, 0, 0.24, 0, g);
+      for (let i = 0; i < 11; i++) {
+        const a = i * 1.15, r = 0.0125 - i * 0.00055;
+        part(sphere(0.0042, 4, 3), silver, Math.cos(a) * r, 0.105 + i * 0.026, Math.sin(a) * r, g);
+      }
+      // Silver claws gripping a glowing crystal.
+      part(cyl(0.012, 0.008, 0.02, 8), silver, 0, 0.392, 0, g);
+      for (let i = 0; i < 3; i++) {
+        const a = (i * PI * 2) / 3;
+        part(cone(0.005, 0.045, 4), silver, Math.cos(a) * 0.012, 0.418, Math.sin(a) * 0.012, g).rotation.set(Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4);
+      }
+      const c = rune ? RUNES[rune].color : 0xb070ff;
+      const tip = part(new THREE.OctahedronGeometry(0.022, 0), mat(c, { rough: 0.15, emissive: c, emissiveIntensity: 1.8 }), 0, 0.434, 0, g);
+      tip.scale.set(1, 1.6, 1);
+      tip.castShadow = false;
+      break;
+    }
+    case 'runecircle': {
+      // A ring of glowing runes floats round the off hand; the animator spins
+      // `orbit` about the forearm. It carries its own runes: an inscribed one
+      // recolours them and takes every place in the ring.
+      const c = rune ? RUNES[rune].color : 0x46f0c8;
+      const glowM = mat(c, { emissive: c, emissiveIntensity: 2 });
+      const faint = mat(c, { emissive: c, emissiveIntensity: 1.2, transparent: 0.55 });
+      const orbit = new THREE.Group();
+      orbit.position.y = -0.06;
+      g.add(orbit);
+      part(new THREE.TorusGeometry(0.19, 0.005, 4, 40), glowM, 0, 0, 0, orbit).rotation.x = PI_2;
+      part(new THREE.TorusGeometry(0.215, 0.003, 3, 40), faint, 0, 0, 0, orbit).rotation.x = PI_2;
+      const kinds: RuneId[] = ['fire', 'frost', 'storm', 'venom'];
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * PI * 2;
+        glyph(rune ?? kinds[i % 4], glowM, orbit, Math.sin(a) * 0.2, 0, Math.cos(a) * 0.2, 0.055, a);
+      }
+      // A tilted inner ring and motes of light.
+      const inner = part(new THREE.TorusGeometry(0.12, 0.004, 3, 28), faint, 0, 0.01, 0, orbit);
+      inner.rotation.set(PI_2 + 0.35, 0.2, 0);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * PI * 2 + 0.3;
+        part(sphere(0.008, 5, 4), glowM, Math.sin(a) * 0.15, 0.03 * Math.sin(i * 2.1), Math.cos(a) * 0.15, orbit).castShadow = false;
+      }
+      orbit.traverse((o) => (o.castShadow = false));
+      g.userData.orbit = orbit;
+      g.userData.offhand = true;
+      // Upright along the forearm.
+      g.userData.wrist = 0;
+      break;
+    }
+    case 'lyre': {
+      // Vertical along local y, strings facing +z; turned like the bow so it
+      // sits upright in a raised left hand.
+      const wood = mat(0x7a4a26, { rough: 0.6 });
+      const gold = mat(0xd8b050, { rough: 0.35, metal: 0.55 });
+      const board = mat(0xd8c49a, { rough: 0.8 });
+      // A round, tortoise-shell sound box with a pale sound board and a gold rim.
+      part(sphere(0.11, 12, 8), wood, 0, 0.07, -0.012, g).scale.set(1, 0.95, 0.42);
+      part(cyl(0.094, 0.094, 0.012, 16), board, 0, 0.07, 0.03, g).rotation.x = PI_2;
+      part(new THREE.TorusGeometry(0.096, 0.007, 4, 24), gold, 0, 0.07, 0.034, g);
+      part(box(0.07, 0.014, 0.018), gold, 0, 0.0, 0.04, g);
+      part(box(0.1, 0.012, 0.014), wood, 0, 0.1, 0.045, g);
+      // Two curving horn-like arms, curled at the tips.
+      for (const s of [-1, 1]) {
+        bentTube([[s * 0.06, 0.13, 0], [s * 0.11, 0.21, 0], [s * 0.13, 0.31, 0], [s * 0.115, 0.4, 0], [s * 0.14, 0.47, 0]], [0.019, 0.016, 0.014, 0.012, 0.009], wood, g, 6);
+        part(new THREE.TorusGeometry(0.018, 0.006, 4, 10), gold, s * 0.155, 0.48, 0, g);
+        part(cyl(0.017, 0.017, 0.016, 8), gold, s * 0.112, 0.21, 0, g);
+      }
+      // The yoke with its pegs, and seven strings.
+      part(cyl(0.011, 0.011, 0.25, 8), gold, 0, 0.405, 0, g).rotation.z = PI_2;
+      const strings = mat(0xf0e6c0, { rough: 0.5, emissive: 0x403010, emissiveIntensity: 0.6 });
+      for (let i = 0; i < 7; i++) {
+        const u = i / 6 - 0.5;
+        part(cyl(0.004, 0.004, 0.03, 4), gold, u * 0.16, 0.405, -0.018, g).rotation.x = PI_2;
+        const x0 = u * 0.06, x1 = u * 0.15;
+        const str = part(cyl(0.0018, 0.0018, Math.hypot(x1 - x0, 0.4), 3), strings, (x0 + x1) / 2, 0.205, 0.044, g);
+        str.rotation.z = -Math.atan2(x1 - x0, 0.4);
+        str.castShadow = false;
+      }
+      g.userData.offhand = true;
+      g.rotation.x = PI_2;
+      break;
+    }
+    case 'horn': {
+      // A curved horn, dark at the mouthpiece and pale at the bell, bound in
+      // brass; the hand holds it just past the mouthpiece.
+      const dark = mat(0x5a4028, { rough: 0.5 });
+      const pale = mat(0xe2d2aa, { rough: 0.45 });
+      const pts: number[][] = [];
+      const radii: number[] = [];
+      for (let i = 0; i <= 7; i++) {
+        const t = i / 7;
+        pts.push([0, -0.06 + 0.56 * t, 0.2 * t * t]);
+        radii.push(0.013 + 0.06 * Math.pow(t, 1.7));
+      }
+      bentTube(pts.slice(0, 4), radii.slice(0, 4), dark, g);
+      bentTube(pts.slice(3), radii.slice(3), pale, g, 10);
+      // The bell's lip, brass bands and the mouthpiece.
+      const end = pts[7], before = pts[6];
+      const lip = part(new THREE.TorusGeometry(radii[7] + 0.004, 0.009, 5, 16), brass, end[0], end[1], end[2], g);
+      lip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, end[1] - before[1], end[2] - before[2]).normalize());
+      for (const i of [2, 4, 6]) {
+        const [x, y, z] = pts[i];
+        const band = part(cyl(radii[i] + 0.005, radii[i] + 0.005, 0.022, 10), brass, x, y, z, g);
+        band.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, pts[i + 1][1] - pts[i - 1][1], pts[i + 1][2] - pts[i - 1][2]).normalize());
+      }
+      part(cyl(0.011, 0.014, 0.05, 8), brass, 0, -0.085, 0, g);
+      part(cyl(0.018, 0.011, 0.016, 8), brass, 0, -0.115, 0, g);
+      // A ring for the baldric on the middle band.
+      part(new THREE.TorusGeometry(0.016, 0.004, 4, 10), brass, -radii[4] - 0.018, pts[4][1], pts[4][2], g).rotation.y = PI_2;
+      if (rune) {
+        const m = mat(RUNES[rune].color, { emissive: RUNES[rune].color, emissiveIntensity: 2.2 });
+        for (const sd of [-1, 1]) glyph(rune, m, g, sd * (radii[5] + 0.003), pts[5][1] + 0.01, pts[5][2], 0.08, sd * PI_2);
+      }
+      break;
+    }
+  }
+  if (rune && kind !== 'runecircle' && kind !== 'horn') {
+    // An inscribed rune glows on the weapon.
+    const c = RUNES[rune].color;
+    const m = mat(c, { emissive: c, emissiveIntensity: 2.2 });
+    for (const [x, y, z, s, turn] of RUNE_SPOTS[kind]) glyph(rune, m, g, x, y, z, s, turn);
   }
   // Many small parts, few draw calls.
+  compact(g);
+  return g;
+}
+
+/** One throwing knife along +Y (in flight, or lying where it landed), its rune glowing on the blade. */
+export function buildThrowingKnife(rune?: RuneId): THREE.Group {
+  const g = new THREE.Group();
+  part(cyl(0.011, 0.013, 0.1, 6), mat(0x5a3a22, { rough: 0.95 }), 0, 0, 0, g);
+  part(new THREE.TorusGeometry(0.017, 0.005, 4, 10), mat(0x6a6e74, { rough: 0.5, metal: 0.4 }), 0, -0.066, 0, g);
+  part(box(0.046, 0.012, 0.02), mat(0x6a6e74, { rough: 0.5, metal: 0.4 }), 0, 0.055, 0, g);
+  part(bladeGeo([[-0.017, 0.06], [0.017, 0.06], [0.025, 0.14], [0, 0.27], [-0.025, 0.14]], 0.004), mat(0xc4c8cc, { rough: 0.38, metal: 0.45 }), 0, 0, 0, g);
+  if (rune) {
+    const c = RUNES[rune].color;
+    const m = mat(c, { emissive: c, emissiveIntensity: 2.2 });
+    for (const z of [-0.0065, 0.0065]) glyph(rune, m, g, 0, 0.14, z, 0.05);
+  }
   compact(g);
   return g;
 }
