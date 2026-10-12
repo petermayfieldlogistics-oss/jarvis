@@ -56,6 +56,8 @@ export interface Character extends CharacterChoice {
   /** Index into weapons. */
   mainHand: number;
   arrows: { wood: number; steel: number };
+  /** Throwing knives in the bandolier. */
+  knives: number;
   knownSpells: SpellId[];
   /** Up to four spells on the quick bar. */
   spellSlots: (SpellId | null)[];
@@ -153,6 +155,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     weapons,
     mainHand: 0,
     arrows,
+    knives: 0,
     knownSpells: [],
     spellSlots: [null, null, null, null],
     devilDeals: 0,

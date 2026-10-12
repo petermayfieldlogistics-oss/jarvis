@@ -5,7 +5,8 @@
 // own game, and characters, items and progress stay on each player's device.
 
 import * as THREE from 'three';
-import { WEAPONS, type ClassId, type DamageElement, type RaceId, type RoleId } from '../data/defs';
+import { RUNES, WEAPONS, type ClassId, type DamageElement, type RaceId, type RoleId, type RuneId } from '../data/defs';
+import { SONG, SONGS, type SongId } from '../rules/weapons';
 import { BOSSES, ENEMIES, TRIALS, type BossId, type EnemyId } from '../data/world';
 import { mainWeapon } from '../rules/combat';
 import { newAnim, type AttackStyle } from './anim';
@@ -38,10 +39,12 @@ const STYLES: AttackStyle[] = [
   'bite', 'claw', 'sting', 'sweep', 'charge', 'slam', 'leap', 'stomp', 'volley', 'ring', 'summon', 'teleport', 'strikes', 'combo',
   // The great foes' moves (appended: the indices above must not move).
   'breath', 'gust', 'flight', 'strike', 'tail', 'dive', 'wave', 'whirlpool', 'trident', 'geyser', 'reap', 'drain', 'web',
+  // Added later: new entries go on the end so indexes stay stable.
+  'cleave', 'strum', 'song', 'blow',
 ];
 const STYLE_INDEX = new Map(STYLES.map((s, i) => [s, i]));
 const PET_KINDS: AllyKind[] = ['wolf', 'boar', 'scorpion', 'magma-hound', 'drake', 'imp', 'lizard'];
-const PROJECTILES = new Set<ProjectileKind>(['arrow', 'fireball', 'orb', 'water', 'bolt', 'axe']);
+const PROJECTILES = new Set<ProjectileKind>(['arrow', 'fireball', 'orb', 'water', 'bolt', 'axe', 'knife', 'wand']);
 const ELEMENTS = new Set<DamageElement>(['fire', 'water', 'wind', 'earth', 'physical', 'lightning', 'dark', 'light', 'true']);
 const CLASSES = new Set<ClassId>(['warrior', 'ranger', 'mage']);
 const RACES = new Set<RaceId>(['elf', 'draco', 'human', 'zombie', 'angelic', 'orc', 'ancient']);
@@ -52,6 +55,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const vec = (v: THREE.Vector3): [number, number, number] => [r2(v.x), r2(v.y), r2(v.z)];
 const num = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
 const str = (x: unknown) => (typeof x === 'string' ? x : '');
+/** A rune id from the wire (own keys only, so 'toString' is no rune). */
+const runeOf = (x: unknown) => (Object.hasOwn(RUNES, str(x)) ? (str(x) as RuneId) : undefined);
 const arr = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
 const now = () => performance.now() / 1000;
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -121,6 +126,7 @@ export class RemoteHero implements Hero {
   /** Inside a trial's fog (as their game last said). */
   inTrial = false;
   weaponId = '';
+  weaponRune: RuneId | undefined;
   rig: Rig | null = null;
   anim = newAnim();
   private weapon: THREE.Object3D | null = null;
@@ -170,13 +176,15 @@ export class RemoteHero implements Hero {
       this.weaponId = '';
       this.scene.add(rig.root);
     }
-    this.setWeapon(str(m.w));
+    this.setWeapon(str(m.w), str(m.wr));
     this.makeTag();
   }
 
-  private setWeapon(id: string) {
-    if (!this.rig || id === this.weaponId || !WEAPONS[id]) return;
+  private setWeapon(id: string, runeId: string) {
+    const rune = runeOf(runeId);
+    if (!this.rig || (id === this.weaponId && rune === this.weaponRune) || !WEAPONS[id]) return;
     this.weaponId = id;
+    this.weaponRune = rune;
     for (const hand of [this.rig.handL, this.rig.handR]) {
       for (const child of [...hand.children]) {
         if (child.userData.gear) {
@@ -185,7 +193,7 @@ export class RemoteHero implements Hero {
         }
       }
     }
-    const gear = attachGear(this.rig, this.classId, id);
+    const gear = attachGear(this.rig, this.classId, id, rune);
     gear.weapon.userData.gear = true;
     if (gear.shield) gear.shield.userData.gear = true;
     this.weapon = gear.weapon;
@@ -256,7 +264,7 @@ export class RemoteHero implements Hero {
       this.level = lv;
       this.makeTag();
     }
-    this.setWeapon(str(m.w));
+    this.setWeapon(str(m.w), str(m.wr));
     this.receivePets(arr(m.pt));
   }
 
@@ -388,10 +396,11 @@ export class RemoteHero implements Hero {
     if (!tm || a.attackStyle === 'cast' || a.attackStyle === 'roar' || a.attackStyle === 'bow') return;
     if (a.attack < tm.from - 0.04 || a.attack > (a.attackStyle === 'throw' ? tm.hit : tm.to)) return;
     const [b0, b1] = BLADE[def.kind];
+    if (!b1) return;
     w.updateWorldMatrix(true, false);
     const base = w.localToWorld(this.tv.set(0, b0, 0));
     const tip = w.localToWorld(this.tv2.set(0, b1, 0));
-    const color = a.fury > 0.5 ? RAGE_RED : def.element === 'physical' && def.legendary ? 0xffd27a : ELEMENT_COLOR[def.element];
+    const color = a.fury > 0.5 ? RAGE_RED : this.weaponRune ? RUNES[this.weaponRune].color : def.element === 'physical' && def.legendary ? 0xffd27a : ELEMENT_COLOR[def.element];
     const spin = a.attackStyle === 'spin';
     g.fx.trailPoint(w, base, tip, color, spin ? 0.7 : 0.55, spin ? 0.5 : 0.22);
   }
@@ -663,7 +672,7 @@ export class Coop {
 
   private sendHello(to: number | 'all') {
     const c = this.g.player.c;
-    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id });
+    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '' });
   }
 
   /** Our hero's state, for everyone else to draw. */
@@ -691,6 +700,7 @@ export class Coop {
       sf: r2(p.stealthFactor()),
       lv: p.c.level,
       w: mainWeapon(p.c).id,
+      wr: mainWeapon(p.c).rune ?? '',
       it: g.inTrial ? 1 : 0,
       pt: pets,
     });
@@ -764,10 +774,17 @@ export class Coop {
       src: spec.source instanceof Enemy ? spec.source.nid : 0,
       x: spec.explode ?? 0,
       b: spec.burn ? 1 : 0,
+      cl: spec.color ?? 0,
+      ru: spec.rune ?? '',
     };
     if (spec.owner !== 'enemy') return this.queue('all', m);
     if (!this.isHost) return;
     for (const r of this.remotes.values()) if (Math.abs(r.pos.x - spec.from.x) + Math.abs(r.pos.z - spec.from.z) < RANGE * 1.3) this.queue(r.id, m);
+  }
+
+  /** A song from a lyre or war horn: friends close enough to hear it take it up. */
+  shareSong(id: SongId, pos: THREE.Vector3) {
+    if (this.sharing) this.queue('all', { k: 'song', s: id, p: vec(pos) });
   }
 
   /** A whirlwind (spell) for the others to see. */
@@ -858,6 +875,14 @@ export class Coop {
         return;
       case 'pj':
         return this.onProjectile(m, fromHost);
+      case 'song': {
+        const id = str(m.s) as SongId;
+        const p = arr(m.p);
+        const pl = g.player;
+        if (!Object.hasOwn(SONGS, id) || !pl.alive || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > SONG.radius) return;
+        pl.applySong(g, id, r?.name ?? 'A friend');
+        return;
+      }
       case 'tor': {
         const p = arr(m.p);
         g.addTornado(new THREE.Vector3(num(p[0]), num(p[1]), num(p[2])), Math.min(10, num(m.r, 3)), 0, num(m.c, 0x9ab0c8), Math.min(10, num(m.l, 3)), num(m.s) === 1, true);
@@ -968,6 +993,9 @@ export class Coop {
         source: enemy ? (this.mirrors.get(num(m.src)) ?? null) : null,
         explode: Math.min(10, num(m.x)) || undefined,
         burn: num(m.b) === 1,
+        color: num(m.cl) || undefined,
+        // Shown only: a friend's rune glows on their knife, its effect lands in their game.
+        rune: runeOf(m.ru),
       },
       true,
     );

@@ -1,5 +1,6 @@
-import { SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId, type SpellId, type ComboDef, type Element } from '../data/defs';
+import { CLASSES, SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId, type SpellId, type ComboDef, type Element } from '../data/defs';
 import { ANGELIC, hasRelic, ORC, ZOMBIE, rank, type Character } from './character';
+import { WAND, family } from './weapons';
 
 // -------------------------------------------------------- warrior fury --
 
@@ -69,6 +70,10 @@ export interface WieldCheck {
 }
 
 export function canWield(c: Character, weaponId: string): WieldCheck {
+  const def = WEAPONS[weaponId];
+  if (def?.classes && !def.classes.includes(c.classId)) {
+    return { ok: false, reason: `Only a ${def.classes.map((k) => CLASSES[k].name).join(' or ')} can wield the ${def.name}.` };
+  }
   const legendary = WEAPONS[weaponId]?.legendary as LegendaryId | undefined;
   switch (legendary) {
     case undefined:
@@ -131,8 +136,9 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
       dmg *= m;
       if (m > 1.25) tags.push(`x${m.toFixed(2)}`);
     }
-    if (weapon?.kind === 'sword') dmg *= 1 + 0.1 * rank(c, 'keen-edge');
-    if (weapon?.kind === 'axe') dmg *= 1 + 0.12 * rank(c, 'heavy-hand');
+    const fam = weapon && family(weapon.kind);
+    if (fam === 'sword') dmg *= 1 + 0.1 * rank(c, 'keen-edge');
+    if (fam === 'axe') dmg *= 1 + 0.12 * rank(c, 'heavy-hand');
     if (rank(c, 'blade-master')) dmg *= 1.15;
     if (rank(c, 'berserker')) dmg *= 1.15;
     if (c.raceId === 'orc') dmg *= ORC.melee;
@@ -182,6 +188,7 @@ export function spellPowerMultiplier(c: Character, element: DamageElement): numb
   if (c.raceId === 'elf' && c.elfElement === element) m *= 1.25;
   if (c.subclassId === 'elemental' && c.wizardElement === element) m *= (1.5 + 0.1 * rank(c, 'attunement')) * (rank(c, 'elemental-avatar') ? 1.2 : 1);
   if (legendaryEquipped(c, 'staff-of-hecate')) m *= 1.4;
+  if (WEAPONS[mainWeapon(c)?.id]?.kind === 'wand') m *= WAND.spellPower;
   if (c.classId === 'ranger' && (element === 'lightning' || element === 'wind') && rank(c, 'storm-caller')) m *= 1.2;
   if (c.raceId === 'angelic' && element === 'light') m *= ANGELIC.lightPower;
   if (c.raceId === 'orc') m *= ORC.spellPower;
@@ -221,8 +228,9 @@ export function immuneToBleed(c: Character, fury: FuryState): boolean {
 export function bleedChance(c: Character): number {
   const weapon = WEAPONS[mainWeapon(c)?.id];
   if (!weapon) return 0;
-  if (weapon.kind === 'axe') return 0.25 + 0.15 * rank(c, 'rend') + 0.25 * rank(c, 'berserker');
-  if (weapon.kind === 'sword' || weapon.kind === 'dagger') return 0.12;
+  const fam = family(weapon.kind);
+  if (fam === 'axe') return 0.25 + 0.15 * rank(c, 'rend') + 0.25 * rank(c, 'berserker');
+  if (fam === 'sword' || fam === 'dagger' || fam === 'spear') return 0.12;
   return 0;
 }
 

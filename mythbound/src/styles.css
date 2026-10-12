@@ -662,6 +662,7 @@ form.acct .link { align-self: center; }
 .dmg.info { color: #c8d8ff; font-size: 13px; }
 .dmg.heal { color: #7cff96; font-size: 14px; text-shadow: 0 1px 3px #000, 0 0 6px rgba(0, 60, 10, 0.9); }
 .dmg.mana { color: #8cc4ff; font-size: 13px; text-shadow: 0 1px 3px #000, 0 0 6px rgba(0, 20, 70, 0.9); }
+.dmg.song { color: #ffe08a; font-size: 20px; text-shadow: 0 0 8px rgba(255, 200, 80, 0.9), 0 1px 3px #000; }
 .ebar { position: absolute; left: 0; top: 0; width: 62px; height: 6px; background: linear-gradient(#030202, #17120d); box-shadow: 0 0 0 1px #000, 0 0 0 2px rgba(180, 146, 86, 0.55), 0 1px 4px rgba(0, 0, 0, 0.7); }
 .ebar .fill { height: 100%; background: linear-gradient(#e85a40, #a3271c 55%, #5a0e08); }
 .ebar .aware { position: absolute; left: 0; top: -5px; height: 2px; background: #ffd070; box-shadow: 0 0 4px rgba(255, 200, 90, 0.8); }
