@@ -51,6 +51,9 @@ export interface ProjectileSpec {
   rune?: RuneId;
   /** Glow of a wand bolt. */
   color?: number;
+  /** Strikes, then flies back to `home` (the hand that threw it), hitting again on the way. */
+  boomerang?: boolean;
+  home?: () => THREE.Vector3 | null;
 }
 
 interface Projectile extends ProjectileSpec {
@@ -59,7 +62,11 @@ interface Projectile extends ProjectileSpec {
   life: number;
   mesh: THREE.Object3D;
   hit: Set<Actor>;
+  returning?: boolean;
 }
+
+/** How far a returning throw flies before it turns for home. */
+const BOOMERANG_RANGE = 46;
 
 interface Tornado {
   pos: THREE.Vector3;
@@ -1107,9 +1114,25 @@ export class Game {
       pr.life -= dt;
       pr.vel.y -= pr.gravity * dt;
       const prev = pr.pos.clone();
+      if (pr.returning) {
+        // Homing back to the thrower's hand; caught when it arrives.
+        const home = pr.home?.() ?? null;
+        const to = home ? home.clone().sub(pr.pos) : null;
+        if (!to || pr.life <= 0 || to.length() < Math.max(1.1, pr.speed * 1.2 * dt)) {
+          this.dropProjectile(i, !!to);
+          continue;
+        }
+        pr.vel.copy(to).multiplyScalar((pr.speed * 1.2) / to.length());
+      }
       pr.pos.addScaledVector(pr.vel, dt);
+      if (pr.returning) pr.pos.y = Math.max(pr.pos.y, heightAt(pr.pos.x, pr.pos.z) + 0.6);
       pr.mesh.position.copy(pr.pos);
       if (pr.kind === 'arrow' || pr.kind === 'bolt') pr.mesh.lookAt(pr.pos.clone().add(pr.vel));
+      if (pr.kind === 'bolt') {
+        // The thunderbolt spins in flight and sheds sparks.
+        pr.mesh.rotateZ(pr.life * 18);
+        if (Math.random() < 0.7) this.fx.emit(pr.pos, { color: Math.random() < 0.5 ? 0xbfe0ff : 0xfff2a0, count: 1, speed: 2.5, life: 0.25, size: 0.35 });
+      }
       if (pr.kind === 'axe' || pr.kind === 'knife') pr.mesh.rotation.x += dt * (pr.kind === 'knife' ? 28 : 20);
       if (pr.kind === 'wand') {
         pr.mesh.lookAt(pr.pos.clone().add(pr.vel));
@@ -1118,7 +1141,8 @@ export class Game {
       if (pr.kind === 'fireball' && Math.random() < 0.6) this.fx.emit(pr.pos, { color: 0xff6020, count: 1, speed: 0.5, life: 0.4, size: 0.8 });
       if (pr.kind === 'orb' && Math.random() < 0.5) this.fx.emit(pr.pos, { color: 0xa070ff, count: 1, speed: 0.5, life: 0.4, size: 0.6 });
       let impact = false;
-      if (pr.pos.y < heightAt(pr.pos.x, pr.pos.z) || pr.life <= 0) impact = true;
+      if (!pr.returning && (pr.pos.y < heightAt(pr.pos.x, pr.pos.z) || pr.life <= 0)) impact = true;
+      if (pr.boomerang && !pr.returning && pr.pos.distanceTo(pr.from) > BOOMERANG_RANGE) impact = true;
       if (pr.owner === 'enemy') {
         // Each player's game checks its own hero; the shot's copies elsewhere check theirs.
         const p = this.player;
@@ -1137,6 +1161,8 @@ export class Game {
           if (closest.distanceTo(c) < e.radius + 0.35 + e.height * 0.25) {
             pr.hit.add(e);
             if (pr.owner !== 'remote') this.projectileHit(pr, e);
+            // On the way home it cuts through everything in its path.
+            if (pr.returning) continue;
             if ((pr.pierce ?? 0) > 0) pr.pierce!--;
             else {
               impact = true;
@@ -1157,13 +1183,30 @@ export class Game {
           const color = pr.kind === 'wand' ? (pr.color ?? 0xb070ff) : pr.kind === 'fireball' ? 0xff6020 : pr.kind === 'orb' ? 0xa070ff : pr.kind === 'water' ? 0x60b0ff : 0xc0b090;
           this.fx.emit(pr.pos, { color, count: 10, speed: 3, life: 0.35 });
         }
+        // A returning throw turns for home instead of falling.
+        if (pr.boomerang && !pr.returning) {
+          pr.returning = true;
+          pr.hit.clear();
+          pr.gravity = 0;
+          pr.damage *= 0.5;
+          pr.explode = undefined;
+          pr.life = 4;
+          continue;
+        }
         // Our thrown knives wait where they fell to be picked up again.
         if (pr.kind === 'knife' && pr.owner === 'player') this.armory.dropKnife(pr.pos, pr.rune);
-        this.scene.remove(pr.mesh);
-        disposeObject(pr.mesh);
-        this.projectiles.splice(i, 1);
+        this.dropProjectile(i, false);
       }
     }
+  }
+
+  /** Takes a projectile out of play (a returning one is caught, or lost if `caught` is false). */
+  private dropProjectile(i: number, caught: boolean) {
+    const pr = this.projectiles[i];
+    this.scene.remove(pr.mesh);
+    disposeObject(pr.mesh);
+    this.projectiles.splice(i, 1);
+    if (pr.boomerang && pr.owner === 'player') this.player.catchBolt(this, caught);
   }
 
   private projectileHit(pr: Projectile, e: Enemy) {
@@ -1397,10 +1440,12 @@ function projectileMesh(kind: ProjectileKind, color = 0xb070ff, rune?: RuneId): 
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), mat(0x60b0ff, { emissive: 0x2060a0, emissiveIntensity: 1, transparent: 0.8 })));
       break;
     case 'bolt': {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.4, 5), mat(0xfff2a0, { emissive: 0xffe060, emissiveIntensity: 4 }));
+      // The thunderbolt itself, laid along the flight (+z).
+      const m = buildWeapon('bolt', true);
       m.rotation.x = Math.PI / 2;
       g.add(m);
-      g.add(glowSprite(0xfff0a0, 2.5));
+      g.add(glowSprite(0xfff0a0, 2.8));
+      g.add(glowSprite(0x8ec8ff, 4.2, 0.45));
       break;
     }
     case 'axe':

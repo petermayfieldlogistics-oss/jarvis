@@ -776,6 +776,7 @@ export class Coop {
       b: spec.burn ? 1 : 0,
       cl: spec.color ?? 0,
       ru: spec.rune ?? '',
+      bk: spec.boomerang ? 1 : 0,
     };
     if (spec.owner !== 'enemy') return this.queue('all', m);
     if (!this.isHost) return;
@@ -874,7 +875,7 @@ export class Coop {
         g.sfx.play(str(m.f), arr(m.a));
         return;
       case 'pj':
-        return this.onProjectile(m, fromHost);
+        return this.onProjectile(m, fromHost, from);
       case 'song': {
         const id = str(m.s) as SongId;
         const p = arr(m.p);
@@ -973,7 +974,7 @@ export class Coop {
     return null;
   }
 
-  private onProjectile(m: Msg, fromHost: boolean) {
+  private onProjectile(m: Msg, fromHost: boolean, from: number) {
     const enemy = num(m.o) === 1;
     if (enemy && !(this.isGuest && fromHost)) return;
     const kind = str(m.kd) as ProjectileKind;
@@ -996,6 +997,12 @@ export class Coop {
         color: num(m.cl) || undefined,
         // Shown only: a friend's rune glows on their knife, its effect lands in their game.
         rune: runeOf(m.ru),
+        // A friend's thunderbolt flies back to them.
+        boomerang: num(m.bk) === 1,
+        home: () => {
+          const r = this.remotes.get(from);
+          return r ? r.pos.clone().setY(r.pos.y + 1.3) : null;
+        },
       },
       true,
     );
