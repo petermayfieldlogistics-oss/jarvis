@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { glowSprite } from './models';
-import type { AnimState, AttackStyle } from './anim';
+import { BREATH_SPAN, breathSweep, FLIGHT, LANDS, type AnimState, type AttackStyle } from './anim';
 
 /** A jointed leg or arm: `up` at the hip/shoulder, `mid` at the knee/elbow, `low` at the ankle/wrist. */
 export interface Limb {
@@ -2182,6 +2182,7 @@ function S(o: THREE.Object3D, s: number, k: number) {
 
 /** The creature's own reading of a gameplay attack style. */
 function styleFor(kind: string, s: AttackStyle): AttackStyle {
+  if (GREAT_KINDS.has(kind) && s !== 'roar') return s;
   switch (s) {
     case 'slash': case 'slash2': case 'slash3': case 'thrust': case 'heavy': case 'spin': case 'combo':
       return kind === 'insect' ? 'sting' : kind === 'crab' || kind === 'wraith' ? 'claw' : kind === 'stag' || kind === 'witch' ? 'sweep' : kind === 'imp' ? 'throw' : kind === 'eye' ? 'cast' : 'bite';
@@ -2195,6 +2196,9 @@ function styleFor(kind: string, s: AttackStyle): AttackStyle {
       return s;
   }
 }
+
+/** The great foes read their own move names (their strikes run anim.attack 0..1 straight through). */
+const GREAT_KINDS = new Set(['serpent', 'dragon', 'siren', 'reaper', 'spider']);
 
 /** Fraction of the attack at which each move lands. */
 const HIT: Partial<Record<AttackStyle, number>> = { sweep: 0.62, slam: 0.9, ring: 0.92, volley: 0.32, summon: 0.8, leap: 1, stomp: 0.8, strikes: 0.5 };
@@ -2247,6 +2251,14 @@ export function animateCreature(rig: CreatureRig, a: AnimState): void {
       return animWitch(c);
     case 'imp':
       return animImp(c);
+    case 'serpent':
+      return animSerpent(c);
+    case 'siren':
+      return animSiren(c);
+    case 'reaper':
+      return animReaper(c);
+    case 'spider':
+      return animSpider(c);
     default:
       return animQuad(c);
   }
@@ -2310,7 +2322,8 @@ function animQuad(c: Ctx) {
   const legLen = j.legLen ?? 0.75;
   const vr = st.v / sc / legLen;
   const big = rig.kind === 'stag';
-  const drake = rig.kind === 'drake';
+  const dragon = rig.kind === 'dragon';
+  const drake = rig.kind === 'drake' || dragon;
   st.walk += (1 - sstep(1.8, 3.2, vr) - st.walk) * k(3);
   st.gallop += (sstep(5, 7.5, vr) - st.gallop) * k(3);
   const gW = st.walk, gG = st.gallop * (1 - gW), gT = Math.max(0, 1 - gW - gG);
@@ -2322,7 +2335,9 @@ function animQuad(c: Ctx) {
   const ph = st.cyc * TAU;
   const t = a.t + st.seed;
   const fury = a.fury;
-  const flying = a.flying && drake;
+  // The Elder Dragon's flight runs inside its strike (FLIGHT marks take-off and landing).
+  const soaring = dragon && c.style === 'flight' && a.attack > FLIGHT.up * 0.4 && a.attack < FLIGHT.land;
+  const flying = (a.flying && drake) || soaring;
 
   // Body posture: bob, gallop rock, spine flex, lean into turns, breathing.
   let bodyY = -0.012 * gW * mv * Math.cos(2 * ph) - 0.03 * gT * mv * Math.abs(Math.cos(ph)) + 0.05 * gG * Math.sin(ph) * mv;
@@ -2350,9 +2365,46 @@ function animQuad(c: Ctx) {
 
   // Attacks.
   const style = c.style;
-  const hit = HIT[style] ?? 0.667;
+  const hit = HIT[style] ?? (dragon ? LANDS[style]?.[0] : undefined) ?? 0.667;
   const atk = attackCurves(a, hit);
-  if (atk.on > 0 || atk.antic > 0) {
+  let wingOpen = 0, wingBeat = 0;
+  if (dragon && (atk.on > 0 || atk.antic > 0) && (style === 'breath' || style === 'gust' || style === 'claw' || style === 'flight')) {
+    const x = Math.max(0, a.attack);
+    if (style === 'breath') {
+      // Rear back drawing breath (the seams glow), then pour fire along the sweep.
+      const pour = a.attack >= 0 ? env(x, 0, 0.06, 0.9, 1) : 0;
+      const draw = Math.max(0, a.windup) * (1 - pour);
+      neckX += -0.55 * draw + 0.35 * pour;
+      headX += -0.25 * draw + 0.25 * pour;
+      neckY += breathSweep(x, BREATH_SPAN) * 1.4 * pour;
+      jaw += 0.25 * draw + 0.75 * pour;
+      bodyZ += -0.15 * draw + 0.1 * pour;
+      rear = 0.25 * draw;
+      wingOpen = 0.4 * draw;
+    } else if (style === 'gust') {
+      // Rear up with the wings spread, then a great beat downward.
+      rear = 0.75 * Math.max(atk.antic, atk.strike * 0.6);
+      wingOpen = Math.max(atk.antic, atk.strike, atk.after * 0.5);
+      wingBeat = atk.strike;
+      neckX += -0.3 * atk.antic + 0.3 * atk.strike;
+      jaw += 0.5 * atk.strike;
+    } else if (style === 'claw') {
+      // Rise onto the hind legs and rake a foreclaw across.
+      rear = 0.45 * atk.antic + 0.3 * atk.strike;
+      neckY += 0.5 * atk.antic - 0.6 * atk.strike;
+      bodyRoll += -0.12 * atk.antic + 0.18 * atk.strike;
+      jaw += 0.4 * atk.antic;
+    } else {
+      // Flight: crouch to spring, beat into the sky, dive and land in a slam.
+      const land = env(x, FLIGHT.land - 0.01, FLIGHT.land, FLIGHT.land + 0.06, 1);
+      const dive = env(x, FLIGHT.dive, FLIGHT.dive + 0.03, FLIGHT.land - 0.01, FLIGHT.land);
+      bodyY += -0.25 * Math.max(0, a.windup) * (a.attack < 0 ? 1 : 0) - 0.2 * land;
+      neckX += 0.5 * dive + 0.3 * land - 0.2 * (soaring ? 1 : 0);
+      bodyX += 0.35 * dive - 0.08 * (soaring ? 1 - dive : 0);
+      jaw += 0.6 * dive + 0.4 * land;
+      wingOpen = 0.8 * Math.max(0, a.windup) * (a.attack < 0 ? 1 : 0) + 0.7 * land;
+    }
+  } else if (atk.on > 0 || atk.antic > 0) {
     if (style === 'charge' && big) {
       // Rear up during the wind-up, then lower the antlers into the charge.
       rear = Math.max(0, a.windup) * (a.attack < 0 ? 1 : 1 - sstep(0.05, 0.25, a.attack));
@@ -2385,7 +2437,7 @@ function animQuad(c: Ctx) {
       jaw += 0.2 * pull + 0.7 * thrust;
       bodyZ += -0.08 * pull + 0.05 * thrust;
       if (style === 'summon') jaw += 0.4 * env(a.attack, 0.2, 0.4, 0.8, 1);
-    } else if (style === 'slam' || style === 'stomp' || style === 'leap') {
+    } else if (style === 'slam' || style === 'stomp' || style === 'leap' || style === 'ring') {
       rear = atk.antic;
       neckX += -0.3 * atk.antic + 0.5 * atk.strike;
       bodyY -= 0.08 * atk.after;
@@ -2534,9 +2586,14 @@ function animQuad(c: Ctx) {
     R(l.low, low, 0, 0, kl);
   });
 
-  // Wings (drake).
-  for (const w of j.wings ?? NONE) animWing(c, w, flying ? 1 : 0, (atk.on > 0 ? 0.6 : 0) + 0.25 * sstep(5, 9, vr) + (dead ? 0.6 : 0), flying ? 7 : 0);
+  // Wings (drake, dragon): the gust's downbeat is a flap at full strength.
+  for (const w of j.wings ?? NONE) animWing(c, w, flying || wingBeat > 0.1 ? 1 : 0, Math.min(1, (atk.on > 0 ? 0.6 : 0) + 0.25 * sstep(5, 9, vr) + (dead ? 0.6 : 0) + wingOpen), flying ? (dragon ? 5 : 7) : wingBeat > 0.1 ? 9 : 0);
   if (j.wisps && j.glow) animWisps(c, j.wisps, j.glow, style === 'summon' || style === 'volley' ? atk.on : 0, dead);
+  if (dragon && j.glow) {
+    // The furnace in its chest flares as it draws breath.
+    const draw = style === 'breath' ? Math.max(Math.max(0, a.windup), a.attack >= 0 ? 0.7 : 0) : 0;
+    j.glow.emissiveIntensity += ((1 + fury * 0.4 + 1.6 * draw + Math.sin(t * 2) * 0.1) * (1 - 0.85 * dead) - j.glow.emissiveIntensity) * k(5);
+  }
 }
 
 /**
@@ -2936,4 +2993,465 @@ function animImp(c: Ctx) {
   const tail = j.tail ?? NONE;
   tail.forEach((s, i) => R(s, -0.1 + 0.25 * mv + 0.1 * Math.sin(t * 3 - i), Math.sin(t * 2.2 - i * 0.7) * 0.35, 0, k(8)));
   for (const w of j.wings ?? NONE) animWing(c, w, dead ? 0 : 1, dead ? 0.8 : 0, flapRate);
+}
+
+// ------------------------------------------------------------ great foes --
+
+/**
+ * The great foes' own moves: anticipation through the wind-up, then the
+ * strike runs anim.attack 0..1 with the blow at `hit` (anim.ts LANDS).
+ * Fills and returns a shared object: read it before the next call.
+ */
+const BIG = { x: 0, on: 0, antic: 0, strike: 0, hold: 0 };
+function bigCurves(a: AnimState, hit: number, hold = 0.25) {
+  const x = a.attack;
+  if (x < 0) {
+    BIG.x = BIG.on = BIG.strike = BIG.hold = 0;
+    BIG.antic = Math.max(0, a.windup);
+    return BIG;
+  }
+  BIG.x = x;
+  BIG.on = 1 - sstep(0.85, 1, x);
+  const into = sstep(0, Math.max(0.02, hit), x);
+  BIG.antic = 1 - into;
+  BIG.strike = into * (1 - sstep(hit + hold, Math.min(1, hit + hold + 0.3), x));
+  BIG.hold = env(x, hit, hit + 0.05, hit + hold, Math.min(1, hit + hold + 0.3));
+  return BIG;
+}
+
+/** The serpent's neck from the sea up (bind pose leans each segment forward by these angles). */
+const NECK_LIE = [0, 0.35, 0.52, 0.23, -0.16];
+const NECK_REAR = [-0.12, -0.18, -0.2, -0.15, 0.25];
+const NECK_DOWN = [0.05, 0.1, 0.25, 0.3, 0.35];
+
+/**
+ * The Leviathan: the neck sways like a cobra's, the coils roll in the swell
+ * and the tail sweeps far out. Its strike lays the head on the sand; the tail
+ * travels underwater to slam the shore beside the head; it rears and crashes
+ * to raise a wave; it sinks away to dive.
+ */
+function animSerpent(c: Ctx) {
+  const { rig, j, a, st, k } = c;
+  const t = a.t + st.seed;
+  const style = c.style;
+  const x = Math.max(0, a.attack);
+  const fury = a.fury;
+  const neck = j.neck ?? NONE;
+  const n = neck.length;
+  let lie = 0, rear = 0, down = 0, sweep = 0, jaw = 0.08 + 0.05 * Math.sin(t * 0.7), headX = 0, headY = 0, bodyY = 0, sink = 0, thrash = 0;
+  let tailAt = 0, tailUp = 0, tailSlam = 0, tailSink = 0, gill = 0;
+  const hit = LANDS[style]?.[0] ?? HIT[style] ?? 0.5;
+  const big = bigCurves(a, hit, 0.5);
+  if (big.on > 0 || big.antic > 0) {
+    switch (style) {
+      case 'strike':
+        // Rear back, hiss, then the head comes down along the sand and lies there.
+        rear = big.antic;
+        jaw = 0.2 + 0.6 * big.antic;
+        lie = a.attack < 0 ? 0 : sstep(0, hit, x) * (1 - sstep(0.78, 0.98, x));
+        jaw += 0.4 * env(x, 0.1, 0.14, 0.2, 0.3) + 0.25 * Math.max(0, Math.sin(t * 9)) * env(x, 0.2, 0.3, 0.7, 0.8);
+        break;
+      case 'tail': {
+        // The tail slips under, travels to its right side, rises and slams the shore.
+        const w = Math.max(0, a.windup);
+        tailSink = a.attack < 0 ? sstep(0, 0.35, w) : 1 - env(x, 0.05, 0.2, 0.6, 0.85);
+        tailAt = a.attack < 0 ? sstep(0.3, 1, w) : 1 - sstep(0.75, 1, x);
+        tailUp = a.attack < 0 ? 0 : env(x, 0.08, 0.2, 0.62, 0.8);
+        tailSlam = a.attack < 0 ? 0 : sstep(0.2, hit, x) * (1 - sstep(0.62, 0.8, x));
+        headY = -0.4 * Math.max(w, tailUp);
+        jaw = 0.3 * tailUp;
+        break;
+      }
+      case 'breath': {
+        // Gills glow as it draws in; then it pours a torrent down onto the sand.
+        const pour = a.attack < 0 ? 0 : env(x, 0, 0.06, 0.9, 1);
+        rear = 0.6 * Math.max(0, a.windup) * (1 - pour);
+        down = pour;
+        sweep = breathSweep(x, BREATH_SPAN) * pour;
+        jaw = 0.25 + 0.3 * rear + 0.75 * pour;
+        gill = Math.max(Math.max(0, a.windup), pour);
+        break;
+      }
+      case 'wave':
+        // Rear up to its full height, then crash down into the sea.
+        rear = Math.max(big.antic, 0) * 1.3;
+        bodyY = 2.2 * big.antic - 1.5 * big.strike;
+        down = big.strike * 0.8;
+        thrash = big.strike + big.hold;
+        jaw = 0.3 + 0.5 * big.antic;
+        break;
+      case 'dive':
+        // Sinks away (hidden), then bursts up somewhere else.
+        sink = a.attack < 0 ? 0.15 * Math.max(0, a.windup) : sstep(0, 0.3, x) * (1 - sstep(hit, 0.72, x));
+        rear = a.attack < 0 ? Math.max(0, a.windup) * 0.5 : env(x, hit, 0.6, 0.7, 0.9) * 0.8;
+        jaw = 0.2 + 0.6 * env(x, hit, 0.55, 0.75, 0.9);
+        break;
+      default: {
+        // Spit (volley) or bellow (the opening roar).
+        const atk = attackCurves(a, HIT[style] ?? 0.667);
+        rear = 0.7 * atk.antic;
+        down = 0.3 * atk.strike;
+        jaw = 0.2 + 0.4 * atk.antic + 0.6 * atk.strike;
+        if (style === 'summon') (rear = Math.max(rear, 0.9 * atk.on)), (jaw += 0.5 * atk.on), (headX -= 0.4 * atk.on);
+      }
+    }
+  }
+  // Death: it topples, then slides back into the deep.
+  let dead = 0;
+  if (a.dead >= 0) {
+    dead = sstep(0, 1.2, a.dead);
+    lie = Math.max(lie * (1 - dead), 0.6 * dead);
+    sink = sstep(1, 4.5, a.dead);
+    jaw = 0.5;
+    rear = down = sweep = 0;
+  }
+  const h = st.hurt * st.hurt;
+  const idle = (1 - lie) * (1 - dead);
+  const kn = k(lie > 0.5 ? 9 : 5);
+  // Each neck joint: idle S-sway, plus blends towards the lying, rearing and pouring poses.
+  for (let i = 0; i < n; i++) {
+    const sway = idle * (0.06 * Math.sin(t * 0.9 - i * 0.7) + 0.04 * fury * Math.sin(t * 2.3 - i));
+    const px = NECK_LIE[i] * lie + NECK_REAR[i] * rear + NECK_DOWN[i] * down - 0.08 * h + 0.04 * idle * Math.sin(t * 0.6 - i * 0.5);
+    const py = sway + (i === 0 ? sweep : 0) + 0.05 * thrash * Math.sin(t * 11 - i);
+    R(neck[i], px, py, i === 1 ? 0.15 * dead : 0, kn);
+  }
+  R(rig.head, -0.78 * lie + 0.5 * down + 0.3 * rear + headX - 0.2 * h + 0.06 * idle * Math.sin(t * 0.5), headY + 0.25 * idle * Math.sin(t * 0.37), 0, k(7));
+  if (j.jaw) R(j.jaw, Math.max(0, jaw + 0.3 * h), 0, 0, k(14));
+  P(rig.body, 0, bodyY - 26 * sink, 0, k(sink > 0.5 ? 3 : 5));
+  // Coils roll through the swell (and thrash when it crashes down).
+  (j.coils ?? NONE).forEach((cl, i) => {
+    const ph = t * 0.8 - i * 1.4;
+    P(cl, 0, 0.35 * Math.sin(ph) * (1 - dead) - 1.5 * dead + 0.6 * thrash * Math.sin(t * 7 + i), 0, k(4));
+    R(cl, 0.04 * Math.sin(ph + 0.6), 0.08 * Math.sin(ph * 0.7) + 0.1 * thrash * Math.sin(t * 6 + i), 0, k(4));
+  });
+  // The tail: it travels underwater to the right of the head, rises and slams.
+  const tr = j.tailRoot;
+  if (tr) {
+    const bp = tr.userData.bp as V3;
+    // Under the surface while far from home, so it never pops up mid-journey.
+    const away = Math.hypot(tr.position.x - bp.x, tr.position.z - bp.z);
+    const under = Math.max(tailSink, sstep(2, 5, away) * (1 - tailUp));
+    P(tr, 5 * tailAt, -12 * under + 0.5 * tailUp, 29 * tailAt, k(tailAt > 0 ? 2.2 : 1.6));
+    R(tr, -0.3 * tailUp + 1.35 * tailSlam, 0, -0.25 * tailUp * (1 - tailSlam), k(tailSlam > 0 ? 14 : 5));
+  }
+  const tail = j.tail ?? NONE;
+  tail.forEach((seg, i) => {
+    const w = i / Math.max(1, tail.length - 1);
+    R(seg, 0.1 * tailSlam * w + 0.05 * Math.sin(t * 1.1 - i * 0.6) * (1 - tailSlam), 0.12 * Math.sin(t * 0.8 - i * 0.5) * (1 - tailUp), 0.06 * Math.sin(t * 1.3 - i * 0.7), k(6));
+  });
+  if (j.glow) j.glow.emissiveIntensity += ((1 + 0.5 * fury + 2.2 * gill + 0.15 * Math.sin(t * 1.7)) * (1 - 0.8 * dead) - j.glow.emissiveIntensity) * k(5);
+}
+
+/** Holds a pole (trident, scythe) at `phi` from straight up (+ is tipped forward), whatever the arm does. */
+function poleAngle(up: number, mid: number, phi: number) {
+  return phi - up - mid;
+}
+
+/**
+ * The Queen of the Sea floats on her coiling tail. Her trident thrusts three
+ * times, she raises whirlpools and geysers with it, hurls water from her
+ * left hand and calls the drowned with both arms raised.
+ */
+function animSiren(c: Ctx) {
+  const { rig, j, a, k } = c;
+  const { mv, t, dead, h } = hover(c, 1.2, 0.09);
+  const style = c.style;
+  const x = Math.max(0, a.attack);
+  const fury = a.fury;
+  const arms = j.arms ?? NONE;
+  const right = arms[0], left = arms[1];
+  let rUp = -0.25 + 0.05 * Math.sin(t * 0.9), rUpZ = 0.1, rMid = -0.35, phi = 0.08;
+  let lUp = -0.35 + 0.08 * Math.sin(t * 1.1), lUpZ = -0.2, lMid = -0.7;
+  let chestX = 0, chestY = 0, headX = 0, lean = 0, spin = 0;
+  const hit = LANDS[style]?.[0] ?? HIT[style] ?? 0.5;
+  if (a.attack >= 0 || a.windup > 0) {
+    switch (style) {
+      case 'trident': {
+        // Three thrusts: draw back, lunge, draw back...
+        const w = Math.max(0, a.windup);
+        let thrust = 0, pull = w;
+        if (a.attack >= 0) {
+          const hits = LANDS.trident!;
+          pull = 0;
+          for (const hx of hits) {
+            thrust = Math.max(thrust, env(x, hx - 0.1, hx, hx + 0.04, hx + 0.16));
+            pull = Math.max(pull, env(x, hx - 0.2, hx - 0.12, hx - 0.1, hx - 0.02));
+          }
+        }
+        rUp = -0.5 - 0.4 * thrust + 0.3 * pull;
+        rMid = -1.2 + 1.0 * thrust - 0.3 * pull;
+        rUpZ = 0.15;
+        phi = 1.45;
+        chestY = 0.35 * pull - 0.3 * thrust;
+        lean = 0.25 * thrust - 0.1 * pull;
+        lUp = -0.6;
+        lUpZ = -0.5;
+        break;
+      }
+      case 'whirlpool':
+      case 'summon': {
+        // Both arms rise and turn the sea.
+        const up = a.attack < 0 ? Math.max(0, a.windup) : 1 - sstep(0.75, 1, x);
+        const turn = Math.sin(t * 4) * up;
+        rUp = -2.4 * up;
+        lUp = -2.4 * up;
+        rUpZ = 0.5 * up + 0.3 * turn;
+        lUpZ = -0.5 * up + 0.3 * turn;
+        rMid = -0.3;
+        lMid = -0.3;
+        phi = 0.1;
+        headX = -0.3 * up;
+        chestX = -0.15 * up;
+        if (style === 'whirlpool') spin = 0.3 * up * Math.sin(t * 3);
+        break;
+      }
+      case 'geyser':
+      case 'ring': {
+        // The trident raised high, then driven down into the ground.
+        const atk = style === 'ring' ? attackCurves(a, HIT.ring!) : bigCurves(a, hit);
+        rUp = -2.7 * atk.antic - 0.7 * atk.strike;
+        lUp = -2.5 * atk.antic - 0.6 * atk.strike;
+        rMid = -0.2;
+        lMid = -0.3;
+        phi = -0.15 + 3.0 * atk.strike;
+        chestX = -0.25 * atk.antic + 0.35 * atk.strike;
+        break;
+      }
+      case 'sweep': {
+        const atk = attackCurves(a, HIT.sweep!);
+        chestY = 0.6 * atk.antic - 0.8 * atk.strike;
+        rUp = -1.1;
+        rUpZ = 0.6 * atk.antic - 0.3 * atk.strike;
+        rMid = -0.4;
+        phi = 1.5;
+        break;
+      }
+      case 'teleport':
+        break;
+      default: {
+        // Volley: water hurled from the left hand.
+        const atk = attackCurves(a, HIT[style] ?? 0.4);
+        lUp = -0.6 * atk.antic - 1.5 * atk.strike;
+        lMid = -1.2 * atk.antic - 0.1 * atk.strike;
+        lUpZ = 0.2 * atk.antic;
+        chestY = -0.4 * atk.antic + 0.3 * atk.strike;
+      }
+    }
+  }
+  const tele = style === 'teleport' && (a.attack >= 0 || a.windup > 0);
+  S(rig.body, tele ? 1 - 0.7 * sstep(0, 0.4, Math.max(0, a.attack, a.windup)) : 1 - 0.25 * dead, k(tele ? 14 : 8));
+  if (spin) rig.body.rotation.y += spin * c.dt;
+  if (j.chest) R(j.chest, chestX + lean - 0.15 * h + 0.4 * dead, chestY, 0, k(10));
+  R(rig.head, headX + 0.08 * Math.sin(t * 0.5) - 0.2 * h + 0.3 * dead, 0.25 * Math.sin(t * 0.31) * (1 - mv), 0.05 * Math.sin(t * 0.7), k(6));
+  if (right) {
+    R(right.up, rUp + 0.6 * dead, 0, rUpZ, k(12));
+    R(right.mid, rMid, 0, 0, k(12));
+    R(right.low, poleAngle(rUp, rMid, phi), 0, 0, k(12));
+  }
+  if (left) {
+    R(left.up, lUp + 0.6 * dead, 0, lUpZ, k(12));
+    R(left.mid, lMid, 0, 0, k(12));
+    R(left.low, 0.2, 0, 0, k(12));
+  }
+  // The tail undulates under her, curling tighter as she moves.
+  (j.tail ?? NONE).forEach((seg, i) => R(seg, 0.08 * Math.sin(t * 2 - i * 0.7) + 0.06 * mv - 0.1 * dead, 0.1 * Math.sin(t * 1.4 - i * 0.6), 0, k(6)));
+  animStrands(c, j.strands ?? NONE, 0.08 + 0.05 * fury, 0.3 + mv * 0.6 + 0.4 * dead);
+  if (j.glow) j.glow.emissiveIntensity += ((1 + 0.5 * fury + (style === 'whirlpool' || style === 'summon' ? 1.4 * Math.max(0, a.windup, x > 0 ? 1 : 0) : 0) + 0.1 * Math.sin(t * 3)) * (1 - dead) - j.glow.emissiveIntensity) * k(6);
+  (j.wisps ?? NONE).forEach((w, i) => {
+    if (i === 0) {
+      // The water orb in her left hand swells before she throws.
+      const sc = (0.5 + 0.08 * Math.sin(t * 5) + 0.4 * (style === 'volley' ? Math.max(0, a.windup) : 0)) * (1 - dead);
+      w.scale.set(sc, sc, sc);
+      return;
+    }
+    const ph = t * 1.2 + i * Math.PI;
+    w.position.set(Math.cos(ph) * 0.7, 0.4 + 0.25 * Math.sin(t * 1.7 + i), Math.sin(ph) * 0.5);
+    const sc = (0.3 + 0.06 * Math.sin(t * 4 + i)) * (1 - dead);
+    w.scale.set(sc, sc, sc);
+  });
+}
+
+/**
+ * The Reaper drifts with its robe trailing. The scythe goes up over its
+ * right shoulder and sweeps across in a great arc; its left hand reaches out
+ * to drink a hero's life; it fades out to step behind you.
+ */
+function animReaper(c: Ctx) {
+  const { rig, j, a, k } = c;
+  const { mv, t, dead, h } = hover(c, 1.0, 0.12);
+  const style = c.style;
+  const x = Math.max(0, a.attack);
+  const fury = a.fury;
+  const arms = j.arms ?? NONE;
+  const right = arms[0], left = arms[1];
+  let rUp = -0.35 + 0.05 * Math.sin(t * 0.8), rUpZ = 0.15, rMid = -0.5, phi = 0.12;
+  let lUp = -0.15, lUpZ = -0.15, lMid = -0.6;
+  let chestX = 0.08, chestY = 0, headX = 0.1, lean = 0, glow = 0;
+  if (a.attack >= 0 || a.windup > 0) {
+    switch (style) {
+      case 'reap':
+      case 'sweep': {
+        // Up over the right shoulder, then a great flat sweep to the left.
+        const hit = style === 'reap' ? LANDS.reap![0] : HIT.sweep!;
+        const atk = style === 'reap' ? bigCurves(a, hit, 0.15) : attackCurves(a, hit);
+        const across = style === 'reap' && a.attack >= 0 ? sstep(0.15, 0.6, x) : atk.strike;
+        chestY = -0.9 * atk.antic + 1.0 * across * (1 - 0.6 * atk.antic);
+        rUp = -2.3 * atk.antic - 1.3 * across;
+        rUpZ = 0.6 * atk.antic + 0.2 * across;
+        rMid = -0.5 * atk.antic - 0.2 * across;
+        phi = -0.4 * atk.antic + 1.5 * across;
+        lUp = -0.6 * atk.antic - 0.8 * across;
+        lean = 0.15 * across - 0.1 * atk.antic;
+        glow = Math.max(atk.antic, across) * 0.6;
+        break;
+      }
+      case 'drain': {
+        // The left hand reaches out; the lantern burns bright.
+        const reach = a.attack < 0 ? Math.max(0, a.windup) : 1 - sstep(0.88, 1, x);
+        lUp = -1.55 * reach;
+        lUpZ = -0.1 * reach;
+        lMid = -0.6 + 0.5 * reach;
+        headX = -0.05 * reach;
+        lean = 0.15 * reach;
+        glow = reach * (0.8 + 0.2 * Math.sin(t * 13));
+        break;
+      }
+      case 'summon': {
+        const atk = attackCurves(a, HIT.summon!);
+        const up = Math.max(atk.antic, atk.on);
+        rUp = -2.4 * up;
+        lUp = -2.4 * up;
+        rUpZ = 0.4 * up;
+        lUpZ = -0.4 * up;
+        phi = 0.2;
+        headX = -0.35 * up;
+        glow = up;
+        break;
+      }
+      case 'teleport':
+        break;
+      default: {
+        const atk = attackCurves(a, HIT[style] ?? 0.5);
+        lUp = -1.4 * (atk.antic + atk.strike);
+        glow = atk.strike;
+      }
+    }
+  }
+  const tele = style === 'teleport' && (a.attack >= 0 || a.windup > 0);
+  S(rig.body, tele ? 1 - 0.75 * sstep(0, 0.45, Math.max(0, a.attack, a.windup)) : 1 - 0.35 * dead, k(tele ? 14 : 6));
+  if (j.chest) R(j.chest, chestX + lean - 0.15 * h + 0.5 * dead, chestY, 0, k(9));
+  R(rig.head, headX + 0.06 * Math.sin(t * 0.6) - 0.15 * h + 0.4 * dead, 0.3 * Math.sin(t * 0.27) * (1 - mv), 0.04 * Math.sin(t * 0.9), k(5));
+  if (right) {
+    R(right.up, rUp + 0.9 * dead, 0, rUpZ, k(11));
+    R(right.mid, rMid, 0, 0, k(11));
+    // Dropped as it falls: the scythe tips over.
+    R(right.low, poleAngle(rUp, rMid, phi) + 1.2 * dead, 0, 0, k(11));
+  }
+  if (left) {
+    R(left.up, lUp + 0.6 * dead, 0, lUpZ, k(11));
+    R(left.mid, lMid, 0, 0, k(11));
+    R(left.low, 0.1, 0, 0, k(11));
+  }
+  animStrands(c, j.strands ?? NONE, 0.1 + 0.05 * fury, 0.4 + mv * 0.9 + 0.6 * dead, 0.05);
+  if (j.glow) j.glow.emissiveIntensity += ((1 + 0.6 * fury + 2 * glow + 0.15 * Math.sin(t * 4)) * (1 - 0.9 * dead) - j.glow.emissiveIntensity) * k(8);
+  (j.wisps ?? NONE).forEach((w, i) => {
+    if (i === 0) {
+      // The soul lantern.
+      const sc = (0.8 + 0.1 * Math.sin(t * 7) + 0.6 * glow) * (1 - dead);
+      w.scale.set(sc, sc, sc);
+      return;
+    }
+    const ph = t * 0.9 + (i / 3) * TAU;
+    w.position.set(Math.cos(ph) * 0.8, 0.6 + 0.4 * Math.sin(t * 1.3 + i), Math.sin(ph) * 0.8);
+    const sc = (0.3 + 0.08 * Math.sin(t * 5 + i) + 0.2 * glow) * (1 - dead);
+    w.scale.set(sc, sc, sc);
+  });
+}
+
+/**
+ * Spiders: legs ripple in a many-legged walk, the abdomen breathes and
+ * sways, fangs twitch. The Giant Spider also hangs head-down from its thread
+ * (a.flying), rears to bite, crouches and springs to leap, swings its
+ * abdomen forward to shoot web and pulses to hatch its young.
+ */
+function animSpider(c: Ctx) {
+  const { rig, j, a, st, dt, k } = c;
+  const sc = rig.root.scale.x || 1;
+  const vn = st.v / sc;
+  const mv = sstep(0.1, 1, vn);
+  st.cyc = frac(st.cyc + (st.v * dt) / (1.1 * sc));
+  const t = a.t + st.seed;
+  const style = c.style;
+  const hang = a.flying ? 1 : 0;
+  const dead = a.dead >= 0 ? sstep(0, 0.7, a.dead) : 0;
+  const h = st.hurt * st.hurt;
+  let bodyX = 0, bodyY = 0.006 * Math.sin(t * 2), bodyZ = 0, rearUp = 0, fang = 0.1 + 0.08 * Math.max(0, Math.sin(t * 1.9)) ** 6;
+  let abdX = 0.04 * Math.sin(t * 1.3), abdY = 0.05 * Math.sin(t * 0.7), pulse = 0.02 * Math.sin(t * 3), crouch = 0, spread = 0, frontUp = 0;
+  if (a.attack >= 0 || a.windup > 0) {
+    switch (style) {
+      case 'bite': {
+        const atk = attackCurves(a, LANDS.bite![0]);
+        rearUp = 0.35 * atk.antic;
+        frontUp = atk.antic;
+        fang = 0.1 + 0.7 * atk.antic - 0.2 * atk.strike;
+        bodyZ = -0.04 * atk.antic + 0.12 * atk.strike;
+        bodyX = 0.15 * atk.strike;
+        break;
+      }
+      case 'web': {
+        // The abdomen swings down and forward under the body, and pulses as it shoots.
+        const atk = bigCurves(a, LANDS.web![0], 0.2);
+        abdX = 1.3 * Math.max(atk.antic, atk.strike);
+        rearUp = 0.25 * Math.max(atk.antic, atk.strike);
+        pulse = 0.12 * atk.strike * Math.max(0, Math.sin(t * 25));
+        break;
+      }
+      case 'leap': {
+        const atk = attackCurves(a, HIT.leap!);
+        crouch = atk.antic;
+        spread = a.attack >= 0 && a.attack < 0.99 ? 1 : 0;
+        frontUp = 0.6 * spread;
+        fang = 0.2 + 0.6 * spread;
+        break;
+      }
+      default: {
+        // Summon (hatchlings) and the roar: rear up, fangs wide, the abdomen heaving.
+        const atk = attackCurves(a, HIT[style] ?? 0.8);
+        rearUp = 0.6 * Math.max(atk.antic, atk.on * 0.8);
+        frontUp = rearUp * 1.6;
+        fang = 0.2 + 0.7 * rearUp;
+        pulse = style === 'summon' ? 0.1 * Math.max(0, Math.sin(t * 9)) * atk.on : 0;
+        abdY += 0.15 * Math.sin(t * 6) * atk.on;
+      }
+    }
+  }
+  // Hanging from its thread: nose down, legs gathered in.
+  const kb = k(10);
+  R(rig.body, -0.55 * rearUp + bodyX + 1.35 * hang - 0.1 * h + 0.02 * Math.sin(st.cyc * TAU * 2) * mv, 0.2 * Math.sin(t * 0.4) * hang, st.hurtSide * 0.12 * h + 3.0 * dead, kb);
+  P(rig.body, 0, bodyY - 0.12 * crouch + 0.1 * rearUp - 0.25 * dead + 0.3 * dead, bodyZ, kb);
+  R(rig.head, -0.15 * frontUp + 0.05 * Math.sin(t * 0.8), 0.15 * Math.sin(t * 0.5) * (1 - mv), 0, k(10));
+  for (const f of j.fangs ?? NONE) {
+    const s = (f.userData.bp as V3).x > 0 ? 1 : -1;
+    R(f, -0.4 * fang, s * 0.5 * fang, 0, k(fang > 0.4 ? 18 : 30));
+  }
+  if (j.abdomen) {
+    R(j.abdomen, abdX - 0.3 * hang + 0.2 * dead, abdY, 0.04 * Math.sin(t * 0.9), k(8));
+    S(j.abdomen, 1 + pulse + 0.015 * Math.sin(t * 2.2), k(20));
+  }
+  // Legs: the walk, plus the poses for rearing, crouching, leaping and hanging.
+  const limbs = j.limbs ?? NONE;
+  animSpiderLegs(c, limbs, 0.35, 0.5, mv * (1 - hang), dead);
+  const kl = k(dead ? 6 : 16);
+  limbs.forEach((l, i) => {
+    const pair = Math.floor(i / 2);
+    const s = l.side;
+    const front = pair === 0 ? 1 : pair === 1 ? 0.5 : 0;
+    const lift = frontUp * front;
+    const gather = hang * (0.6 + 0.2 * Math.sin(t * 1.5 + i));
+    if (lift + crouch + spread + gather <= 0.001) return;
+    // Added on top of the walk: raise the front pairs, splay or tuck.
+    l.up.rotation.z += (s * (0.9 * lift - 0.35 * crouch + 0.3 * spread + 0.5 * gather)) * kl;
+    l.mid.rotation.z += (-s * (0.6 * lift - 0.5 * crouch - 0.2 * spread + 0.9 * gather)) * kl;
+    l.up.rotation.x += (-0.4 * lift) * kl;
+  });
 }

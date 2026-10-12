@@ -20,6 +20,7 @@ import type { Hero } from './hero';
 /** Moves only the great foes have; everything else is the shared Boss's. */
 const SPECIAL = new Set<BossAttack>(['bite', 'claw', 'breath', 'gust', 'flight', 'strike', 'tail', 'dive', 'wave', 'whirlpool', 'trident', 'geyser', 'reap', 'drain', 'web']);
 const GREAT = new Set<BossId>(['leviathan', 'sea-queen', 'elder-dragon', 'reaper', 'giant-spider']);
+const CURVED = new Set<BossAttack>(['bite', 'claw', 'gust']);
 
 /**
  * The Leviathan's measurements in metres. Its neck rises from the sea `ring`
@@ -187,6 +188,8 @@ export class GreatBoss extends Boss {
 
   update(dt: number, g: Game) {
     this.clock += dt;
+    // The spider hangs head-down from its thread while up in the canopy.
+    this.anim.flying = this.thread !== null && this.alt > 1;
     if (this.alive && this.lair) {
       if (!this.engaged) {
         this.rest(dt, g);
@@ -216,6 +219,7 @@ export class GreatBoss extends Boss {
   }
 
   updateMirror(dt: number, g: Game, at: number) {
+    this.anim.flying = this.thread !== null && this.pos.y - heightAt(this.pos.x, this.pos.z) > 1.2;
     super.updateMirror(dt, g, at);
     // The host's pose carries the spider's hang and the dragon's flight (pos.y).
     this.cosmetics(dt, g);
@@ -353,8 +357,14 @@ export class GreatBoss extends Boss {
   protected begin(attack: BossAttack, g: Game, windup?: number) {
     super.begin(attack, g, windup);
     if (!SPECIAL.has(attack)) return;
-    // Our strikes run anim.attack 0..1 straight through; blows land at LANDS.
-    this.btiming = { a0: 0, hits: LANDS[attack] ?? [0.3] };
+    // Our strikes run anim.attack 0..1 straight through and land at LANDS; the
+    // bites, claws and gusts are posed by the creature attack curves, whose
+    // strike starts where the anticipation peaks.
+    const lands = LANDS[attack] ?? [0.3];
+    if (CURVED.has(attack)) {
+      const a0 = lands[0] * 0.7;
+      this.btiming = { a0, hits: [(lands[0] - a0) / (1 - a0)] };
+    } else this.btiming = { a0: 0, hits: lands };
     this.tick = 0;
     const p = this.target ?? g.player;
     const { w, s } = this.dur;
@@ -535,7 +545,7 @@ export class GreatBoss extends Boss {
       a.attack = -1;
     } else if (this.stage === 'strike') {
       a.windup = 0;
-      a.attack = Math.min(0.999, k);
+      a.attack = Math.min(0.999, this.btiming.a0 + (1 - this.btiming.a0) * k);
     } else {
       a.windup = 0;
       a.attack = -1;
