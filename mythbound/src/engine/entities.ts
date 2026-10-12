@@ -16,6 +16,8 @@ export interface Model {
   height: number;
   animate(a: AnimState): void;
   humanoid?: Rig;
+  /** A creature's rig, for effects that follow its joints (a dragon's breath). */
+  creature?: CreatureRig;
 }
 
 function humanoidModel(rig: Rig): Model {
@@ -24,7 +26,7 @@ function humanoidModel(rig: Rig): Model {
 }
 function creatureModel(rig: CreatureRig): Model {
   compact(rig.root);
-  return { root: rig.root, height: rig.height, animate: (a) => animateCreature(rig, a) };
+  return { root: rig.root, height: rig.height, animate: (a) => animateCreature(rig, a), creature: rig };
 }
 
 export function enemyModel(def: EnemyDef): Model {
@@ -947,14 +949,15 @@ const BOSS_TIMING: Record<BossAttack, { w: number; s: number; r: number }> = {
   summon: { w: 0.9, s: 1.0, r: 1.2 },
   teleport: { w: 0.6, s: 0.25, r: 0 },
   leap: { w: 0.75, s: 1.2, r: 1.3 },
-  // The elder and hunted foes' own moves (bosses.ts). The recover after the
-  // Leviathan's strike is long on purpose: its head lies on the sand, open.
+  // The elder and hunted foes' own moves (bosses.ts). Their strike holds the
+  // whole move (the Leviathan's head lying on the sand is part of its strike),
+  // so a co-op guest, who only sees anim.attack, poses all of it.
   bite: { w: 0.7, s: 0.7, r: 0.8 },
   claw: { w: 0.8, s: 0.8, r: 0.9 },
   breath: { w: 1.1, s: 2.4, r: 1.1 },
   gust: { w: 0.9, s: 1.0, r: 1.0 },
   flight: { w: 0.8, s: 9, r: 1.4 },
-  strike: { w: 1.1, s: 1.0, r: 2.0 },
+  strike: { w: 1.1, s: 3.0, r: 0.4 },
   tail: { w: 1.2, s: 1.0, r: 0.9 },
   dive: { w: 0.7, s: 2.4, r: 0.5 },
   wave: { w: 1.5, s: 3.6, r: 1.0 },
@@ -983,6 +986,8 @@ export class Boss extends Enemy {
   leapFrom = new THREE.Vector3();
   leapTo = new THREE.Vector3();
   arena: { x: number; z: number; radius: number };
+  /** The trial or lair it belongs to (co-op guests rebuild it there). */
+  place = '';
   /** Seconds left of the opening roar (or the phase-two roar). */
   roarLeft = 1.6;
   protected roarDur = 1.6;
@@ -1071,7 +1076,7 @@ export class Boss extends Enemy {
 
     if (this.phase === 1 && this.hp < this.maxHp * 0.5) {
       this.phase = 2;
-      g.sfx.toast(`${this.bdef.name} is enraged!`, 'boss', this.pos);
+      g.sfx.toast(this.bdef.rage ?? `${this.bdef.name} is enraged!`, 'boss', this.pos);
       g.sfx.ring(this.center(), 10, 0xff4020, 0.8);
       g.sfx.sound('roar', this.pos);
       g.sfx.shake(this.pos, 0.5);

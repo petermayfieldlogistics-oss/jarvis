@@ -3,7 +3,7 @@
 // circles, hit impacts and dust).
 
 import * as THREE from 'three';
-import { glowTexture, mat } from './models';
+import { glowSprite, glowTexture, mat } from './models';
 import { mulberry32 } from './noise';
 import { heightAt, normalAt, WATER_LEVEL } from './terrain';
 
@@ -516,6 +516,104 @@ export interface Telegraph {
   fill: THREE.Mesh;
   done: boolean;
   onDone?: () => void;
+  /** A strip fills along its length (a cone or circle grows from its centre). */
+  strip?: number;
+  /** Its own geometry, freed with it. */
+  ownGeo?: boolean;
+}
+
+/** A rolling wall of water (see rules/boss.ts WaveSpec). */
+export interface WaveFx {
+  x: number;
+  z: number;
+  yaw: number;
+  speed: number;
+  width: number;
+  gapAt: number;
+  gap: number;
+}
+
+/** A flat sector, apex at the origin, centred on +z (the yaw convention), lying on the ground. */
+function sectorGeo(half: number): THREE.BufferGeometry {
+  const g = new THREE.CircleGeometry(1, 24, Math.PI / 2 - half, half * 2);
+  g.rotateX(-Math.PI / 2);
+  // CircleGeometry measures from +x towards -z once flat: mirror so the middle points at +z.
+  g.scale(1, 1, -1);
+  return g;
+}
+
+/** A flat strip from the origin along +z (unit long, unit half-width). */
+function stripGeo(): THREE.BufferGeometry {
+  const g = new THREE.PlaneGeometry(2, 1);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0, 0.5);
+  return g;
+}
+
+/** A spiral of foam for whirlpools. */
+function swirlTexture(): THREE.Texture {
+  const hit = texCache.get('swirl');
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d')!;
+  const c = 64;
+  const grad = g.createRadialGradient(c, c, 0, c, c, c);
+  grad.addColorStop(0, 'rgba(10,40,60,0.95)');
+  grad.addColorStop(0.35, 'rgba(30,110,150,0.6)');
+  grad.addColorStop(1, 'rgba(60,170,210,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(230,250,255,0.85)';
+  g.lineCap = 'round';
+  for (let arm = 0; arm < 4; arm++) {
+    g.lineWidth = 3;
+    g.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const u = i / 40;
+      const a = arm * (TAU / 4) + u * 5;
+      const r = 6 + u * 54;
+      if (i) g.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r);
+      else g.moveTo(c + Math.cos(a) * r, c + Math.sin(a) * r);
+    }
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  texCache.set('swirl', tex);
+  return tex;
+}
+
+/** A spider's web seen from above: spokes and a spiral of silk. */
+function webTexture(): THREE.Texture {
+  const hit = texCache.get('web');
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d')!;
+  const c = 64;
+  const rnd = mulberry32(9);
+  g.strokeStyle = 'rgba(245,245,240,0.95)';
+  g.lineWidth = 1.6;
+  const spokes = 12;
+  for (let i = 0; i < spokes; i++) {
+    const a = (i / spokes) * TAU + rnd() * 0.15;
+    g.beginPath();
+    g.moveTo(c, c);
+    g.lineTo(c + Math.cos(a) * 62, c + Math.sin(a) * 62);
+    g.stroke();
+  }
+  g.lineWidth = 1.1;
+  g.beginPath();
+  for (let i = 0; i <= spokes * 7; i++) {
+    const a = (i / spokes) * TAU;
+    const r = 5 + (i / (spokes * 7)) * 56;
+    if (i) g.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r);
+    else g.moveTo(c + Math.cos(a) * r, c + Math.sin(a) * r);
+  }
+  g.stroke();
+  const tex = new THREE.CanvasTexture(cv);
+  texCache.set('web', tex);
+  return tex;
 }
 
 export class Fx {
@@ -585,6 +683,163 @@ export class Fx {
   }
 
   /** A red circle that fills up until the attack lands. */
+  /**
+   * A cone (a breath, a sweep) or a strip (a strike, a wave's lane) from
+   * (x, z) along `yaw`, filling until it lands. Lies just above the highest
+   * ground it covers, so slopes don't swallow it.
+   */
+  telegraphShape(kind: 'cone' | 'line', x: number, z: number, yaw: number, length: number, half: number, delay: number, color = 0xff3020): Telegraph {
+    const geo = kind === 'cone' ? sectorGeo(half) : stripGeo();
+    let y = -Infinity;
+    for (let i = 0; i <= 4; i++) {
+      for (const sd of [-1, 0, 1]) {
+        const a = kind === 'cone' ? yaw + sd * half : yaw;
+        const off = kind === 'cone' ? 0 : sd * half;
+        const d = (length * i) / 4;
+        const px = x + Math.sin(a) * d + Math.cos(yaw) * off, pz = z + Math.cos(a) * d - Math.sin(yaw) * off;
+        y = Math.max(y, heightAt(px, pz), WATER_LEVEL);
+      }
+    }
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+    const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
+    for (const m of [mesh, fill]) {
+      m.position.set(x, y + 0.14, z);
+      m.rotation.y = yaw;
+      m.renderOrder = 1;
+    }
+    fill.position.y += 0.01;
+    if (kind === 'cone') {
+      mesh.scale.setScalar(length);
+      fill.scale.setScalar(0.01);
+    } else {
+      mesh.scale.set(half, 1, length);
+      fill.scale.set(half, 1, 0.01);
+    }
+    this.scene.add(mesh, fill);
+    const t: Telegraph = { x, z, radius: length, delay, age: 0, mesh, fill, done: false, strip: kind === 'line' ? half : undefined, ownGeo: true };
+    this.telegraphs.push(t);
+    return t;
+  }
+
+  /** A wall of water rolling across the ground, with a gap to slip through. */
+  wave(w: WaveFx, life: number) {
+    const g = new THREE.Group();
+    const m = new THREE.MeshLambertMaterial({ color: 0x2a8ab8, emissive: 0x0a3a50, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+    const foam = new THREE.MeshLambertMaterial({ color: 0xe8f8ff, emissive: 0x507080, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+    // Two stretches of wall either side of the gap (across is measured to the wall's right, which is local -x).
+    const lo = -w.width / 2, hi = w.width / 2;
+    const g0 = Math.max(lo, Math.min(hi, w.gapAt - w.gap / 2)), g1 = Math.max(lo, Math.min(hi, w.gapAt + w.gap / 2));
+    for (const [a0, a1] of [[lo, g0], [g1, hi]]) {
+      if (a1 - a0 < 0.5) continue;
+      const geo = new THREE.PlaneGeometry(a1 - a0, 3.6, Math.max(2, Math.round((a1 - a0) / 3)), 4);
+      const pos = geo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        // Curl the top of the wall forward, like a breaking wave.
+        const v = (pos.getY(i) + 1.8) / 3.6;
+        pos.setZ(i, v * v * 1.6 - (1 - v) * 0.6);
+        pos.setY(i, pos.getY(i) + 1.6 + 0.25 * Math.sin(pos.getX(i) * 0.7));
+      }
+      geo.computeVertexNormals();
+      const wall = new THREE.Mesh(geo, m);
+      wall.position.x = -(a0 + a1) / 2;
+      g.add(wall);
+      const crest = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, a1 - a0, 6, 1, true), foam);
+      crest.rotation.z = Math.PI / 2;
+      crest.position.set(-(a0 + a1) / 2, 3.45, 1.55);
+      g.add(crest);
+    }
+    g.rotation.y = w.yaw;
+    const fx = Math.sin(w.yaw), fz = Math.cos(w.yaw);
+    const rx = -fz, rz = fx;
+    let acc = 0;
+    const at = this.v2;
+    this.add(g, life, (k, dt, o) => {
+      const t = k * life;
+      const along = w.speed * t;
+      const x = w.x + fx * along, z = w.z + fz * along;
+      o.position.set(x, Math.max(heightAt(x, z), WATER_LEVEL) - 0.4, z);
+      const fade = Math.min(1, t / 0.3) * (1 - smooth(0.8, 1, k));
+      m.opacity = 0.78 * fade;
+      foam.opacity = 0.9 * fade;
+      // Spray off the crest.
+      acc += dt * (this.lowQuality ? 30 : 70);
+      while (acc >= 1 && fade > 0.2) {
+        acc -= 1;
+        const across = (Math.random() - 0.5) * w.width;
+        if (Math.abs(across - w.gapAt) < w.gap / 2) continue;
+        at.set(x + rx * across + fx * 1.4, o.position.y + 3.4, z + rz * across + fz * 1.4);
+        this.col2.setHex(0xe0f6ff);
+        this.soft.spawn(at.x, at.y, at.z, fx * w.speed * 0.6 + (Math.random() - 0.5) * 2, 1 + Math.random() * 2, fz * w.speed * 0.6 + (Math.random() - 0.5) * 2, 0.5 + Math.random() * 0.4, 0.6 + Math.random() * 0.7, this.col2, 6, 1.2, 1.5, 0.7);
+      }
+      if (k >= 1) {
+        m.dispose();
+        foam.dispose();
+      }
+    });
+  }
+
+  /** A whirlpool spinning on the ground or the water for `seconds`. */
+  whirlpool(x: number, z: number, radius: number, seconds: number) {
+    const y = Math.max(heightAt(x, z), WATER_LEVEL) + 0.1;
+    const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ map: swirlTexture(), transparent: true, opacity: 0, depthWrite: false }));
+    disc.userData.sharedGeo = true;
+    disc.position.set(x, y, z);
+    disc.scale.setScalar(radius);
+    disc.renderOrder = 1;
+    let acc = 0;
+    this.add(disc, seconds, (k, dt, o) => {
+      o.rotation.y -= dt * 2.6;
+      const fade = Math.min(1, (k * seconds) / 0.5) * (1 - smooth(0.85, 1, k));
+      ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.9 * fade;
+      // Spray spiralling in towards the eye.
+      acc += dt * (this.lowQuality ? 25 : 60) * fade;
+      while (acc >= 1) {
+        acc -= 1;
+        const a = Math.random() * TAU, r = radius * (0.4 + Math.random() * 0.6);
+        this.col2.setHex(Math.random() < 0.5 ? 0xd8f4ff : 0x60c0e8);
+        this.particles.spawn(x + Math.cos(a) * r, y + 0.2, z + Math.sin(a) * r, Math.sin(a) * 4 - Math.cos(a) * 2.5, 0.6 + Math.random(), -Math.cos(a) * 4 - Math.sin(a) * 2.5, 0.5 + Math.random() * 0.3, 0.25 + Math.random() * 0.25, this.col2, 1, -0.3, 0.8, 0.8);
+      }
+    });
+    this.ring(new THREE.Vector3(x, y + 0.2, z), radius, 0x60d0ff, 0.6);
+  }
+
+  /** A sticky web lying on the ground for `seconds`. */
+  web(x: number, z: number, radius: number, seconds: number) {
+    const y = Math.max(heightAt(x, z), WATER_LEVEL) + 0.08;
+    const disc = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ map: webTexture(), transparent: true, opacity: 0, depthWrite: false }));
+    disc.userData.sharedGeo = true;
+    disc.position.set(x, y, z);
+    disc.rotation.y = Math.random() * TAU;
+    disc.scale.setScalar(radius);
+    disc.renderOrder = 1;
+    this.add(disc, seconds, (k, _dt, o) => {
+      ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.85 * Math.min(1, (k * seconds) / 0.15) * (1 - smooth(0.8, 1, k));
+    });
+    this.dust(this.v.set(x, y, z), 10, 0xf0f0e8);
+  }
+
+  /** Something hurled through the air (falling fire, a web glob), bursting where it lands after `seconds`. */
+  meteor(from: THREE.Vector3, to: THREE.Vector3, seconds: number, color: number) {
+    const s = glowSprite(color, 2.6);
+    // Sprites share one quad: don't let the clean-up free it.
+    s.userData.sharedGeo = true;
+    const a = from.clone(), b = to.clone();
+    let acc = 0;
+    this.add(s, Math.max(0.05, seconds), (k, dt, o) => {
+      o.position.lerpVectors(a, b, k * k * 0.4 + k * 0.6);
+      acc += dt * 40;
+      while (acc >= 1) {
+        acc -= 1;
+        this.col2.setHex(color).lerp(WHITE, Math.random() * 0.3);
+        this.particles.spawn(o.position.x, o.position.y, o.position.z, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5, 0.3 + Math.random() * 0.3, 0.7 + Math.random() * 0.5, this.col2, -1, -0.6, 0.5, 0.9);
+      }
+      if (k >= 1) {
+        this.impact(b, color, 1);
+        this.dust(b, 8, color === 0xffffff ? 0xf0f0e8 : 0x3a3030);
+      }
+    });
+  }
+
   telegraph(x: number, z: number, radius: number, delay: number, color = 0xff3020, onDone?: () => void): Telegraph {
     const y = heightAt(x, z) + 0.12;
     const mesh = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false }));
@@ -962,13 +1217,16 @@ export class Fx {
     for (let i = this.telegraphs.length - 1; i >= 0; i--) {
       const t = this.telegraphs[i];
       t.age += dt;
-      t.fill.scale.setScalar(Math.max(0.01, t.radius * Math.min(1, t.age / t.delay)));
+      const grow = Math.max(0.01, t.radius * Math.min(1, t.age / t.delay));
+      if (t.strip) t.fill.scale.set(t.strip, 1, grow);
+      else t.fill.scale.setScalar(grow);
       if (t.age >= t.delay) {
         t.done = true;
         t.onDone?.();
         this.scene.remove(t.mesh, t.fill);
         (t.mesh.material as THREE.Material).dispose();
         (t.fill.material as THREE.Material).dispose();
+        if (t.ownGeo) t.mesh.geometry.dispose();
         this.telegraphs.splice(i, 1);
       }
     }
