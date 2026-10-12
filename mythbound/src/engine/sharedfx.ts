@@ -4,8 +4,9 @@
 
 import * as THREE from 'three';
 import type { Sfx } from './audio';
-import type { EmitOptions } from './fx';
+import type { EmitOptions, WaveFx } from './fx';
 import type { Game } from './game';
+import { addHazard } from './bosses';
 
 type V3 = [number, number, number];
 
@@ -34,6 +35,36 @@ export class SharedFx {
   telegraph(x: number, z: number, radius: number, delay: number, color = 0xff3020, onDone?: () => void) {
     if (this.on) this.share('tg', [r2(x), r2(z), r2(radius), r2(delay), color], x, z);
     return this.g.fx.telegraph(x, z, radius, delay, color, onDone);
+  }
+
+  /** A cone or strip telegraph (see Fx.telegraphShape): visual only, the attack decides its own hits. */
+  telegraphShape(kind: 'cone' | 'line', x: number, z: number, yaw: number, length: number, half: number, delay: number, color = 0xff3020) {
+    if (this.on) this.share(kind === 'cone' ? 'tc' : 'tl', [r2(x), r2(z), r2(yaw), r2(length), r2(half), r2(delay), color], x, z);
+    return this.g.fx.telegraphShape(kind, x, z, yaw, length, half, delay, color);
+  }
+
+  wave(w: WaveFx, life: number) {
+    if (this.on) this.share('wv', [r2(w.x), r2(w.z), r2(w.yaw), r2(w.speed), r2(w.width), r2(w.gapAt), r2(w.gap), r2(life)], w.x, w.z);
+    this.g.fx.wave(w, life);
+  }
+
+  /** A whirlpool: every player's game pulls its own hero in while it spins. */
+  whirlpool(x: number, z: number, radius: number, seconds: number, pull: number) {
+    if (this.on) this.share('wp', [r2(x), r2(z), r2(radius), r2(seconds), r2(pull)], x, z);
+    this.g.fx.whirlpool(x, z, radius, seconds);
+    addHazard('pull', x, z, radius, seconds, pull);
+  }
+
+  /** A web on the ground: every player's game slows (and briefly roots) its own hero in it. */
+  web(x: number, z: number, radius: number, seconds: number) {
+    if (this.on) this.share('wb', [r2(x), r2(z), r2(radius), r2(seconds)], x, z);
+    this.g.fx.web(x, z, radius, seconds);
+    addHazard('web', x, z, radius, seconds, 0);
+  }
+
+  meteor(from: THREE.Vector3, to: THREE.Vector3, seconds: number, color: number) {
+    if (this.on) this.share('mt', [vec(from), vec(to), r2(seconds), color], to.x, to.z);
+    this.g.fx.meteor(from, to, seconds, color);
   }
 
   magicCircle(at: THREE.Vector3, color: number, radius: number, seconds: number) {
@@ -146,6 +177,28 @@ export class SharedFx {
         break;
       case 'mc':
         fx.magicCircle(v(A[0], this.a), num(A[1]), num(A[2], 1), num(A[3], 1));
+        break;
+      case 'tc':
+      case 'tl':
+        fx.telegraphShape(f === 'tc' ? 'cone' : 'line', num(A[0]), num(A[1]), num(A[2]), Math.min(80, num(A[3], 1)), Math.min(30, num(A[4], 1)), Math.min(10, num(A[5], 1)), num(A[6], 0xff3020));
+        break;
+      case 'wv':
+        fx.wave({ x: num(A[0]), z: num(A[1]), yaw: num(A[2]), speed: Math.min(40, num(A[3], 10)), width: Math.min(120, num(A[4], 40)), gapAt: num(A[5]), gap: Math.min(40, num(A[6])) }, Math.min(12, num(A[7], 5)));
+        break;
+      case 'wp': {
+        const x = num(A[0]), z = num(A[1]), r = Math.min(20, num(A[2], 6)), sec = Math.min(12, num(A[3], 4));
+        fx.whirlpool(x, z, r, sec);
+        addHazard('pull', x, z, r, sec, Math.min(8, num(A[4], 3)));
+        break;
+      }
+      case 'wb': {
+        const x = num(A[0]), z = num(A[1]), r = Math.min(10, num(A[2], 3)), sec = Math.min(15, num(A[3], 6));
+        fx.web(x, z, r, sec);
+        addHazard('web', x, z, r, sec, 0);
+        break;
+      }
+      case 'mt':
+        fx.meteor(v(A[0], this.a), v(A[1], this.b), Math.min(5, num(A[2], 1)), num(A[3], 0xff6020));
         break;
       case 'rg':
         fx.ring(v(A[0], this.a), num(A[1], 1), num(A[2]), num(A[3], 0.6));

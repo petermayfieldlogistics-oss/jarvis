@@ -3,7 +3,7 @@ import { ENEMIES, type Affinity, type BossAttack, type BossDef, type EnemyDef, t
 import type { CreatureKind, DamageElement } from '../data/defs';
 import { buildShield, buildWeapon, compact } from './models';
 import { animateHumanoid, buildBossHumanoid, buildHumanoid, type Rig } from './humanoid';
-import { animateCreature, buildCrab, buildFloater, buildImp, buildInsect, buildQuad, type CreatureRig } from './creatures';
+import { animateCreature, buildCrab, buildDragon, buildFloater, buildImp, buildInsect, buildQuad, buildReaper, buildSerpent, buildSiren, buildSpider, type CreatureRig } from './creatures';
 import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, WATER_LEVEL } from './terrain';
 import type { Game } from './game';
@@ -16,6 +16,8 @@ export interface Model {
   height: number;
   animate(a: AnimState): void;
   humanoid?: Rig;
+  /** A creature's rig, for effects that follow its joints (a dragon's breath). */
+  creature?: CreatureRig;
 }
 
 function humanoidModel(rig: Rig): Model {
@@ -24,7 +26,7 @@ function humanoidModel(rig: Rig): Model {
 }
 function creatureModel(rig: CreatureRig): Model {
   compact(rig.root);
-  return { root: rig.root, height: rig.height, animate: (a) => animateCreature(rig, a) };
+  return { root: rig.root, height: rig.height, animate: (a) => animateCreature(rig, a), creature: rig };
 }
 
 export function enemyModel(def: EnemyDef): Model {
@@ -71,6 +73,8 @@ export function enemyModel(def: EnemyDef): Model {
       return creatureModel(buildFloater(def.color, 'eye', def.scale));
     case 'fire-imp':
       return creatureModel(buildImp(def.color, def.scale));
+    case 'spiderling':
+      return creatureModel(buildSpider(def.color, def.scale));
   }
 }
 
@@ -82,6 +86,16 @@ export function bossModel(def: BossDef): Model {
       return creatureModel(buildCrab(def.color, def.scale));
     case 'witch':
       return creatureModel(buildFloater(def.color, 'witch', def.scale));
+    case 'serpent':
+      return creatureModel(buildSerpent(def.color, def.scale));
+    case 'dragon':
+      return creatureModel(buildDragon(def.color, def.scale));
+    case 'siren':
+      return creatureModel(buildSiren(def.color, def.scale));
+    case 'reaper':
+      return creatureModel(buildReaper(def.color, def.scale));
+    case 'spider':
+      return creatureModel(buildSpider(def.color, def.scale));
     default: {
       const rig = buildBossHumanoid(def.model, def.color, def.scale);
       const weapon = def.model === 'champion' ? buildWeapon('sword') : def.model === 'golem' ? buildWeapon('hammer') : buildWeapon('bolt');
@@ -111,7 +125,7 @@ const CREATURE_HIT: Partial<Record<AttackStyle, number>> = {
   sweep: 0.62, slam: 0.9, overhead: 0.9, stomp: 0.8, ring: 0.92, volley: 0.32, summon: 0.8, roar: 0.8, leap: 1, strikes: 0.5,
 };
 
-interface Timing {
+export interface Timing {
   /** anim.attack at the start of the strike. */
   a0: number;
   /** Strike progress (0..1) of each blow. */
@@ -158,6 +172,7 @@ const MOVESET: Record<EnemyId, { melee: Move[]; ranged?: Move[] }> = {
   'eye-watcher': { melee: [m('cast', 0.5, 0.5, 0.6)], ranged: [m('cast', 0.75, 0.6, 0.7, { ranged: true })] },
   'fire-imp': { melee: [m('claw', 0.5, 0.45, 0.5, { lunge: 3 })], ranged: [m('throw', 0.6, 0.55, 0.6, { ranged: true })] },
   drake: { melee: [m('bite', 0.65, 0.55, 0.7, { lunge: 6 })], ranged: [m('volley', 0.8, 0.7, 0.8, { ranged: true, shots: 3, dmg: 0.6 })] },
+  spiderling: { melee: [m('bite', 0.45, 0.45, 0.5, { lunge: 7 })] },
 };
 
 /** Colours for affinity effects (boss auras, rune circles, shockwaves). */
@@ -934,6 +949,24 @@ const BOSS_TIMING: Record<BossAttack, { w: number; s: number; r: number }> = {
   summon: { w: 0.9, s: 1.0, r: 1.2 },
   teleport: { w: 0.6, s: 0.25, r: 0 },
   leap: { w: 0.75, s: 1.2, r: 1.3 },
+  // The elder and hunted foes' own moves (bosses.ts). Their strike holds the
+  // whole move (the Leviathan's head lying on the sand is part of its strike),
+  // so a co-op guest, who only sees anim.attack, poses all of it.
+  bite: { w: 0.7, s: 0.7, r: 0.8 },
+  claw: { w: 0.8, s: 0.8, r: 0.9 },
+  breath: { w: 1.1, s: 2.4, r: 1.1 },
+  gust: { w: 0.9, s: 1.0, r: 1.0 },
+  flight: { w: 0.8, s: 9, r: 1.4 },
+  strike: { w: 1.1, s: 3.0, r: 0.4 },
+  tail: { w: 1.2, s: 1.0, r: 0.9 },
+  dive: { w: 0.7, s: 2.4, r: 0.5 },
+  wave: { w: 1.5, s: 3.6, r: 1.0 },
+  whirlpool: { w: 0.9, s: 4.5, r: 0.6 },
+  trident: { w: 0.7, s: 1.6, r: 1.0 },
+  geyser: { w: 0.8, s: 1.5, r: 0.8 },
+  reap: { w: 0.8, s: 0.9, r: 0.8 },
+  drain: { w: 0.8, s: 2.4, r: 0.8 },
+  web: { w: 0.7, s: 0.8, r: 0.7 },
 };
 
 type Stage = 'windup' | 'strike' | 'recover';
@@ -953,23 +986,25 @@ export class Boss extends Enemy {
   leapFrom = new THREE.Vector3();
   leapTo = new THREE.Vector3();
   arena: { x: number; z: number; radius: number };
+  /** The trial or lair it belongs to (co-op guests rebuild it there). */
+  place = '';
   /** Seconds left of the opening roar (or the phase-two roar). */
   roarLeft = 1.6;
-  private roarDur = 1.6;
+  protected roarDur = 1.6;
   private roared = false;
-  private fired = 0;
-  private dur = { w: 1, s: 1, r: 1 };
-  private btiming: Timing = { a0: 0, hits: [0.2] };
-  private last: BossAttack | null = null;
-  private dustT = 0;
-  private telegraphs: TelegraphHandle[] = [];
-  private auraFx: { stop(): void } | null = null;
+  protected fired = 0;
+  protected dur = { w: 1, s: 1, r: 1 };
+  protected btiming: Timing = { a0: 0, hits: [0.2] };
+  protected last: BossAttack | null = null;
+  protected dustT = 0;
+  protected telegraphs: TelegraphHandle[] = [];
+  protected auraFx: { stop(): void } | null = null;
   private bossPoise = 0;
   private bossStagger = 0;
   private bossStaggerImmune = 0;
   private bossLastHp: number;
-  private strafeSide = 1;
-  private trampled = new Set<Hero>();
+  protected strafeSide = 1;
+  protected trampled = new Set<Hero>();
 
   constructor(def: BossDef, arena: { x: number; z: number; radius: number }) {
     super('wolf', arena.x, arena.z - arena.radius * 0.5, bossModel(def));
@@ -1041,7 +1076,7 @@ export class Boss extends Enemy {
 
     if (this.phase === 1 && this.hp < this.maxHp * 0.5) {
       this.phase = 2;
-      g.sfx.toast(`${this.bdef.name} is enraged!`, 'boss', this.pos);
+      g.sfx.toast(this.bdef.rage ?? `${this.bdef.name} is enraged!`, 'boss', this.pos);
       g.sfx.ring(this.center(), 10, 0xff4020, 0.8);
       g.sfx.sound('roar', this.pos);
       g.sfx.shake(this.pos, 0.5);
@@ -1104,7 +1139,14 @@ export class Boss extends Enemy {
     const vx = moveX * speed, vz = moveZ * speed;
     this.pos.x += vx * dt;
     this.pos.z += vz * dt;
-    // Stay inside the arena.
+    this.confine();
+    this.setMotion(vx, vz);
+    a.phase += Math.hypot(vx, vz) * dt * 1.4;
+    this.syncModel(dt);
+  }
+
+  /** Stays inside the arena, on the ground (or hovering). */
+  protected confine() {
     const ax = this.pos.x - this.arena.x, az = this.pos.z - this.arena.z;
     const ad = Math.hypot(ax, az);
     if (ad > this.arena.radius - this.radius) {
@@ -1112,9 +1154,6 @@ export class Boss extends Enemy {
       this.pos.z = this.arena.z + (az / ad) * (this.arena.radius - this.radius);
     }
     if (!(this.attack === 'leap' && this.stage === 'strike')) this.pos.y = heightAt(this.pos.x, this.pos.z) + (this.flies ? 0.3 : 0);
-    this.setMotion(vx, vz);
-    a.phase += Math.hypot(vx, vz) * dt * 1.4;
-    this.syncModel(dt);
   }
 
   /** Bosses fight whoever is inside the fog, switching foes now and then, never mid-attack. */
@@ -1129,12 +1168,12 @@ export class Boss extends Enemy {
     return (this.target = g.nearestHero(this.pos, ok ? cur : null, 3, (h) => this.inArena(h)));
   }
 
-  private inArena(h: Hero) {
+  protected inArena(h: Hero) {
     return Math.hypot(h.pos.x - this.arena.x, h.pos.z - this.arena.z) < this.arena.radius + 1;
   }
 
   /** The living heroes inside the arena (alone: just you). */
-  private foes(g: Game): Hero[] {
+  protected foes(g: Game): Hero[] {
     const heroes = g.heroes;
     if (heroes.length === 1) return heroes[0].alive ? heroes : [];
     return heroes.filter((h) => h.alive && this.inArena(h));
@@ -1153,7 +1192,7 @@ export class Boss extends Enemy {
     if (n.phase2 && !this.auraFx) this.auraFx = g.fx.aura(this.model.root, this.color, 3600);
   }
 
-  private startRoar(seconds: number) {
+  protected startRoar(seconds: number) {
     this.roarLeft = this.roarDur = seconds;
     this.roared = false;
     this.attack = null;
@@ -1183,13 +1222,13 @@ export class Boss extends Enemy {
     g.sfx.shake(this.pos, 0.3);
   }
 
-  private cancelTelegraphs() {
+  protected cancelTelegraphs() {
     // Visual-only circles: let them vanish now.
     for (const t of this.telegraphs) if (!t.done && !t.onDone) t.age = t.delay;
     this.telegraphs.length = 0;
   }
 
-  private chooseAttack(dist: number, g: Game) {
+  protected chooseAttack(dist: number, g: Game) {
     const near = dist < this.radius + 6;
     const options = this.bdef.attacks.filter((a) => {
       if (a === 'sweep' || a === 'combo') return near;
@@ -1203,7 +1242,7 @@ export class Boss extends Enemy {
     this.begin(pool[Math.floor(Math.random() * pool.length)], g);
   }
 
-  private begin(attack: BossAttack, g: Game, windup?: number) {
+  protected begin(attack: BossAttack, g: Game, windup?: number) {
     const p = this.target ?? g.player;
     const base = BOSS_TIMING[attack];
     const two = this.phase === 2;
@@ -1241,7 +1280,7 @@ export class Boss extends Enemy {
         g.sfx.magicCircle(feet, this.color, 4.5, w + s * 0.5);
         break;
       case 'summon':
-        g.sfx.magicCircle(feet, this.color, 5, w + s);
+        this.summonFx(feet, w + s, g);
         break;
       case 'strikes': {
         g.sfx.magicCircle(feet, 0x80b0ff, 4, w + s);
@@ -1271,7 +1310,7 @@ export class Boss extends Enemy {
   }
 
   /** Advances the current attack; returns [moveX, moveZ, speed]. */
-  private runAttack(dt: number, g: Game, dist: number): [number, number, number] {
+  protected runAttack(dt: number, g: Game, dist: number): [number, number, number] {
     const p = this.target ?? g.player;
     const a = this.anim;
     const { w, s, r } = this.dur;
@@ -1443,8 +1482,7 @@ export class Boss extends Enemy {
               e.aware = true;
               e.state = 'chase';
               e.attackCd = 1 + Math.random();
-              g.sfx.magicCircle(e.pos, this.color, 1.6, 1.2);
-              g.sfx.emit(e.center(), { color: 0xa070ff, count: 25, speed: 4, life: 0.6 });
+              this.arrivalFx(e, g);
             }
           }
           g.sfx.shake(this.pos, 0.25);
@@ -1484,8 +1522,19 @@ export class Boss extends Enemy {
     }
   }
 
+  /** A summoning's sign: a rune circle under the boss. */
+  protected summonFx(at: THREE.Vector3, seconds: number, g: Game) {
+    g.sfx.magicCircle(at, this.color, 5, seconds);
+  }
+
+  /** A summoned minion arrives. */
+  protected arrivalFx(e: Enemy, g: Game) {
+    g.sfx.magicCircle(e.pos, this.color, 1.6, 1.2);
+    g.sfx.emit(e.center(), { color: 0xa070ff, count: 25, speed: 4, life: 0.6 });
+  }
+
   /** Vanish, reappear behind the hero and strike at once. */
-  private teleport(g: Game): [number, number, number] {
+  protected teleport(g: Game): [number, number, number] {
     const p = this.target ?? g.player;
     g.sfx.emit(this.center(), { color: 0x8040ff, count: 40, speed: 6, life: 0.6 });
     const behind = Math.atan2(p.pos.x - this.pos.x, p.pos.z - this.pos.z);

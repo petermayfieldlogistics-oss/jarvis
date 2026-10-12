@@ -1,7 +1,8 @@
 // Conversations and everything the hero can interact with.
 
-import { ANCIENT_GLYPH, CLASSES, RACES, ROLES, SPELLS, WEAPONS, type RaceId, type SpellId } from '../data/defs';
-import { BOSSES, ITEMS, LORE, PAGES, QUESTS, SHRINES, TOMES, TRIALS, type QuestId } from '../data/world';
+import { ANCIENT_GLYPH, CLASSES, RACES, RELICS, ROLES, SPELLS, WEAPONS, type RaceId, type SpellId } from '../data/defs';
+import { BOSSES, ELDER_TRIALS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TOMES, TRIALS, WEAPON_TRIALS, type QuestId } from '../data/world';
+import { isRelic, rewardName } from './bosses';
 import { canLearnSpell, dracoFlightHours, learnSpell, lightHealMultiplier, MAX_WEAPON_LEVEL, shopPrice, upgradeCost } from '../rules/character';
 import { canWield, isLightSealed } from '../rules/combat';
 import type { DialogOption, DialogSpec } from '../ui/dialog';
@@ -128,10 +129,31 @@ export class Story {
     if (id === 'ore') st.progress = Math.min(QUESTS.ore.goal, this.c.items['ember-ore'] ?? 0);
     if (id === 'pages') st.progress = PAGES.filter((p) => this.g.state.taken.includes(p.id)).length;
     if (id === 'tomes') st.progress = TOMES.filter((t) => this.g.state.taken.includes(`tome-${t.spell}`)).length;
-    if (id === 'trials') st.progress = this.g.state.trialsDone.length;
+    if (id === 'trials') st.progress = this.trialsWon(false);
+    if (id === 'elders') st.progress = this.trialsWon(true);
+    if (id === 'hunts') st.progress = LAIRS.filter((l) => this.g.state.flags[`hunted-${l.boss}`]).length;
     // The quest bar follows the newest quest.
     this.g.state.tracked = id;
     this.g.hud.toast(`New quest: ${QUESTS[id].name}`, 'quest');
+  }
+
+  /** Weapon trials (or elder foes) conquered. */
+  private trialsWon(elder: boolean) {
+    return (elder ? ELDER_TRIALS : WEAPON_TRIALS).filter((t) => this.g.state.trialsDone.includes(t.id)).length;
+  }
+
+  /** A quest offered with a few words first (the elder foes, the monster hunts). */
+  private tellOf(id: QuestId, ask: string, title: string, text: string, done: string, progress: string, back: string): DialogOption | null {
+    if (this.quest(id).state !== 'none') return this.questOption(id, ask, done, progress);
+    return {
+      label: ask,
+      action: () =>
+        this.open({
+          title,
+          text,
+          options: [{ label: 'I will hunt them.', action: () => this.accept(id) }, { label: 'Not yet.', action: () => this.talk(back) }],
+        }),
+    };
   }
 
   private questOption(id: QuestId, offer: string, done: string, progressText: string): DialogOption | null {
@@ -158,7 +180,8 @@ export class Story {
     const opts = (list: (DialogOption | null)[]) => [...(list.filter(Boolean) as DialogOption[]), { label: 'Farewell' }];
     switch (id) {
       case 'orrin': {
-        if (this.quest('trials').state === 'active') this.quest('trials').progress = g.state.trialsDone.length;
+        if (this.quest('trials').state === 'active') this.quest('trials').progress = this.trialsWon(false);
+        if (this.quest('elders').state === 'active') this.quest('elders').progress = this.trialsWon(true);
         const historian = c.roleId === 'historian';
         return this.open({
           title: 'Orrin',
@@ -169,12 +192,21 @@ export class Story {
           options: opts([
             this.questOption('trials', 'Tell me about the trials.', 'I have conquered them all.', 'The trials'),
             this.questOption('tomes', 'Are there more spells to find?', 'I found the lost tomes.', 'Spell tomes'),
+            this.tellOf(
+              'elders',
+              'Is there anything greater than the trials?',
+              'The Elder Foes',
+              `Older than the gods' weapons are three beasts the scrolls call the Elder Foes, and each guards a relic of great power.\n\n• The Leviathan coils around the Serpent's Shoal, east along the coast. ${RELICS['leviathan-pearl'].name}: ${RELICS['leviathan-pearl'].boon}\n• The Queen of the Sea holds her Drowned Court on the headland west of the docks. ${RELICS['tide-crown'].name}: ${RELICS['tide-crown'].boon}\n• Beyond Molten Peak, on the mountain's northern shoulder, the Elder Dragon roosts. ${RELICS['dragon-heart'].name}: ${RELICS['dragon-heart'].boon}\n\nNo boat is needed: the shoal and the court are joined to the beach. But be strong, level 11 at least. They are on your map.`,
+              'The elder foes are slain.',
+              'Elder foes',
+              'orrin',
+            ),
             {
               label: 'Where are the trials?',
               action: () =>
                 this.open({
                   title: 'The Six Trials',
-                  text: TRIALS.map((t) => {
+                  text: WEAPON_TRIALS.map((t) => {
                     const done = g.state.trialsDone.includes(t.id) ? ' ✔' : '';
                     return `• ${t.name}${done}: ${BOSSES[t.boss].name}, ${BOSSES[t.boss].title}. Recommended level ${t.level}. Guards the ${WEAPONS[BOSSES[t.boss].reward].name}.`;
                   }).join('\n'),
@@ -272,6 +304,15 @@ export class Story {
               ? { label: 'Sell 1 Ember Ore (40)', action: () => ((c.items['ember-ore']! -= 1), (c.gold += 40), this.talk('quill')) }
               : null,
             this.questOption('bounty', 'Any work?', 'The roads are safer.', 'Bandit bounty'),
+            this.tellOf(
+              'hunts',
+              'Any bounties on monsters?',
+              'Monster Hunts',
+              "Two bounties nobody will touch. Broodmother, a spider as big as a cart, nests in Silken Hollow deep in Whisperwood. She drops on folk from the trees: look up. And the Reaper walks Mourner's Rest in the Weeping Mire, but only after dark. Whatever they carry is yours to keep. I've marked both on your map.",
+              'Both beasts are dead.',
+              'Monster hunts',
+              'quill',
+            ),
           ]),
         });
       }
@@ -281,8 +322,8 @@ export class Story {
           title: 'Mara',
           subtitle: 'Fisher',
           text: sailor
-            ? "A sailor! Take a boat from any dock, they're yours as much as mine. The island to the south hides the Trial of Tides. And they say Poseidon's Trident answers only to sailors."
-            : 'The fish bite along the shore. Stand by the water and cast a line. The island out there? You would need a boat, or strong arms.',
+            ? "A sailor! Take a boat from any dock, they're yours as much as mine. The island to the south hides the Trial of Tides. And they say Poseidon's Trident answers only to sailors. Keep clear of the shoal to the east, though: something huge coils there, and a song comes off the western point at dusk."
+            : "The fish bite along the shore. Stand by the water and cast a line. The island out there? You would need a boat, or strong arms. And don't go near the shoal to the east. My nets came back bitten through, and the bite was wider than my boat.",
           options: opts([this.questOption('fish', 'Need a hand?', 'Here are your fish.', 'A good catch')]),
         });
       }
@@ -511,7 +552,7 @@ export class Story {
     this.open({
       title: t.name,
       subtitle: `Recommended level ${t.level}`,
-      text: `${t.intro}\n\n${boss.name}, ${boss.title}, guards the ${WEAPONS[boss.reward].name}. Once you begin, the fog will seal you in until one of you falls.`,
+      text: `${t.intro}\n\n${boss.name}, ${boss.title}, guards the ${rewardName(boss.reward, WEAPONS)}. Once you begin, the fog will seal you in until one of you falls.`,
       options: [{ label: 'Begin the trial', action: () => g.startTrial(t) }, { label: 'Not yet' }],
     });
   }
@@ -530,6 +571,18 @@ export class Story {
   private legendary(weaponId: string) {
     const g = this.g;
     const c = this.c;
+    if (isRelic(weaponId)) {
+      // A relic works from the pack, for any hero.
+      const r = RELICS[weaponId];
+      g.claimLegendary(weaponId);
+      c.items[weaponId] = 1;
+      // The pearl's boon: one more flask, filled at once.
+      if (weaponId === 'leviathan-pearl') (c.flasksMax++, (c.flasks = c.flasksMax));
+      g.player.hp = Math.min(g.player.maxHp, g.player.hp);
+      g.audio.play('victory');
+      g.save();
+      return this.open({ title: r.name, subtitle: 'Relic of an elder foe', text: `${r.boon}\n\nIts power is yours as long as you carry it.`, options: [{ label: 'Close' }] });
+    }
     const def = WEAPONS[weaponId];
     g.claimLegendary(weaponId);
     c.weapons.push({ id: weaponId, level: 1 });

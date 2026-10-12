@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { glowSprite } from './models';
-import type { AnimState, AttackStyle } from './anim';
+import { BREATH_SPAN, breathSweep, FLIGHT, LANDS, type AnimState, type AttackStyle } from './anim';
 
 /** A jointed leg or arm: `up` at the hip/shoulder, `mid` at the knee/elbow, `low` at the ankle/wrist. */
 export interface Limb {
@@ -61,8 +61,16 @@ export interface CreatureJoints {
   pupil?: THREE.Group;
   stalks?: THREE.Group[];
   wisps?: THREE.Sprite[];
+  /** The Reaper's cold halo, so its dark robe reads against the night. */
+  halo?: THREE.Sprite;
   /** A boss's own glow material, pulsed with fury and spellcasting. */
   glow?: THREE.MeshStandardMaterial;
+  /** The Leviathan's coils that arch out of the sea, and the root of its tail (moved for the tail slam). */
+  coils?: THREE.Group[];
+  tailRoot?: THREE.Group;
+  /** A spider's fangs and abdomen. */
+  fangs?: THREE.Group[];
+  abdomen?: THREE.Group;
   /** Hip height in model units; gait stride scales with it. */
   legLen?: number;
   /** Torso half-width: how high the body rests when it dies on its side. */
@@ -478,6 +486,61 @@ function chain(sk: Skin, parent: THREE.Object3D, pts: V3[], radii: Radius[], sur
   return joints;
 }
 
+/** A fin or frill: membrane fanned from `base` out to each tip (scalloped between), with a spine to every tip. */
+function fan(sk: Skin, shade: Shade, spine: Shade, base: V3, tips: V3[], bind: THREE.Object3D | THREE.Object3D[], r = 0.03, tip?: V3) {
+  const pos: number[] = [];
+  for (let i = 0; i < tips.length - 1; i++) {
+    const a = tips[i], b = tips[i + 1];
+    const m = a.clone().lerp(b, 0.5).lerp(base, 0.2);
+    pos.push(base.x, base.y, base.z, a.x, a.y, a.z, m.x, m.y, m.z, base.x, base.y, base.z, m.x, m.y, m.z, b.x, b.y, b.z);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  sk.add('membrane', shade, g, bind, tip);
+  for (const t of tips) sk.add('fur', spine, tube([base, base.clone().lerp(t, 0.5), t], [r, r * 0.7, 0], 4), bind, tip);
+}
+
+/** A sail along a back: membrane between a row of bases and the spine tips above them. */
+function sail(sk: Skin, shade: Shade, spine: Shade, bases: V3[], tips: V3[], bind: THREE.Object3D[], tip: V3 | undefined, r: number) {
+  const pos: number[] = [];
+  for (let i = 0; i < bases.length - 1; i++) {
+    const a = bases[i], b = bases[i + 1], c = tips[i], d = tips[i + 1];
+    // Each panel sags a little between its spines.
+    const m = c.clone().lerp(d, 0.5).lerp(a.clone().lerp(b, 0.5), 0.25);
+    pos.push(a.x, a.y, a.z, c.x, c.y, c.z, m.x, m.y, m.z, a.x, a.y, a.z, m.x, m.y, m.z, b.x, b.y, b.z, b.x, b.y, b.z, m.x, m.y, m.z, d.x, d.y, d.z);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  sk.add('membrane', shade, g, bind, tip);
+  tips.forEach((t, i) => sk.add('fur', spine, spike(bases[i], t, r, 4), bind, tip));
+}
+
+/**
+ * Two-tone body along a curve: the belly side (from `belly(centre, out)`) is
+ * pale, the back dark. Lets a coiling neck keep its pale throat wherever it bends.
+ */
+function bellyShade(pts: V3[], backC: number, bellyC: number, belly: (c: V3, out: V3) => V3, mottle = 0.06): Shade {
+  const A = new THREE.Color(backC), B = new THREE.Color(bellyC);
+  const T = V(), D = V(), Q = V();
+  return (p, c) => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const d = pts[i].distanceToSquared(p);
+      if (d < bd) (bd = d), (bi = i);
+    }
+    T.subVectors(pts[Math.min(pts.length - 1, bi + 1)], pts[Math.max(0, bi - 1)]).normalize();
+    belly(pts[bi], D);
+    D.addScaledVector(T, -D.dot(T));
+    Q.subVectors(p, pts[bi]);
+    Q.addScaledVector(T, -Q.dot(T));
+    const u = D.lengthSq() > 1e-6 && Q.lengthSq() > 1e-6 ? sstep(-0.15, 0.6, Q.normalize().dot(D.normalize())) : 0;
+    c.lerpColors(A, B, u);
+    if (mottle) c.multiplyScalar(1 + mottle * Math.sin(p.x * 7 + p.y * 5) * Math.sin(p.z * 6 - p.y * 4));
+  };
+}
+
 function finish(sk: Skin, kind: string, body: THREE.Group, head: THREE.Group, j: CreatureJoints, height: number, scale: number, ownGlow = false): CreatureRig {
   j.glow = sk.build(ownGlow);
   sk.root.scale.setScalar(scale);
@@ -554,6 +617,11 @@ function cloneRig(t: CreatureRig): CreatureRig {
     pupil: tj.pupil && m(tj.pupil),
     stalks: tj.stalks?.map(m),
     wisps: tj.wisps?.map(m),
+    halo: tj.halo && m(tj.halo),
+    coils: tj.coils?.map(m),
+    tailRoot: tj.tailRoot && m(tj.tailRoot),
+    fangs: tj.fangs?.map(m),
+    abdomen: tj.abdomen && m(tj.abdomen),
   };
   return { root: root as THREE.Group, body: m(t.body), head: m(t.head), legs: t.legs.map(m), extra: t.extra.map(m), kind: t.kind, height: t.height, j };
 }
@@ -1518,6 +1586,556 @@ export function buildCrab(color: number, scale: number): CreatureRig {
   return finish(sk, 'crab', body, head, j, 2, scale, true);
 }
 
+// -------------------------------------------------------------- leviathan --
+
+/**
+ * The Leviathan, built around where its neck leaves the water (the root sits
+ * on the sea's surface, facing the shore at +z). Two coils arch out of the sea
+ * behind it and a finned tail rises further out; its tail root can travel
+ * underwater to slam the shore beside the head.
+ */
+export function buildSerpent(color: number, scale = 1): CreatureRig {
+  const sk = new Skin();
+  const back = tint(color, 0.8), pale = tint(color, 1.9, 0xd8d4a8, 0.6);
+  const finC = grad(tint(color, 1.3, 0x40b0b0, 0.45), tint(color, 0.7), 6, 11, 0.04);
+  const spineC = tint(color, 0.4, 0x102020, 0.3);
+  const bone = grad(0xd8d0b0, 0x4a5048, 9.8, 11.4, 0.03);
+  const glowC = 0x50fff0;
+  const body = sk.joint(sk.root, 0, -2.6, -8);
+  // The neck rises out of the sea in a cobra's curve.
+  const N = [V(0, -2.4, -2.6), V(0, 0.4, -1.6), V(0, 3.4, -0.5), V(0, 6.1, 0.5), V(0, 8.2, 1.8), V(0, 9.4, 3.3)];
+  const neck: THREE.Group[] = [];
+  let np: THREE.Object3D = body;
+  for (let i = 0; i < N.length - 1; i++) {
+    np = sk.joint(np, N[i].x, N[i].y, N[i].z);
+    neck.push(np as THREE.Group);
+  }
+  const head = sk.joint(np, N[5].x, N[5].y, N[5].z);
+  const neckBones = [...neck, head];
+  const neckTip = V(0, 9.9, 4.6);
+  const curve = new THREE.CatmullRomCurve3([...N, neckTip]).getPoints(16);
+  const radius = (i: number): [number, number] => {
+    const u = i / (curve.length - 1);
+    const r = 1.65 - 0.95 * sstep(0, 1, u) - 0.25 * sstep(0.85, 1, u);
+    return [r, r * 1.06];
+  };
+  // The throat faces forward and a little down, wherever the neck bends.
+  const throat = (_c: V3, out: V3) => out.set(0, -0.45, 1);
+  sk.add('scale', bellyShade(curve, back, pale, throat), tube(curve, curve.map((_, i) => radius(i)), 12), neckBones, neckTip);
+  // Belly scutes up the throat, a finned sail down the back, glowing spots on the flanks.
+  const T = V(), D = V();
+  for (let i = 1; i < curve.length - 2; i++) {
+    const c = curve[i];
+    T.subVectors(curve[i + 1], curve[i - 1]).normalize();
+    D.set(0, -0.45, 1).addScaledVector(T, -T.dot(V(0, -0.45, 1))).normalize();
+    const [r] = radius(i);
+    const at = c.clone().addScaledVector(D, r * 0.82);
+    sk.add('scale', tint(pale, 0.9), tube([at.clone().addScaledVector(T, -0.2), at.clone().addScaledVector(T, 0.2)], [[r * 0.72, r * 0.2], [r * 0.7, r * 0.18]], 8, { ref: D }), neckBones, neckTip);
+    if (i % 2 === 0) for (const s of [-1, 1]) {
+      const side = V(s, 0, 0).addScaledVector(T, -T.x * s).normalize();
+      sk.add('glow', glowC, ell(c.clone().addScaledVector(side, r * 0.97).addScaledVector(D, -r * 0.15), 0.13, 0.13, 0.13, 5, 3), neckBones, neckTip, 1.6);
+    }
+  }
+  const sailBase: V3[] = [], sailTip: V3[] = [];
+  for (let i = 2; i < curve.length - 1; i += 1) {
+    const c = curve[i];
+    T.subVectors(curve[Math.min(curve.length - 1, i + 1)], curve[i - 1]).normalize();
+    D.set(0, -0.45, 1).addScaledVector(T, -T.dot(V(0, -0.45, 1))).normalize();
+    const [r] = radius(i);
+    const b = c.clone().addScaledVector(D, -r * 0.9);
+    sailBase.push(b);
+    sailTip.push(b.clone().addScaledVector(D, -(0.5 + 0.9 * Math.sin((i / curve.length) * Math.PI))).addScaledVector(T, -0.5));
+  }
+  sail(sk, finC, spineC, sailBase, sailTip, neckBones, neckTip, 0.12);
+
+  // Head: a long armoured skull, horns swept back, frilled cheeks and whiskers.
+  sk.add('scale', grad(tint(color, 1.05), tint(color, 0.6), 9.2, 10.6, 0.05), ell(V(0, 9.75, 4.25), 0.95, 0.78, 1.25, 12, 9), head);
+  sk.add('scale', grad(tint(color, 1.1), tint(pale, 0.85), 9.1, 9.9, 0.04), tube([V(0, 9.78, 4.9), V(0, 9.64, 5.8), V(0, 9.44, 6.6), V(0, 9.32, 7.05)], [[0.8, 0.56], [0.66, 0.46], [0.48, 0.34], [0.26, 0.2]], 10), head);
+  for (const s of [-1, 1]) {
+    sk.add('scale', tint(color, 0.55), ell(V(s * 0.56, 10.25, 4.65), 0.44, 0.18, 0.62, 7, 4, [0.15, 0, -s * 0.32]), head);
+    sk.add('fur', 0x061012, ell(V(s * 0.66, 10.0, 5.0), 0.26, 0.2, 0.28, 7, 5), head);
+    sk.add('glow', glowC, ell(V(s * 0.73, 10.02, 5.1), 0.15, 0.12, 0.16, 7, 5), head, undefined, 3);
+    sk.add('glow', 0x40d0e0, ell(V(s * 0.18, 9.62, 6.96), 0.07, 0.05, 0.05, 5, 3), head, undefined, 1.5);
+    sk.add('fur', bone, tube(bez(V(s * 0.45, 10.35, 4.1), V(s * 0.95, 11.35, 3.2), V(s * 1.1, 11.25, 1.6), 6), taper(7, 0.24, 0), 7), head);
+    for (let i = 0; i < 4; i++) sk.add('fur', spineC, spike(V(s * (0.5 - i * 0.06), 10.25 - i * 0.12, 3.7 - i * 0.32), V(s * (0.75 - i * 0.06), 10.7 - i * 0.12, 3.3 - i * 0.34), 0.08, 4), head);
+    fan(sk, finC, spineC, V(s * 0.82, 9.6, 3.75), [V(s * 2.1, 10.7, 2.9), V(s * 2.6, 9.8, 2.6), V(s * 2.3, 8.8, 2.9), V(s * 1.5, 8.3, 3.4)], head, 0.05);
+    for (let i = 0; i < 8; i++) {
+      const z = 5.0 + i * 0.27, x = s * (0.62 - i * 0.045);
+      sk.add('fur', 0xeae4d0, spike(V(x, 9.32, z), V(x, 8.98, z + 0.06), 0.05, 3), head);
+    }
+    sk.add('fur', tint(color, 0.6), tube([V(s * 0.5, 9.28, 6.5), V(s * 0.95, 8.55, 6.7), V(s * 1.15, 7.65, 6.4), V(s * 1.05, 6.9, 6.0)], [0.08, 0.06, 0.045, 0], 5), head);
+    // Gill slits that glow before the water breath.
+    for (let g = 0; g < 3; g++) sk.add('glow', 0x40e8ff, tube([V(s * 0.98, 8.0 - g * 0.32, 2.25 - g * 0.18), V(s * 1.04, 7.82 - g * 0.32, 1.95 - g * 0.18), V(s * 0.98, 7.6 - g * 0.32, 1.7 - g * 0.18)], [0.035, 0.045, 0.03], 3), neck[4], undefined, 1.4);
+  }
+  sk.add('glow', 0x167a8a, ell(V(0, 9.18, 5.45), 0.5, 0.12, 1.25, 7, 4), head, undefined, 1.2);
+  const jaw = sk.joint(head, 0, 9.2, 4.3);
+  sk.add('scale', grad(tint(pale, 0.95), tint(color, 0.7), 8.7, 9.1, 0.04), tube([V(0, 9.05, 4.4), V(0, 8.88, 5.6), V(0, 8.92, 6.6), V(0, 9.0, 6.95)], [[0.7, 0.32], [0.58, 0.26], [0.4, 0.2], [0.22, 0.12]], 9), jaw);
+  for (const s of [-1, 1]) for (let i = 0; i < 6; i++) {
+    const z = 5.15 + i * 0.28, x = s * (0.5 - i * 0.05);
+    sk.add('fur', 0xeae4d0, spike(V(x, 9.0, z), V(x, 9.3, z + 0.05), 0.045, 3), jaw);
+  }
+  for (const s of [-1, 0, 1]) sk.add('fur', spineC, spike(V(s * 0.25, 8.75, 5.2 + Math.abs(s) * 0.3), V(s * 0.32, 8.3, 5.0 + Math.abs(s) * 0.3), 0.07, 4), jaw);
+
+  // Coils arching out of the sea behind the neck, each one free to roll and sink.
+  const coils: THREE.Group[] = [];
+  for (const [z0, top, r0] of [[-10.5, 3.7, 1.45], [-19.5, 3.1, 1.25]] as const) {
+    const root = sk.joint(body, 0, -1.2, z0);
+    const pts = Array.from({ length: 11 }, (_, i) => {
+      const a = (i / 10) * Math.PI;
+      return V(0, -2.8 + (top + 2.8) * Math.sin(a), z0 + 4.4 * Math.cos(a));
+    });
+    const inner = (c: V3, out: V3) => out.set(0, -2.8 - c.y, z0 - c.z);
+    sk.add('scale', bellyShade(pts, back, pale, inner), tube(pts, pts.map(() => r0), 12), root);
+    const bases: V3[] = [], tips: V3[] = [];
+    for (let i = 2; i <= 8; i++) {
+      const a = (i / 10) * Math.PI;
+      const out = V(0, Math.sin(a), Math.cos(a));
+      const b = pts[i].clone().addScaledVector(out, r0 * 0.9);
+      bases.push(b);
+      tips.push(b.clone().addScaledVector(out, 0.7 + 0.5 * Math.sin(a)).add(V(0, 0, -0.4)));
+      if (i % 2 === 0) for (const s of [-1, 1]) sk.add('glow', glowC, ell(pts[i].clone().add(V(s * r0 * 0.96, 0, 0)), 0.12, 0.12, 0.12, 5, 3), root, undefined, 1.6);
+    }
+    sail(sk, finC, spineC, bases, tips, [root], undefined, 0.11);
+    coils.push(root);
+  }
+
+  // The tail stands up out of the water, a finned paddle at its tip.
+  const tailRoot = sk.joint(body, 0, -3.4, -27);
+  const tp = [V(0, -3.4, -27), V(0, -0.8, -27.3), V(0, 1.8, -27.6), V(0, 4.2, -27.9), V(0, 6.2, -28.2), V(0, 7.7, -28.5)];
+  const tail = chain(sk, tailRoot, tp, [1.1, 0.92, 0.74, 0.54, 0.34, 0.12], 'scale', bellyShade(tp, back, pale, (_c, out) => out.set(0, 0, 1)), 10);
+  const tipJ = tail[tail.length - 1];
+  fan(sk, finC, spineC, V(0, 6.9, -28.35), [V(0, 10.4, -28.9), V(0, 10.0, -30.2), V(0, 8.6, -31.0), V(0, 6.8, -30.6), V(0, 5.6, -29.6)], tipJ, 0.08);
+  for (let i = 1; i < 5; i++) sk.add('fur', spineC, spike(tp[i].clone().add(V(0, 0, -0.85 + i * 0.12)), tp[i].clone().add(V(0, 0.3, -1.6 + i * 0.1)), 0.12, 4), tail[i]);
+
+  const j: CreatureJoints = { neck, jaw, tail, coils, tailRoot, legLen: 1 };
+  return finish(sk, 'serpent', body, head, j, 10.6, scale, true);
+}
+
+// ----------------------------------------------------------- elder dragon --
+
+/** The Elder Dragon: a drake grown vast and old, horned and plated, with an ember furnace in its chest. */
+export function buildDragon(color: number, scale: number): CreatureRig {
+  const sk = new Skin();
+  const back = tint(color, 0.85), belly = tint(color, 1.8, 0xd08a40, 0.5);
+  const hide = grad(back, belly, 0.95, 1.75, 0.1);
+  const legHide = grad(tint(color, 0.9), tint(color, 0.4), 0.0, 1.3, 0.08);
+  const plateC = tint(color, 1.6, 0xc08040, 0.55);
+  const spineC = 0x1c1210;
+  const ivory = 0xe0d4b8;
+  const ember = 0xff5a14;
+  const ty = 1.35;
+  const body = sk.joint(sk.root, 0, ty, 0);
+  const chest = sk.joint(body, 0, ty + 0.06, 0.55);
+  const hips = sk.joint(body, 0, ty, -0.65);
+  const prof: Profile = [
+    [-1.3, 0.2, 0.2, ty + 0.05], [-1.05, 0.36, 0.36, ty + 0.02], [-0.65, 0.44, 0.44, ty], [-0.2, 0.45, 0.46, ty],
+    [0.2, 0.48, 0.52, ty + 0.02], [0.55, 0.46, 0.5, ty + 0.08], [0.85, 0.35, 0.38, ty + 0.2], [1.02, 0.2, 0.22, ty + 0.3],
+  ];
+  const torso = [hips, chest];
+  const torsoTip = V(0, ty + 0.35, 1.08);
+  sk.add('scale', hide, profileTube(prof, 12), torso, torsoTip);
+  // Belly plates, with ember seams between them that flare before the breath.
+  for (let i = 0; i < 10; i++) {
+    const z = 0.8 - i * 0.2;
+    sk.add('scale', plateC, ell(onProfile(prof, z, Math.PI, 0.95), 0.3, 0.06, 0.11, 7, 3), torso, torsoTip);
+    if (i < 6) sk.add('glow', ember, ell(onProfile(prof, z - 0.1, Math.PI, 0.99), 0.22, 0.02, 0.02, 5, 3), torso, torsoTip, 1.4);
+  }
+  // Raised scale ridges along the flanks, and molten cracks over the chest.
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 9; i++) {
+      const z = 0.85 - i * 0.24;
+      sk.add('scale', tint(color, 0.62), ell(onProfile(prof, z, s * 0.75, 1.0), 0.09, 0.05, 0.13, 5, 3), torso, torsoTip);
+      sk.add('scale', tint(color, 0.7), ell(onProfile(prof, z - 0.12, s * 1.3, 1.0), 0.08, 0.05, 0.12, 5, 3), torso, torsoTip);
+    }
+    const crack = [0.18, 0.36, 0.55, 0.74, 0.9].map((z, i) => onProfile(prof, z, s * (2.2 + 0.25 * Math.sin(i * 2.3)), 1.01));
+    sk.add('glow', ember, tube(crack, crack.map((_, i) => (i === crack.length - 1 ? 0 : 0.018)), 3), torso, torsoTip, 1.8);
+  }
+  const limbs: Limb[] = [];
+  for (const [front, s] of [[true, 1], [true, -1], [false, 1], [false, -1]] as const) {
+    const x = s * 0.34;
+    const pts = front
+      ? [V(x, ty + 0.05, 0.62), V(x * 1.35, 0.85, 0.5), V(x * 1.25, 0.3, 0.68), V(x * 1.25, 0.06, 0.8)]
+      : [V(x, ty, -0.72), V(x * 1.3, 0.92, -0.42), V(x * 1.2, 0.42, -0.88), V(x * 1.2, 0.06, -0.76)];
+    const l = leg(sk, front ? chest : hips, pts, front ? [0.2, 0.14, 0.09, 0.08] : [0.26, 0.17, 0.1, 0.085], legHide, s, front, 'scale');
+    const f = pts[3];
+    // Three hooked claws in front and one turned back.
+    for (const dx of [-0.08, 0, 0.08]) sk.add('fur', ivory, tube([V(f.x + dx, 0.08, f.z + 0.04), V(f.x + dx * 1.4, 0.06, f.z + 0.18), V(f.x + dx * 1.5, 0.0, f.z + 0.26)], [0.035, 0.024, 0], 4), l.low);
+    sk.add('fur', ivory, tube([V(f.x, 0.1, f.z - 0.05), V(f.x, 0.04, f.z - 0.18)], [0.03, 0], 4), l.low);
+    sk.add('scale', legHide, ell(V(f.x, 0.07, f.z + 0.03), 0.12, 0.07, 0.15, 6, 4), l.low);
+    const knee = pts[1];
+    sk.add('fur', spineC, spike(knee.clone().add(V(0, 0.02, front ? -0.08 : 0.06)), knee.clone().add(V(s * 0.04, 0.06, front ? -0.32 : 0.3)), 0.05, 4), l.mid);
+    muscle(sk, 'scale', hide, front ? ell(V(x * 0.95, ty - 0.06, 0.62), 0.17, 0.3, 0.2, 7, 5) : ell(V(x * 0.95, ty - 0.08, -0.7), 0.2, 0.34, 0.26, 7, 5), l);
+    limbs.push(l);
+  }
+  // A long neck plated down the throat.
+  const neckPts = [V(0, ty + 0.3, 0.98), V(0, ty + 0.58, 1.22), V(0, ty + 0.85, 1.44), V(0, ty + 1.08, 1.64), V(0, ty + 1.24, 1.84)];
+  const neck: THREE.Group[] = [];
+  let np: THREE.Object3D = chest;
+  for (const p of neckPts) {
+    np = sk.joint(np, p.x, p.y, p.z);
+    neck.push(np as THREE.Group);
+  }
+  const hp = V(0, ty + 1.33, 2.02);
+  const head = sk.joint(np, hp.x, hp.y, hp.z);
+  const neckChain = [chest, ...neck, head];
+  const neckTip = V(0, hp.y + 0.05, 2.1);
+  const neckPath = [V(0, ty + 0.1, 0.75), ...neckPts, hp, V(0, hp.y + 0.04, 2.1)];
+  const neckR: [number, number][] = [[0.38, 0.42], [0.34, 0.37], [0.3, 0.32], [0.26, 0.28], [0.23, 0.24], [0.21, 0.22], [0.19, 0.2], [0.16, 0.16]];
+  const throat = (_c: V3, out: V3) => out.set(0, -0.6, 1);
+  sk.add('scale', bellyShade(neckPath, back, belly, throat, 0.08), tube(neckPath, neckR, 10), neckChain, neckTip);
+  const spineBones: THREE.Object3D[] = [];
+  const D = V(), T = V();
+  for (let i = 1; i < neckPath.length - 1; i++) {
+    T.subVectors(neckPath[i + 1], neckPath[i - 1]).normalize();
+    D.set(0, -0.6, 1).addScaledVector(T, -T.dot(V(0, -0.6, 1))).normalize();
+    const r = neckR[i][0];
+    const at = neckPath[i].clone().addScaledVector(D, r * 0.85);
+    sk.add('scale', plateC, tube([at.clone().addScaledVector(T, -0.06), at.clone().addScaledVector(T, 0.06)], [[r * 0.7, r * 0.2], [r * 0.68, r * 0.18]], 8, { ref: D }), neckChain, neckTip);
+    const b = neckPath[i].clone().addScaledVector(D, -r * 0.9);
+    sk.add('fur', spineC, spike(b, b.clone().addScaledVector(D, -0.2).addScaledVector(T, -0.14), 0.05, 4), neckChain, neckTip);
+  }
+
+  // Head: a crown of horns, frilled cheeks, a glowing maw.
+  const hy = hp.y + 0.03;
+  sk.add('scale', hide, ell(V(0, hy, 2.08), 0.23, 0.2, 0.28, 10, 8), head);
+  sk.add('scale', grad(tint(color, 1.0), tint(belly, 0.9), hy - 0.15, hy + 0.1, 0.05), tube([V(0, hy, 2.25), V(0, hy - 0.03, 2.48), V(0, hy - 0.07, 2.66), V(0, hy - 0.09, 2.8)], [[0.2, 0.15], [0.16, 0.12], [0.11, 0.085], [0.065, 0.055]], 9), head);
+  const hornC = grad(0xd8c8a0, 0x24180f, hy + 0.05, hy + 0.4, 0.02);
+  const frill = grad(tint(color, 1.2, 0xd04018, 0.4), tint(color, 0.5), hy - 0.25, hy + 0.15, 0.04);
+  for (const s of [-1, 1]) {
+    sk.add('scale', tint(color, 0.5), ell(V(s * 0.12, hy + 0.12, 2.22), 0.1, 0.045, 0.16, 6, 4, [0.25, 0, -s * 0.35]), head);
+    sk.add('fur', 0x0a0604, ell(V(s * 0.135, hy + 0.07, 2.27), 0.045, 0.035, 0.045, 6, 4), head);
+    sk.add('glow', 0xffb020, ell(V(s * 0.15, hy + 0.07, 2.29), 0.03, 0.022, 0.028, 5, 3), head, undefined, 3);
+    sk.add('glow', ember, ell(V(s * 0.045, hy - 0.04, 2.79), 0.016, 0.014, 0.014, 4, 3), head, undefined, 2);
+    sk.add('fur', hornC, tube(bez(V(s * 0.12, hy + 0.14, 2.0), V(s * 0.34, hy + 0.4, 1.82), V(s * 0.38, hy + 0.3, 1.4), 6), taper(7, 0.075, 0), 7), head);
+    sk.add('fur', hornC, tube(bez(V(s * 0.17, hy + 0.04, 1.96), V(s * 0.37, hy + 0.08, 1.8), V(s * 0.45, hy - 0.03, 1.55), 5), taper(6, 0.05, 0), 6), head);
+    for (let i = 0; i < 4; i++) sk.add('fur', spineC, spike(V(s * 0.17, hy - 0.06, 2.06 - i * 0.06), V(s * 0.28, hy - 0.09, 1.96 - i * 0.07), 0.025, 3), head);
+    fan(sk, frill, spineC, V(s * 0.16, hy - 0.04, 1.98), [V(s * 0.42, hy + 0.14, 1.8), V(s * 0.5, hy - 0.04, 1.75), V(s * 0.42, hy - 0.22, 1.82)], head, 0.016);
+    for (let i = 0; i < 6; i++) sk.add('fur', ivory, spike(V(s * (0.13 - i * 0.012), hy - 0.1, 2.36 + i * 0.075), V(s * (0.13 - i * 0.012), hy - 0.17, 2.37 + i * 0.075), 0.016, 3), head);
+  }
+  sk.add('fur', hornC, spike(V(0, hy + 0.02, 2.62), V(0, hy + 0.13, 2.58), 0.03, 4), head);
+  sk.add('glow', ember, ell(V(0, hy - 0.11, 2.45), 0.12, 0.03, 0.3, 6, 3), head, undefined, 1.4);
+  const jaw = sk.joint(head, 0, hy - 0.1, 2.12);
+  sk.add('scale', grad(belly, tint(color, 0.8), hy - 0.22, hy - 0.1, 0.04), tube([V(0, hy - 0.12, 2.14), V(0, hy - 0.17, 2.42), V(0, hy - 0.17, 2.66), V(0, hy - 0.15, 2.76)], [[0.17, 0.07], [0.14, 0.06], [0.09, 0.045], [0.05, 0.03]], 8), jaw);
+  for (const s of [-1, 1]) for (let i = 0; i < 5; i++) sk.add('fur', ivory, spike(V(s * (0.11 - i * 0.012), hy - 0.15, 2.4 + i * 0.075), V(s * (0.11 - i * 0.012), hy - 0.09, 2.41 + i * 0.075), 0.014, 3), jaw);
+  for (const s of [-1, 0, 1]) sk.add('fur', spineC, spike(V(s * 0.06, hy - 0.2, 2.3), V(s * 0.08, hy - 0.32, 2.2), 0.02, 3), jaw);
+
+  // Wings: arm, forearm, hand and four finger bones carrying the membrane.
+  const wings: Wing[] = [];
+  const mem = (p: V3, c: THREE.Color) => {
+    c.lerpColors(_robeA.setHex(tint(color, 0.45, 0x2a0604, 0.3)), _robeB.setHex(tint(color, 1.2, 0xd04a18, 0.35)), clamp01((Math.abs(p.x) - 0.4) / 3.4));
+  };
+  for (const s of [-1, 1]) {
+    const S = V(s * 0.32, ty + 0.42, 0.58), E = V(s * 1.35, ty + 0.9, 0.3), W = V(s * 2.45, ty + 1.0, 0.52);
+    const tips = [V(s * 3.95, ty + 0.62, 0.15), V(s * 3.65, ty + 0.36, -0.9), V(s * 3.05, ty + 0.24, -1.65), V(s * 2.2, ty + 0.18, -2.05)];
+    const root = sk.joint(chest, S.x, S.y, S.z);
+    const fore = sk.joint(root, E.x, E.y, E.z);
+    const hand = sk.joint(fore, W.x, W.y, W.z);
+    const fingers = tips.map(() => sk.joint(hand, W.x, W.y, W.z));
+    sk.add('scale', hide, tube([S, S.clone().lerp(E, 0.5), E, E.clone().lerp(W, 0.5), W], [0.14, 0.11, 0.09, 0.07, 0.06], 7), [root, fore, hand], W.clone().add(V(s * 0.15, 0, 0)));
+    tips.forEach((t, i) => sk.add('scale', tint(color, 0.55), tube([W, W.clone().lerp(t, 0.5), t], [0.045, 0.032, 0.006], 5), fingers[i]));
+    sk.add('fur', ivory, tube([W, W.clone().add(V(s * 0.05, 0.12, 0.2)), W.clone().add(V(s * 0.02, 0.06, 0.34))], [0.05, 0.03, 0], 4), hand);
+    for (const f of [0.3, 0.6]) {
+      const p = S.clone().lerp(E, f);
+      sk.add('fur', spineC, spike(p.clone().add(V(0, 0.08, 0)), p.clone().add(V(s * 0.05, 0.3, -0.15)), 0.04, 4), root);
+    }
+    sk.add('fur', spineC, spike(E.clone().add(V(0, 0.06, 0)), E.clone().add(V(s * 0.1, 0.34, -0.12)), 0.05, 4), fore);
+    const m = membrane(s, W, tips, fingers, [S, E], [root, fore], hand, V(s * 0.38, ty + 0.25, -0.85), hips, chest);
+    sk.push('membrane', mem, m.geo, m.weigh);
+    const fold = foldWing(root, fore, hand, tips, V(s * 0.3, 0.85, -0.5), V(s * 0.05, -0.2, 1), [V(s * 0.04, 0.12, -1), V(s * 0.06, -0.04, -1), V(s * 0.08, -0.2, -1), V(s * 0.1, -0.35, -1)]);
+    wings.push({ root, fore, hand, fingers, side: s, fold });
+  }
+
+  // A long tail ending in a spiked club with two blades.
+  const tailPts = Array.from({ length: 10 }, (_, i) => {
+    const u = i / 9;
+    return V(0, ty + 0.06 - 0.75 * u * u - 0.12 * u, -1.25 - 3.9 * u);
+  });
+  const tailR: Radius[] = tailPts.map((_, i) => {
+    const r = 0.3 * (1 - i / 9) + 0.04;
+    return [r, r * 1.06];
+  });
+  tailR[9] = 0;
+  const tail = chain(sk, hips, tailPts, tailR, 'scale', bellyShade(tailPts, back, belly, (_c, out) => out.set(0, -1, 0), 0.08), 9);
+  const tl = tail[tail.length - 1];
+  const te = tailPts[9];
+  sk.add('scale', tint(color, 0.6), ell(te.clone().add(V(0, 0.02, 0.12)), 0.13, 0.11, 0.2, 7, 5), tl);
+  for (const s of [-1, 1]) sk.add('fur', ivory, tube(bez(te.clone().add(V(0, 0, 0.2)), te.clone().add(V(s * 0.34, 0.02, 0.04)), te.clone().add(V(s * 0.24, 0, -0.3)), 4), [[0.1, 0.012], [0.12, 0.012], [0.09, 0.01], [0.05, 0.008], 0], 4), tl);
+  for (const [dy, dz] of [[0.12, 0.08], [0.14, -0.08], [-0.1, 0.02]]) sk.add('fur', spineC, spike(te.clone().add(V(0, dy * 0.5, dz)), te.clone().add(V(0, dy * 2.6, dz - 0.12)), 0.04, 4), tl);
+  spineBones.push(...tail.slice().reverse(), hips, chest, ...neck, head);
+  const spineW = chainWeights(torso, torsoTip);
+  for (let i = 0; i < 9; i++) {
+    const base = onProfile(prof, 0.85 - i * 0.24, 0, 0.94);
+    const len = 0.24 + 0.14 * Math.sin((i / 8) * Math.PI);
+    sk.push('fur', spineC, spike(base, base.clone().add(V(0, len, -len * 0.55)), 0.07, 4), spineW);
+  }
+  for (let i = 0; i < 8; i++) {
+    const u = i / 8;
+    const base = tailPts[i].clone().add(V(0, 0.3 * (1 - u) + 0.04, 0));
+    const len = 0.22 * (1 - u) + 0.06;
+    sk.push('fur', spineC, spike(base, base.clone().add(V(0, len, -len * 0.6)), 0.05 * (1 - u) + 0.02, 4), nearest(spineBones));
+  }
+  const j: CreatureJoints = { chest, hips, neck, jaw, tail, limbs, wings, legLen: ty, girth: 0.48 };
+  return finish(sk, 'dragon', body, head, j, 3.05, scale, true);
+}
+
+// ------------------------------------------------------- queen of the sea --
+
+/** A siren queen: a regal upper body over a coiling fish tail, a coral crown, flowing hair and a trident. */
+export function buildSiren(color: number, scale: number): CreatureRig {
+  const sk = new Skin();
+  const skinC = 0xa8d4cc;
+  const top = tint(color, 0.85), low = tint(color, 1.7, 0xd8f0e0, 0.5);
+  const gold = 0xd8b058, pearl = 0xf2eee2, hairC = 0x123c44;
+  const finC = grad(tint(color, 1.5, 0x90f0e8, 0.45), tint(color, 0.7), 0.2, 1.9, 0.03);
+  const finSpine = tint(color, 0.55);
+  const body = sk.joint(sk.root, 0, 1.55, 0);
+  const chest = sk.joint(body, 0, 2.15, 0.02);
+  const hp = V(0, 2.66, 0.04);
+  const head = sk.joint(chest, hp.x, hp.y, hp.z);
+  // Torso: slim waist, a shell bodice, a belt of gold and pearls.
+  sk.add('fur', skinC, tube([V(0, 1.5, 0), V(0, 1.72, 0.01), V(0, 1.95, 0.02), V(0, 2.2, 0.02), V(0, 2.4, 0.01), V(0, 2.52, 0.01)], [[0.21, 0.16], [0.17, 0.12], [0.19, 0.13], [0.23, 0.14], [0.2, 0.13], [0.07, 0.065]], 10), [body, chest], V(0, 2.56, 0));
+  for (const s of [-1, 1]) sk.add('shell', pearl, shell(V(s * 0.09, 2.18, 0.1), 0.1, 0, 1.3, [Math.PI / 2, 0, s * 0.25], [1, 1, 0.75]), chest);
+  sk.add('shell', gold, tube([V(0, 1.62, 0), V(0, 1.56, 0)], [[0.22, 0.17], [0.22, 0.17]], 12), body);
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * TAU;
+    sk.add('shell', pearl, ell(V(Math.sin(a) * 0.22, 1.59, Math.cos(a) * 0.17), 0.03, 0.03, 0.03, 5, 4), body);
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = -0.9 + (i / 6) * 1.8;
+    const p = V(Math.sin(a) * 0.12, 2.39 - Math.cos(a) * 0.05, 0.06 + Math.cos(a) * 0.06);
+    if (i === 3) sk.add('glow', 0x60fff0, ell(p.add(V(0, -0.03, 0.01)), 0.03, 0.035, 0.02, 6, 4), chest, undefined, 2.5);
+    else sk.add('shell', pearl, ell(p, 0.02, 0.02, 0.02, 5, 3), chest);
+  }
+  // The tail: down from the hips, curling back along the ground, a fluke at its end.
+  const tailPts = [V(0, 1.52, 0), V(0, 1.18, -0.06), V(0, 0.84, -0.2), V(0, 0.56, -0.48), V(0, 0.42, -0.86), V(0, 0.44, -1.28), V(0, 0.6, -1.66), V(0, 0.86, -1.95), V(0, 1.12, -2.1)];
+  const tailR: Radius[] = [[0.22, 0.17], [0.21, 0.17], [0.19, 0.15], [0.16, 0.13], [0.13, 0.11], [0.1, 0.085], [0.075, 0.065], [0.05, 0.045], 0.02];
+  const tail = chain(sk, body, tailPts, tailR, 'scale', bellyShade(tailPts, top, low, (_c, out) => out.set(0, -1, 1), 0.1), 10);
+  for (let i = 1; i < 7; i++) sk.add('shell', tint(color, 1.2, gold, 0.35), tube([tailPts[i].clone().lerp(tailPts[i + 1], 0.45), tailPts[i].clone().lerp(tailPts[i + 1], 0.55)], [(tailR[i] as [number, number]).map((r) => r * 1.04) as [number, number], (tailR[i] as [number, number]).map((r) => r * 1.04) as [number, number]], 10), tail[i]);
+  const te = tailPts[8];
+  for (const s of [-1, 1]) {
+    fan(sk, finC, finSpine, te.clone(), [te.clone().add(V(s * 0.12, 0.5, -0.05)), te.clone().add(V(s * 0.45, 0.45, -0.35)), te.clone().add(V(s * 0.66, 0.1, -0.5)), te.clone().add(V(s * 0.5, -0.12, -0.28))], tail[tail.length - 1], 0.016);
+    fan(sk, finC, finSpine, V(s * 0.18, 1.42, -0.05), [V(s * 0.42, 1.48, -0.15), V(s * 0.55, 1.24, -0.3), V(s * 0.4, 1.02, -0.32)], body, 0.014);
+  }
+  const arms: Limb[] = [];
+  for (const s of [-1, 1]) {
+    const S = V(s * 0.24, 2.38, 0), E = V(s * 0.4, 2.02, 0.08), Wr = V(s * 0.44, 1.7, 0.24);
+    const up = sk.joint(chest, S.x, S.y, S.z);
+    const mid = sk.joint(up, E.x, E.y, E.z);
+    const lo = sk.joint(mid, Wr.x, Wr.y, Wr.z);
+    sk.add('fur', skinC, tube([S, S.clone().lerp(E, 0.5), E, E.clone().lerp(Wr, 0.5), Wr], [0.06, 0.05, 0.045, 0.04, 0.036], 7), [up, mid, lo], Wr.clone().lerp(E, -0.15));
+    sk.add('fur', skinC, ell(Wr.clone().add(V(0, -0.06, 0.03)), 0.04, 0.055, 0.026, 6, 4), lo);
+    for (let f = 0; f < 4; f++) {
+      const k0 = Wr.clone().add(V((f - 1.5) * 0.02, -0.09, 0.04));
+      sk.add('fur', skinC, tube([k0, k0.clone().add(V((f - 1.5) * 0.008, -0.08, 0.03))], [0.011, 0.007], 4), lo);
+    }
+    sk.add('shell', gold, tube([Wr.clone().lerp(E, 0.12), Wr.clone().lerp(E, 0.2)], [0.048, 0.048], 8), lo);
+    sk.add('shell', tint(color, 1.1, gold, 0.3), ell(S.clone().add(V(s * 0.03, 0.03, 0)), 0.09, 0.06, 0.09, 7, 4), up);
+    fan(sk, finC, finSpine, E.clone().add(V(s * 0.03, 0, -0.04)), [E.clone().add(V(s * 0.15, 0.05, -0.12)), E.clone().add(V(s * 0.12, -0.18, -0.12)), Wr.clone().add(V(s * 0.06, 0.04, -0.08))], mid, 0.008);
+    arms.push({ up, mid, low: lo, side: s, front: true });
+  }
+  // Head: glowing eyes, finned ears, a crown of coral and pearls, long sea-dark hair.
+  sk.add('fur', skinC, ell(V(0, hp.y + 0.03, hp.z + 0.02), 0.11, 0.135, 0.12, 10, 8), head);
+  sk.add('fur', 0x2e5a60, ell(V(0, hp.y - 0.07, hp.z + 0.12), 0.03, 0.01, 0.01, 5, 3), head);
+  for (const s of [-1, 1]) {
+    sk.add('fur', 0x061418, ell(V(s * 0.042, hp.y + 0.04, hp.z + 0.11), 0.026, 0.016, 0.012, 6, 4), head);
+    sk.add('glow', 0x60fff0, ell(V(s * 0.044, hp.y + 0.04, hp.z + 0.118), 0.014, 0.01, 0.008, 5, 3), head, undefined, 3);
+    fan(sk, finC, finSpine, V(s * 0.1, hp.y + 0.03, hp.z - 0.02), [V(s * 0.2, hp.y + 0.16, hp.z - 0.1), V(s * 0.24, hp.y + 0.04, hp.z - 0.12), V(s * 0.18, hp.y - 0.06, hp.z - 0.08)], head, 0.006);
+  }
+  sk.add('shell', gold, tube([V(0, hp.y + 0.1, hp.z), V(0, hp.y + 0.13, hp.z)], [[0.125, 0.12], [0.13, 0.125]], 12), head);
+  for (let i = 0; i < 7; i++) {
+    const a = -1.2 + i * 0.4;
+    const b = V(Math.sin(a) * 0.12, hp.y + 0.13, hp.z + Math.cos(a) * 0.11);
+    const out = V(Math.sin(a), 0, Math.cos(a));
+    const h = i === 3 ? 0.34 : 0.22 + 0.04 * (i % 2);
+    const p1 = b.clone().addScaledVector(out, 0.04).add(V(0, h * 0.55, 0));
+    const p2 = b.clone().addScaledVector(out, 0.07).add(V(0, h, 0));
+    sk.add('fur', 0xe86a7a, tube([b, p1, p2], [0.018, 0.013, 0], 4), head);
+    sk.add('fur', 0xe86a7a, tube([p1, p1.clone().addScaledVector(out, 0.07).add(V(0, 0.08, 0))], [0.009, 0], 3), head);
+    sk.add('glow', i === 3 ? 0xa0fff8 : 0xff9ab0, ell(p2, 0.016, 0.016, 0.016, 5, 3), head, undefined, i === 3 ? 3 : 1.6);
+  }
+  const hair: THREE.Group[][] = [];
+  for (let i = 0; i < 7; i++) {
+    const a = Math.PI + (i - 3) * 0.32;
+    const b = V(Math.sin(a) * 0.11, hp.y + 0.06, hp.z + Math.cos(a) * 0.1);
+    const dx = Math.sin(a), dz = Math.cos(a);
+    hair.push(chain(sk, head, [b, b.clone().add(V(dx * 0.08, -0.35, dz * 0.1 - 0.05)), b.clone().add(V(dx * 0.12, -0.75, dz * 0.16 - 0.12)), b.clone().add(V(dx * 0.14, -1.1, dz * 0.2 - 0.22))], [[0.06, 0.02], [0.055, 0.02], [0.04, 0.015], 0], 'fur', grad(0x1c5a62, hairC, hp.y - 1, hp.y, 0.08), 4));
+  }
+  // The trident in her right hand; a water orb at her left.
+  const right = arms[0].low;
+  const Wr = right.userData.w as V3;
+  sk.add('shell', 0xb8903a, tube([Wr.clone().add(V(0, -1.0, 0.03)), Wr.clone().add(V(0, 0.3, 0)), Wr.clone().add(V(0, 1.35, -0.03))], [0.026, 0.03, 0.026], 6), right);
+  const tp = Wr.clone().add(V(0, 1.38, -0.03));
+  sk.add('shell', gold, tube(bez(tp.clone().add(V(-0.18, 0.1, 0)), tp.clone().add(V(0, -0.07, 0)), tp.clone().add(V(0.18, 0.1, 0)), 5), [0.012, 0.022, 0.028, 0.028, 0.022, 0.012], 5), right);
+  for (const [dx, h] of [[0, 0.46], [-0.17, 0.36], [0.17, 0.36]] as const) {
+    const base = tp.clone().add(V(dx, Math.abs(dx) > 0 ? 0.08 : 0, 0));
+    const tip = base.clone().add(V(dx * 0.08, h, 0));
+    sk.add('shell', gold, spike(base, tip, 0.024, 5), right);
+    sk.add('shell', gold, spike(tip.clone().add(V(0, -0.1, 0)), tip.clone().add(V(dx > 0 ? 0.05 : dx < 0 ? -0.05 : 0.04, -0.16, 0)), 0.012, 3), right);
+    sk.add('glow', 0x80fff0, ell(tip.clone().add(V(0, -0.05, 0)), 0.018, 0.05, 0.018, 5, 3), right, undefined, 2.4);
+  }
+  const orb = glowSprite(0x60e0ff, 0.5, 0.9);
+  orb.position.set(0, -0.14, 0.08);
+  arms[1].low.add(orb);
+  const wisps = [orb];
+  for (let i = 0; i < 2; i++) {
+    const w = glowSprite(0x70f0ff, 0.4, 0.8);
+    body.add(w);
+    wisps.push(w);
+  }
+  const j: CreatureJoints = { chest, arms, tail, strands: hair, wisps };
+  return finish(sk, 'siren', body, head, j, 3.0, scale, true);
+}
+
+// ----------------------------------------------------------------- reaper --
+
+/** The Reaper: a tall hooded shade with a great scythe and a soul lantern at its hip. */
+export function buildReaper(color: number, scale: number): CreatureRig {
+  const sk = new Skin();
+  const robeTop = tint(color, 1.6, 0x2a2238, 0.4), robeLow = tint(color, 0.6);
+  const ghost: Shade = (p, c) => {
+    c.lerpColors(_robeA.setHex(robeLow), _robeB.setHex(robeTop), clamp01((p.y - 0.3) / 2.4));
+    return 0.3 + 0.68 * clamp01((p.y - 0.15) / 1.2);
+  };
+  const boneC = 0xd8d0b8;
+  const soul = 0x70ffb0;
+  const body = sk.joint(sk.root, 0, 1.4, 0);
+  const chest = sk.joint(body, 0, 2.5, 0);
+  const hp = V(0, 3.02, 0.06);
+  const head = sk.joint(chest, hp.x, hp.y, hp.z);
+  sk.add('ghost', ghost, tube([V(0, 2.92, 0), V(0, 2.78, 0), V(0, 2.45, 0), V(0, 1.95, 0), V(0, 1.4, 0), V(0, 0.95, 0)], [[0.14, 0.12], [0.44, 0.27], [0.37, 0.26], [0.34, 0.28], [0.42, 0.37], [0.54, 0.48]], 12), [chest, body], V(0, 0.8, 0));
+  const strands = tatters(sk, body, 12, 1.0, 0.5, 1.0, 0.13, ghost, 'ghost', 0.28);
+  // A ragged mantle over the shoulders, streaming behind.
+  for (let i = 0; i < 5; i++) {
+    const x = (i - 2) * 0.17;
+    const b = V(x, 2.8, -0.2);
+    strands.push(chain(sk, chest, [b, b.clone().add(V(x * 0.2, -0.45, -0.18)), b.clone().add(V(x * 0.3, -0.95, -0.3)), b.clone().add(V(x * 0.35, -1.4, -0.36))], [[0.11, 0.02], [0.1, 0.02], [0.08, 0.015], 0], 'ghost', ghost, 4));
+  }
+  // The hood: a deep cowl round a void with two cold eyes and a glimpse of jaw.
+  sk.add('ghost', ghost, tube([V(0, 3.1, -0.24), V(0, 3.17, -0.1), V(0, 3.13, 0.06), V(0, 3.05, 0.2)], [[0.08, 0.08], [0.24, 0.26], [0.26, 0.27], [0.23, 0.25]], 12, { open: true }), head);
+  sk.add('ghost', ghost, spike(V(0, 3.24, -0.18), V(0, 3.2, -0.5), 0.1, 6), head);
+  sk.add('fur', 0x020203, ell(V(0, 3.02, 0.05), 0.19, 0.21, 0.15, 8, 6), head);
+  for (const s of [-1, 1]) sk.add('glow', 0x90ffc0, ell(V(s * 0.065, 3.05, 0.17), 0.036, 0.022, 0.014, 5, 3), head, undefined, 4);
+  sk.add('fur', tint(boneC, 0.55), tube([V(0, 2.9, 0.12), V(0, 2.87, 0.17)], [[0.06, 0.02], [0.045, 0.018]], 6), head);
+  const arms: Limb[] = [];
+  for (const s of [-1, 1]) {
+    const S = V(s * 0.33, 2.78, 0), E = V(s * 0.46, 2.36, 0.14), Wr = V(s * 0.4, 2.0, 0.36);
+    const up = sk.joint(chest, S.x, S.y, S.z);
+    const mid = sk.joint(up, E.x, E.y, E.z);
+    const lo = sk.joint(mid, Wr.x, Wr.y, Wr.z);
+    sk.add('ghost', ghost, tube([S, S.clone().lerp(E, 0.5), E, E.clone().lerp(Wr, 0.6)], [0.11, 0.11, 0.12, 0.16], 7), [up, mid], Wr);
+    sk.add('fur', boneC, tube([E, Wr], [0.03, 0.024], 5), mid);
+    for (let f = 0; f < 4; f++) {
+      const sp = (f - 1.5) * 0.035;
+      const k0 = Wr.clone().add(V(sp, -0.02, 0.03));
+      const k1 = k0.clone().add(V(sp * 0.5, -0.11, 0.06));
+      sk.add('fur', boneC, tube([k0, k1, k1.clone().add(V(0, -0.09, 0.07))], [0.014, 0.01, 0], 4), lo);
+    }
+    arms.push({ up, mid, low: lo, side: s, front: true });
+  }
+  // The scythe: a long black haft in the right hand, a great curved blade with a ghostly edge.
+  const right = arms[0].low;
+  const Wr = right.userData.w as V3;
+  sk.add('fur', 0x241a14, tube([Wr.clone().add(V(0.02, -1.5, -0.14)), Wr.clone().add(V(0, 0, 0)), Wr.clone().add(V(-0.03, 2.1, 0.12))], [0.035, 0.04, 0.034], 6), right);
+  for (const y of [-1.2, -0.4, 0.6, 1.5]) sk.add('fur', 0x4a3a2a, tube([Wr.clone().add(V(0, y, y * 0.06)), Wr.clone().add(V(0, y + 0.08, y * 0.06))], [0.044, 0.044], 6), right);
+  const T0 = Wr.clone().add(V(-0.03, 2.12, 0.12));
+  sk.add('shell', 0x5a5a62, tube([T0.clone().add(V(0, -0.12, 0)), T0.clone().add(V(0, 0.08, 0))], [0.055, 0.05], 8), right);
+  sk.add('shell', 0x5a5a62, spike(T0.clone().add(V(0, 0.02, -0.02)), T0.clone().add(V(0, 0.18, -0.36)), 0.04, 4), right);
+  const blade = bez(T0.clone().add(V(0, 0.04, 0.02)), T0.clone().add(V(0, 0.34, 0.95)), T0.clone().add(V(0, -0.34, 1.85)), 8);
+  const bladeR: Radius[] = [[0.014, 0.17], [0.014, 0.19], [0.013, 0.18], [0.012, 0.16], [0.011, 0.13], [0.01, 0.1], [0.008, 0.07], [0.006, 0.04], 0];
+  sk.add('shell', grad(0xb8c0c8, 0x5a6068, T0.y - 0.3, T0.y + 0.3, 0.02), tube(blade, bladeR, 6), right);
+  const edge = blade.map((p, i) => p.clone().add(V(0, -(typeof bladeR[i] === 'number' ? 0 : (bladeR[i] as [number, number])[1]) * 0.92, 0)));
+  sk.add('glow', soul, tube(edge, edge.map((_, i) => (i === edge.length - 1 ? 0 : 0.012)), 3), right, undefined, 1.8);
+  // A soul lantern swinging at the left hip.
+  const lp = V(0.4, 1.5, 0.14);
+  sk.add('shell', 0x3a3a40, tube([V(0.34, 1.95, 0.08), lp.clone().add(V(0, 0.16, 0))], [0.008, 0.008], 3), body);
+  sk.add('shell', 0x3a3a40, tube([lp.clone().add(V(0, 0.14, 0)), lp.clone().add(V(0, 0.12, 0))], [0.06, 0.06], 8), body);
+  sk.add('shell', 0x3a3a40, tube([lp.clone().add(V(0, -0.12, 0)), lp.clone().add(V(0, -0.14, 0))], [0.06, 0.06], 8), body);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * TAU + 0.4;
+    sk.add('shell', 0x3a3a40, tube([lp.clone().add(V(Math.sin(a) * 0.055, 0.13, Math.cos(a) * 0.055)), lp.clone().add(V(Math.sin(a) * 0.055, -0.13, Math.cos(a) * 0.055))], [0.008, 0.008], 3), body);
+  }
+  sk.add('glow', soul, ell(lp, 0.04, 0.07, 0.04, 6, 4), body, undefined, 3);
+  const lantern = glowSprite(soul, 0.9, 0.8);
+  lantern.position.copy(lp).sub(body.userData.w as V3);
+  body.add(lantern);
+  const wisps = [lantern];
+  for (let i = 0; i < 3; i++) {
+    const w = glowSprite(soul, 0.35, 0.8);
+    body.add(w);
+    wisps.push(w);
+  }
+  const halo = glowSprite(soul, 3.6, 0.22);
+  halo.position.copy(V(0, 2.1, -0.3)).sub(body.userData.w as V3);
+  body.add(halo);
+  const j: CreatureJoints = { chest, arms, strands, wisps, halo };
+  return finish(sk, 'reaper', body, head, j, 3.4, scale, true);
+}
+
+// ----------------------------------------------------------------- spider --
+
+export function buildSpider(color: number, scale = 1): CreatureRig {
+  return instance(`spider:${color}`, scale, () => buildSpiderRig(color));
+}
+
+/** A hairy spider: eight high-kneed legs, venom-tipped fangs, eight red eyes and a marked abdomen. */
+function buildSpiderRig(color: number): CreatureRig {
+  const sk = new Skin();
+  const ty = 0.42;
+  const hair = grad(tint(color, 1.3), tint(color, 0.55), ty - 0.15, ty + 0.35, 0.16);
+  const dark = tint(color, 0.45);
+  const legC = grad(tint(color, 1.2), tint(color, 0.4), 0, 0.8, 0.14);
+  const mark = 0xff3a18;
+  const body = sk.joint(sk.root, 0, ty, 0);
+  const head = sk.joint(body, 0, ty + 0.02, 0.22);
+  sk.add('fur', hair, ell(V(0, ty + 0.03, 0.22), 0.22, 0.14, 0.27, 10, 7), head);
+  sk.add('shell', tint(color, 0.75), ell(V(0, ty + 0.1, 0.2), 0.15, 0.07, 0.2, 8, 5), head);
+  const eyes: [number, number, number, number][] = [[0.045, 0.14, 0.44, 0.032], [0.1, 0.12, 0.41, 0.022], [0.06, 0.18, 0.4, 0.018], [0.13, 0.15, 0.37, 0.016]];
+  for (const s of [-1, 1]) for (const [x, y, z, r] of eyes) sk.add('glow', 0xff2a10, ell(V(s * x, ty + y - 0.06, z), r, r, r, 5, 4), head, undefined, 2.4);
+  const fangs: THREE.Group[] = [];
+  for (const s of [-1, 1]) {
+    const f = sk.joint(head, s * 0.06, ty - 0.02, 0.45);
+    sk.add('fur', hair, ell(V(s * 0.06, ty - 0.03, 0.46), 0.05, 0.07, 0.05, 6, 4), f);
+    sk.add('fur', 0x1a1410, tube(bez(V(s * 0.06, ty - 0.08, 0.48), V(s * 0.07, ty - 0.17, 0.53), V(s * 0.02, ty - 0.21, 0.5), 3), [0.022, 0.016, 0.01, 0], 4), f);
+    sk.add('glow', 0x9aff40, ell(V(s * 0.02, ty - 0.21, 0.5), 0.012, 0.012, 0.012, 4, 3), f, undefined, 2);
+    sk.add('fur', legC, tube([V(s * 0.1, ty - 0.02, 0.42), V(s * 0.16, ty + 0.04, 0.52), V(s * 0.13, ty - 0.08, 0.6)], [0.025, 0.02, 0.012], 5), head);
+    fangs.push(f);
+  }
+  // The abdomen sways and pulses on its own joint; an hourglass mark glows on its back.
+  const abdomen = sk.joint(body, 0, ty + 0.04, -0.06);
+  const A = V(0, ty + 0.16, -0.42);
+  sk.add('fur', hair, ell(A, 0.34, 0.3, 0.42, 12, 9), abdomen);
+  sk.add('glow', mark, ell(A.clone().add(V(0, 0.29, 0.06)), 0.07, 0.025, 0.1, 6, 3), abdomen, undefined, 1.6);
+  sk.add('glow', mark, ell(A.clone().add(V(0, 0.27, -0.14)), 0.1, 0.025, 0.08, 6, 3), abdomen, undefined, 1.6);
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) sk.add('glow', mark, ell(A.clone().add(V(s * (0.2 + i * 0.03), 0.18 - i * 0.05, -0.05 - i * 0.12)), 0.03, 0.02, 0.04, 4, 3), abdomen, undefined, 1.2);
+  for (let i = 0; i < 14; i++) {
+    const a = i * 2.39996;
+    const u = 0.15 + 0.75 * ((i + 0.5) / 14);
+    const dir = V(Math.cos(a) * Math.sin(u * Math.PI), Math.cos(u * Math.PI) * 0.3 + 0.5, -Math.sin(a) * Math.sin(u * Math.PI) * 0.6 - 0.5).normalize();
+    const b = A.clone().add(V(dir.x * 0.33, dir.y * 0.29, dir.z * 0.41));
+    sk.add('fur', dark, spike(b, b.clone().addScaledVector(dir, 0.08), 0.012, 3), abdomen);
+  }
+  for (const s of [-1, 1]) sk.add('fur', dark, spike(A.clone().add(V(s * 0.04, -0.05, -0.38)), A.clone().add(V(s * 0.05, -0.08, -0.48)), 0.025, 4), abdomen);
+  const limbs: Limb[] = [];
+  const zs = [0.32, 0.24, 0.14, 0.04], splay = [0.95, 0.4, -0.2, -0.75];
+  for (let i = 0; i < 4; i++) {
+    for (const s of [1, -1]) {
+      const c = Math.cos(splay[i]), sn = Math.sin(splay[i]);
+      const A0 = V(s * 0.17, ty, zs[i]);
+      const K = A0.clone().add(V(s * c * 0.42, 0.34, sn * 0.42));
+      const F = A0.clone().add(V(s * c * 0.85, -0.08, sn * 0.85));
+      const Tt = A0.clone().add(V(s * c * 1.0, -ty, sn * 1.0));
+      const l = leg(sk, i < 2 ? head : body, [A0, K, F, Tt], [0.05, 0.04, 0.026, 0.006], legC, s, i < 2);
+      for (const f of [0.35, 0.7]) {
+        const p = A0.clone().lerp(K, f);
+        sk.add('fur', dark, spike(p, p.clone().add(V(s * 0.02, 0.07, 0)), 0.01, 3), l.up);
+      }
+      limbs.push(l);
+    }
+  }
+  const j: CreatureJoints = { limbs, fangs, abdomen, legLen: ty };
+  return finish(sk, 'spider', body, head, j, 0.75, 1);
+}
+
 // ---------------------------------------------------------------- animator --
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -1570,6 +2188,7 @@ function S(o: THREE.Object3D, s: number, k: number) {
 
 /** The creature's own reading of a gameplay attack style. */
 function styleFor(kind: string, s: AttackStyle): AttackStyle {
+  if (GREAT_KINDS.has(kind) && s !== 'roar') return s;
   switch (s) {
     case 'slash': case 'slash2': case 'slash3': case 'thrust': case 'heavy': case 'spin': case 'combo':
       return kind === 'insect' ? 'sting' : kind === 'crab' || kind === 'wraith' ? 'claw' : kind === 'stag' || kind === 'witch' ? 'sweep' : kind === 'imp' ? 'throw' : kind === 'eye' ? 'cast' : 'bite';
@@ -1583,6 +2202,9 @@ function styleFor(kind: string, s: AttackStyle): AttackStyle {
       return s;
   }
 }
+
+/** The great foes read their own move names (their strikes run anim.attack 0..1 straight through). */
+const GREAT_KINDS = new Set(['serpent', 'dragon', 'siren', 'reaper', 'spider']);
 
 /** Fraction of the attack at which each move lands. */
 const HIT: Partial<Record<AttackStyle, number>> = { sweep: 0.62, slam: 0.9, ring: 0.92, volley: 0.32, summon: 0.8, leap: 1, stomp: 0.8, strikes: 0.5 };
@@ -1635,6 +2257,14 @@ export function animateCreature(rig: CreatureRig, a: AnimState): void {
       return animWitch(c);
     case 'imp':
       return animImp(c);
+    case 'serpent':
+      return animSerpent(c);
+    case 'siren':
+      return animSiren(c);
+    case 'reaper':
+      return animReaper(c);
+    case 'spider':
+      return animSpider(c);
     default:
       return animQuad(c);
   }
@@ -1698,7 +2328,8 @@ function animQuad(c: Ctx) {
   const legLen = j.legLen ?? 0.75;
   const vr = st.v / sc / legLen;
   const big = rig.kind === 'stag';
-  const drake = rig.kind === 'drake';
+  const dragon = rig.kind === 'dragon';
+  const drake = rig.kind === 'drake' || dragon;
   st.walk += (1 - sstep(1.8, 3.2, vr) - st.walk) * k(3);
   st.gallop += (sstep(5, 7.5, vr) - st.gallop) * k(3);
   const gW = st.walk, gG = st.gallop * (1 - gW), gT = Math.max(0, 1 - gW - gG);
@@ -1710,7 +2341,9 @@ function animQuad(c: Ctx) {
   const ph = st.cyc * TAU;
   const t = a.t + st.seed;
   const fury = a.fury;
-  const flying = a.flying && drake;
+  // The Elder Dragon's flight runs inside its strike (FLIGHT marks take-off and landing).
+  const soaring = dragon && c.style === 'flight' && a.attack > FLIGHT.up * 0.4 && a.attack < FLIGHT.land;
+  const flying = (a.flying && drake) || soaring;
 
   // Body posture: bob, gallop rock, spine flex, lean into turns, breathing.
   let bodyY = -0.012 * gW * mv * Math.cos(2 * ph) - 0.03 * gT * mv * Math.abs(Math.cos(ph)) + 0.05 * gG * Math.sin(ph) * mv;
@@ -1738,9 +2371,46 @@ function animQuad(c: Ctx) {
 
   // Attacks.
   const style = c.style;
-  const hit = HIT[style] ?? 0.667;
+  const hit = HIT[style] ?? (dragon ? LANDS[style]?.[0] : undefined) ?? 0.667;
   const atk = attackCurves(a, hit);
-  if (atk.on > 0 || atk.antic > 0) {
+  let wingOpen = 0, wingBeat = 0;
+  if (dragon && (atk.on > 0 || atk.antic > 0) && (style === 'breath' || style === 'gust' || style === 'claw' || style === 'flight')) {
+    const x = Math.max(0, a.attack);
+    if (style === 'breath') {
+      // Rear back drawing breath (the seams glow), then pour fire along the sweep.
+      const pour = a.attack >= 0 ? env(x, 0, 0.06, 0.9, 1) : 0;
+      const draw = Math.max(0, a.windup) * (1 - pour);
+      neckX += -0.55 * draw + 0.35 * pour;
+      headX += -0.25 * draw + 0.25 * pour;
+      neckY += breathSweep(x, BREATH_SPAN) * 1.4 * pour;
+      jaw += 0.25 * draw + 0.75 * pour;
+      bodyZ += -0.15 * draw + 0.1 * pour;
+      rear = 0.25 * draw;
+      wingOpen = 0.4 * draw;
+    } else if (style === 'gust') {
+      // Rear up with the wings spread, then a great beat downward.
+      rear = 0.75 * Math.max(atk.antic, atk.strike * 0.6);
+      wingOpen = Math.max(atk.antic, atk.strike, atk.after * 0.5);
+      wingBeat = atk.strike;
+      neckX += -0.3 * atk.antic + 0.3 * atk.strike;
+      jaw += 0.5 * atk.strike;
+    } else if (style === 'claw') {
+      // Rise onto the hind legs and rake a foreclaw across.
+      rear = 0.45 * atk.antic + 0.3 * atk.strike;
+      neckY += 0.5 * atk.antic - 0.6 * atk.strike;
+      bodyRoll += -0.12 * atk.antic + 0.18 * atk.strike;
+      jaw += 0.4 * atk.antic;
+    } else {
+      // Flight: crouch to spring, beat into the sky, dive and land in a slam.
+      const land = env(x, FLIGHT.land - 0.01, FLIGHT.land, FLIGHT.land + 0.06, 1);
+      const dive = env(x, FLIGHT.dive, FLIGHT.dive + 0.03, FLIGHT.land - 0.01, FLIGHT.land);
+      bodyY += -0.25 * Math.max(0, a.windup) * (a.attack < 0 ? 1 : 0) - 0.2 * land;
+      neckX += 0.5 * dive + 0.3 * land - 0.2 * (soaring ? 1 : 0);
+      bodyX += 0.35 * dive - 0.08 * (soaring ? 1 - dive : 0);
+      jaw += 0.6 * dive + 0.4 * land;
+      wingOpen = 0.8 * Math.max(0, a.windup) * (a.attack < 0 ? 1 : 0) + 0.7 * land;
+    }
+  } else if (atk.on > 0 || atk.antic > 0) {
     if (style === 'charge' && big) {
       // Rear up during the wind-up, then lower the antlers into the charge.
       rear = Math.max(0, a.windup) * (a.attack < 0 ? 1 : 1 - sstep(0.05, 0.25, a.attack));
@@ -1773,7 +2443,7 @@ function animQuad(c: Ctx) {
       jaw += 0.2 * pull + 0.7 * thrust;
       bodyZ += -0.08 * pull + 0.05 * thrust;
       if (style === 'summon') jaw += 0.4 * env(a.attack, 0.2, 0.4, 0.8, 1);
-    } else if (style === 'slam' || style === 'stomp' || style === 'leap') {
+    } else if (style === 'slam' || style === 'stomp' || style === 'leap' || style === 'ring') {
       rear = atk.antic;
       neckX += -0.3 * atk.antic + 0.5 * atk.strike;
       bodyY -= 0.08 * atk.after;
@@ -1922,9 +2592,14 @@ function animQuad(c: Ctx) {
     R(l.low, low, 0, 0, kl);
   });
 
-  // Wings (drake).
-  for (const w of j.wings ?? NONE) animWing(c, w, flying ? 1 : 0, (atk.on > 0 ? 0.6 : 0) + 0.25 * sstep(5, 9, vr) + (dead ? 0.6 : 0), flying ? 7 : 0);
+  // Wings (drake, dragon): the gust's downbeat is a flap at full strength.
+  for (const w of j.wings ?? NONE) animWing(c, w, flying || wingBeat > 0.1 ? 1 : 0, Math.min(1, (atk.on > 0 ? 0.6 : 0) + 0.25 * sstep(5, 9, vr) + (dead ? 0.6 : 0) + wingOpen), flying ? (dragon ? 5 : 7) : wingBeat > 0.1 ? 9 : 0);
   if (j.wisps && j.glow) animWisps(c, j.wisps, j.glow, style === 'summon' || style === 'volley' ? atk.on : 0, dead);
+  if (dragon && j.glow) {
+    // The furnace in its chest flares as it draws breath.
+    const draw = style === 'breath' ? Math.max(Math.max(0, a.windup), a.attack >= 0 ? 0.7 : 0) : 0;
+    j.glow.emissiveIntensity += ((1 + fury * 0.4 + 1.6 * draw + Math.sin(t * 2) * 0.1) * (1 - 0.85 * dead) - j.glow.emissiveIntensity) * k(5);
+  }
 }
 
 /**
@@ -2324,4 +2999,469 @@ function animImp(c: Ctx) {
   const tail = j.tail ?? NONE;
   tail.forEach((s, i) => R(s, -0.1 + 0.25 * mv + 0.1 * Math.sin(t * 3 - i), Math.sin(t * 2.2 - i * 0.7) * 0.35, 0, k(8)));
   for (const w of j.wings ?? NONE) animWing(c, w, dead ? 0 : 1, dead ? 0.8 : 0, flapRate);
+}
+
+// ------------------------------------------------------------ great foes --
+
+/**
+ * The great foes' own moves: anticipation through the wind-up, then the
+ * strike runs anim.attack 0..1 with the blow at `hit` (anim.ts LANDS).
+ * Fills and returns a shared object: read it before the next call.
+ */
+const BIG = { x: 0, on: 0, antic: 0, strike: 0, hold: 0 };
+function bigCurves(a: AnimState, hit: number, hold = 0.25) {
+  const x = a.attack;
+  if (x < 0) {
+    BIG.x = BIG.on = BIG.strike = BIG.hold = 0;
+    BIG.antic = Math.max(0, a.windup);
+    return BIG;
+  }
+  BIG.x = x;
+  BIG.on = 1 - sstep(0.85, 1, x);
+  const into = sstep(0, Math.max(0.02, hit), x);
+  BIG.antic = 1 - into;
+  BIG.strike = into * (1 - sstep(hit + hold, Math.min(1, hit + hold + 0.3), x));
+  BIG.hold = env(x, hit, hit + 0.05, hit + hold, Math.min(1, hit + hold + 0.3));
+  return BIG;
+}
+
+/** The serpent's neck from the sea up (bind pose leans each segment forward by these angles). */
+const NECK_LIE = [0, 0.35, 0.52, 0.23, -0.16];
+const NECK_REAR = [-0.12, -0.18, -0.2, -0.15, 0.25];
+const NECK_DOWN = [0.05, 0.1, 0.25, 0.3, 0.35];
+
+/**
+ * The Leviathan: the neck sways like a cobra's, the coils roll in the swell
+ * and the tail sweeps far out. Its strike lays the head on the sand; the tail
+ * travels underwater to slam the shore beside the head; it rears and crashes
+ * to raise a wave; it sinks away to dive.
+ */
+function animSerpent(c: Ctx) {
+  const { rig, j, a, st, k } = c;
+  const t = a.t + st.seed;
+  const style = c.style;
+  const x = Math.max(0, a.attack);
+  const fury = a.fury;
+  const neck = j.neck ?? NONE;
+  const n = neck.length;
+  let lie = 0, rear = 0, down = 0, sweep = 0, jaw = 0.08 + 0.05 * Math.sin(t * 0.7), headX = 0, headY = 0, bodyY = 0, sink = 0, thrash = 0;
+  let tailAt = 0, tailUp = 0, tailSlam = 0, tailSink = 0, gill = 0;
+  const hit = LANDS[style]?.[0] ?? HIT[style] ?? 0.5;
+  const big = bigCurves(a, hit, 0.5);
+  if (big.on > 0 || big.antic > 0) {
+    switch (style) {
+      case 'strike':
+        // Rear back, hiss, then the head comes down along the sand and lies there.
+        rear = big.antic;
+        jaw = 0.2 + 0.6 * big.antic;
+        lie = a.attack < 0 ? 0 : sstep(0, hit, x) * (1 - sstep(0.78, 0.98, x));
+        jaw += 0.4 * env(x, 0.1, 0.14, 0.2, 0.3) + 0.25 * Math.max(0, Math.sin(t * 9)) * env(x, 0.2, 0.3, 0.7, 0.8);
+        break;
+      case 'tail': {
+        // The tail slips under, travels to its right side, rises and slams the shore.
+        const w = Math.max(0, a.windup);
+        tailSink = a.attack < 0 ? sstep(0, 0.35, w) : 1 - env(x, 0.05, 0.2, 0.6, 0.85);
+        tailAt = a.attack < 0 ? sstep(0.3, 1, w) : 1 - sstep(0.75, 1, x);
+        tailUp = a.attack < 0 ? 0 : env(x, 0.08, 0.2, 0.62, 0.8);
+        tailSlam = a.attack < 0 ? 0 : sstep(0.2, hit, x) * (1 - sstep(0.62, 0.8, x));
+        headY = -0.4 * Math.max(w, tailUp);
+        jaw = 0.3 * tailUp;
+        break;
+      }
+      case 'breath': {
+        // Gills glow as it draws in; then it pours a torrent down onto the sand.
+        const pour = a.attack < 0 ? 0 : env(x, 0, 0.06, 0.9, 1);
+        rear = 0.6 * Math.max(0, a.windup) * (1 - pour);
+        down = pour;
+        sweep = breathSweep(x, BREATH_SPAN) * pour;
+        jaw = 0.25 + 0.3 * rear + 0.75 * pour;
+        gill = Math.max(Math.max(0, a.windup), pour);
+        break;
+      }
+      case 'wave':
+        // Rear up to its full height, then crash down into the sea.
+        rear = Math.max(big.antic, 0) * 1.3;
+        bodyY = 2.2 * big.antic - 1.5 * big.strike;
+        down = big.strike * 0.8;
+        thrash = big.strike + big.hold;
+        jaw = 0.3 + 0.5 * big.antic;
+        break;
+      case 'dive':
+        // Sinks away (hidden), then bursts up somewhere else.
+        sink = a.attack < 0 ? 0.15 * Math.max(0, a.windup) : sstep(0, 0.3, x) * (1 - sstep(hit, 0.72, x));
+        rear = a.attack < 0 ? Math.max(0, a.windup) * 0.5 : env(x, hit, 0.6, 0.7, 0.9) * 0.8;
+        jaw = 0.2 + 0.6 * env(x, hit, 0.55, 0.75, 0.9);
+        break;
+      default: {
+        // Spit (volley) or bellow (the opening roar).
+        const atk = attackCurves(a, HIT[style] ?? 0.667);
+        rear = 0.7 * atk.antic;
+        down = 0.3 * atk.strike;
+        jaw = 0.2 + 0.4 * atk.antic + 0.6 * atk.strike;
+        if (style === 'summon') (rear = Math.max(rear, 0.9 * atk.on)), (jaw += 0.5 * atk.on), (headX -= 0.4 * atk.on);
+      }
+    }
+  }
+  // Death: it topples, then slides back into the deep.
+  let dead = 0;
+  if (a.dead >= 0) {
+    dead = sstep(0, 1.2, a.dead);
+    lie = Math.max(lie * (1 - dead), 0.6 * dead);
+    sink = sstep(1, 4.5, a.dead);
+    jaw = 0.5;
+    rear = down = sweep = 0;
+  }
+  const h = st.hurt * st.hurt;
+  const idle = (1 - lie) * (1 - dead);
+  const kn = k(lie > 0.5 ? 9 : 5);
+  // Each neck joint: idle S-sway, plus blends towards the lying, rearing and pouring poses.
+  for (let i = 0; i < n; i++) {
+    const sway = idle * (0.06 * Math.sin(t * 0.9 - i * 0.7) + 0.04 * fury * Math.sin(t * 2.3 - i));
+    const px = NECK_LIE[i] * lie + NECK_REAR[i] * rear + NECK_DOWN[i] * down - 0.08 * h + 0.04 * idle * Math.sin(t * 0.6 - i * 0.5);
+    const py = sway + (i === 0 ? sweep : 0) + 0.05 * thrash * Math.sin(t * 11 - i);
+    R(neck[i], px, py, i === 1 ? 0.15 * dead : 0, kn);
+  }
+  R(rig.head, -0.78 * lie + 0.5 * down + 0.3 * rear + headX - 0.2 * h + 0.06 * idle * Math.sin(t * 0.5), headY + 0.25 * idle * Math.sin(t * 0.37), 0, k(7));
+  if (j.jaw) R(j.jaw, Math.max(0, jaw + 0.3 * h), 0, 0, k(14));
+  P(rig.body, 0, bodyY - 26 * sink, 0, k(sink > 0.5 ? 3 : 5));
+  // Coils roll through the swell (and thrash when it crashes down).
+  (j.coils ?? NONE).forEach((cl, i) => {
+    const ph = t * 0.8 - i * 1.4;
+    P(cl, 0, 0.35 * Math.sin(ph) * (1 - dead) - 1.5 * dead + 0.6 * thrash * Math.sin(t * 7 + i), 0, k(4));
+    R(cl, 0.04 * Math.sin(ph + 0.6), 0.08 * Math.sin(ph * 0.7) + 0.1 * thrash * Math.sin(t * 6 + i), 0, k(4));
+  });
+  // The tail: it travels underwater to the right of the head, rises and slams.
+  const tr = j.tailRoot;
+  if (tr) {
+    const bp = tr.userData.bp as V3;
+    // Under the surface while far from home, so it never pops up mid-journey.
+    const away = Math.hypot(tr.position.x - bp.x, tr.position.z - bp.z);
+    const under = Math.max(tailSink, sstep(2, 5, away) * (1 - tailUp));
+    P(tr, 5 * tailAt, -12 * under + 0.5 * tailUp, 29 * tailAt, k(tailAt > 0 ? 2.2 : 1.6));
+    R(tr, -0.3 * tailUp + 1.35 * tailSlam, 0, -0.25 * tailUp * (1 - tailSlam), k(tailSlam > 0 ? 14 : 5));
+  }
+  const tail = j.tail ?? NONE;
+  tail.forEach((seg, i) => {
+    const w = i / Math.max(1, tail.length - 1);
+    R(seg, 0.1 * tailSlam * w + 0.05 * Math.sin(t * 1.1 - i * 0.6) * (1 - tailSlam), 0.12 * Math.sin(t * 0.8 - i * 0.5) * (1 - tailUp), 0.06 * Math.sin(t * 1.3 - i * 0.7), k(6));
+  });
+  if (j.glow) j.glow.emissiveIntensity += ((1 + 0.5 * fury + 2.2 * gill + 0.15 * Math.sin(t * 1.7)) * (1 - 0.8 * dead) - j.glow.emissiveIntensity) * k(5);
+}
+
+/** Holds a pole (trident, scythe) at `phi` from straight up (+ is tipped forward), whatever the arm does. */
+function poleAngle(up: number, mid: number, phi: number) {
+  return phi - up - mid;
+}
+
+/**
+ * The Queen of the Sea floats on her coiling tail. Her trident thrusts three
+ * times, she raises whirlpools and geysers with it, hurls water from her
+ * left hand and calls the drowned with both arms raised.
+ */
+function animSiren(c: Ctx) {
+  const { rig, j, a, k } = c;
+  const { mv, t, dead, h } = hover(c, 1.2, 0.09);
+  const style = c.style;
+  const x = Math.max(0, a.attack);
+  const fury = a.fury;
+  const arms = j.arms ?? NONE;
+  const right = arms[0], left = arms[1];
+  let rUp = -0.25 + 0.05 * Math.sin(t * 0.9), rUpZ = 0.1, rMid = -0.35, phi = 0.08;
+  let lUp = -0.35 + 0.08 * Math.sin(t * 1.1), lUpZ = -0.2, lMid = -0.7;
+  let chestX = 0, chestY = 0, headX = 0, lean = 0, spin = 0;
+  const hit = LANDS[style]?.[0] ?? HIT[style] ?? 0.5;
+  if (a.attack >= 0 || a.windup > 0) {
+    switch (style) {
+      case 'trident': {
+        // Three thrusts: draw back, lunge, draw back...
+        const w = Math.max(0, a.windup);
+        let thrust = 0, pull = w;
+        if (a.attack >= 0) {
+          const hits = LANDS.trident!;
+          pull = 0;
+          for (const hx of hits) {
+            thrust = Math.max(thrust, env(x, hx - 0.1, hx, hx + 0.04, hx + 0.16));
+            pull = Math.max(pull, env(x, hx - 0.2, hx - 0.12, hx - 0.1, hx - 0.02));
+          }
+        }
+        rUp = -0.5 - 0.4 * thrust + 0.3 * pull;
+        rMid = -1.2 + 1.0 * thrust - 0.3 * pull;
+        rUpZ = 0.15;
+        phi = 1.45;
+        chestY = 0.35 * pull - 0.3 * thrust;
+        lean = 0.25 * thrust - 0.1 * pull;
+        lUp = -0.6;
+        lUpZ = -0.5;
+        break;
+      }
+      case 'whirlpool':
+      case 'summon': {
+        // Both arms rise and turn the sea.
+        const up = a.attack < 0 ? Math.max(0, a.windup) : 1 - sstep(0.75, 1, x);
+        const turn = Math.sin(t * 4) * up;
+        rUp = -2.4 * up;
+        lUp = -2.4 * up;
+        rUpZ = 0.5 * up + 0.3 * turn;
+        lUpZ = -0.5 * up + 0.3 * turn;
+        rMid = -0.3;
+        lMid = -0.3;
+        phi = 0.1;
+        headX = -0.3 * up;
+        chestX = -0.15 * up;
+        if (style === 'whirlpool') spin = 0.3 * up * Math.sin(t * 3);
+        break;
+      }
+      case 'geyser':
+      case 'ring': {
+        // The trident raised high, then driven down into the ground.
+        const atk = style === 'ring' ? attackCurves(a, HIT.ring!) : bigCurves(a, hit);
+        rUp = -2.7 * atk.antic - 0.7 * atk.strike;
+        lUp = -2.5 * atk.antic - 0.6 * atk.strike;
+        rMid = -0.2;
+        lMid = -0.3;
+        phi = -0.15 + 3.0 * atk.strike;
+        chestX = -0.25 * atk.antic + 0.35 * atk.strike;
+        break;
+      }
+      case 'sweep': {
+        const atk = attackCurves(a, HIT.sweep!);
+        chestY = 0.6 * atk.antic - 0.8 * atk.strike;
+        rUp = -1.1;
+        rUpZ = 0.6 * atk.antic - 0.3 * atk.strike;
+        rMid = -0.4;
+        phi = 1.5;
+        break;
+      }
+      case 'teleport':
+        break;
+      default: {
+        // Volley: water hurled from the left hand.
+        const atk = attackCurves(a, HIT[style] ?? 0.4);
+        lUp = -0.6 * atk.antic - 1.5 * atk.strike;
+        lMid = -1.2 * atk.antic - 0.1 * atk.strike;
+        lUpZ = 0.2 * atk.antic;
+        chestY = -0.4 * atk.antic + 0.3 * atk.strike;
+      }
+    }
+  }
+  const tele = style === 'teleport' && (a.attack >= 0 || a.windup > 0);
+  S(rig.body, tele ? 1 - 0.7 * sstep(0, 0.4, Math.max(0, a.attack, a.windup)) : 1 - 0.25 * dead, k(tele ? 14 : 8));
+  if (spin) rig.body.rotation.y += spin * c.dt;
+  if (j.chest) R(j.chest, chestX + lean - 0.15 * h + 0.4 * dead, chestY, 0, k(10));
+  R(rig.head, headX + 0.08 * Math.sin(t * 0.5) - 0.2 * h + 0.3 * dead, 0.25 * Math.sin(t * 0.31) * (1 - mv), 0.05 * Math.sin(t * 0.7), k(6));
+  if (right) {
+    R(right.up, rUp + 0.6 * dead, 0, rUpZ, k(12));
+    R(right.mid, rMid, 0, 0, k(12));
+    R(right.low, poleAngle(rUp, rMid, phi), 0, 0, k(12));
+  }
+  if (left) {
+    R(left.up, lUp + 0.6 * dead, 0, lUpZ, k(12));
+    R(left.mid, lMid, 0, 0, k(12));
+    R(left.low, 0.2, 0, 0, k(12));
+  }
+  // The tail undulates under her, curling tighter as she moves.
+  (j.tail ?? NONE).forEach((seg, i) => R(seg, 0.08 * Math.sin(t * 2 - i * 0.7) + 0.06 * mv - 0.1 * dead, 0.1 * Math.sin(t * 1.4 - i * 0.6), 0, k(6)));
+  animStrands(c, j.strands ?? NONE, 0.08 + 0.05 * fury, 0.3 + mv * 0.6 + 0.4 * dead);
+  if (j.glow) j.glow.emissiveIntensity += ((1 + 0.5 * fury + (style === 'whirlpool' || style === 'summon' ? 1.4 * Math.max(0, a.windup, x > 0 ? 1 : 0) : 0) + 0.1 * Math.sin(t * 3)) * (1 - dead) - j.glow.emissiveIntensity) * k(6);
+  (j.wisps ?? NONE).forEach((w, i) => {
+    if (i === 0) {
+      // The water orb in her left hand swells before she throws.
+      const sc = (0.5 + 0.08 * Math.sin(t * 5) + 0.4 * (style === 'volley' ? Math.max(0, a.windup) : 0)) * (1 - dead);
+      w.scale.set(sc, sc, sc);
+      return;
+    }
+    const ph = t * 1.2 + i * Math.PI;
+    w.position.set(Math.cos(ph) * 0.7, 0.4 + 0.25 * Math.sin(t * 1.7 + i), Math.sin(ph) * 0.5);
+    const sc = (0.3 + 0.06 * Math.sin(t * 4 + i)) * (1 - dead);
+    w.scale.set(sc, sc, sc);
+  });
+}
+
+/**
+ * The Reaper drifts with its robe trailing. The scythe goes up over its
+ * right shoulder and sweeps across in a great arc; its left hand reaches out
+ * to drink a hero's life; it fades out to step behind you.
+ */
+function animReaper(c: Ctx) {
+  const { rig, j, a, k } = c;
+  const { mv, t, dead, h } = hover(c, 1.0, 0.12);
+  const style = c.style;
+  const x = Math.max(0, a.attack);
+  const fury = a.fury;
+  const arms = j.arms ?? NONE;
+  const right = arms[0], left = arms[1];
+  let rUp = -0.35 + 0.05 * Math.sin(t * 0.8), rUpZ = 0.15, rMid = -0.5, phi = 0.12;
+  let lUp = -0.15, lUpZ = -0.15, lMid = -0.6;
+  let chestX = 0.08, chestY = 0, headX = 0.1, lean = 0, glow = 0;
+  if (a.attack >= 0 || a.windup > 0) {
+    switch (style) {
+      case 'reap':
+      case 'sweep': {
+        // Up over the right shoulder, then a great flat sweep to the left.
+        const hit = style === 'reap' ? LANDS.reap![0] : HIT.sweep!;
+        const atk = style === 'reap' ? bigCurves(a, hit, 0.15) : attackCurves(a, hit);
+        const across = style === 'reap' && a.attack >= 0 ? sstep(0.15, 0.6, x) : atk.strike;
+        chestY = -0.9 * atk.antic + 1.0 * across * (1 - 0.6 * atk.antic);
+        rUp = -2.3 * atk.antic - 1.3 * across;
+        rUpZ = 0.6 * atk.antic + 0.2 * across;
+        rMid = -0.5 * atk.antic - 0.2 * across;
+        phi = -0.4 * atk.antic + 1.5 * across;
+        lUp = -0.6 * atk.antic - 0.8 * across;
+        lean = 0.15 * across - 0.1 * atk.antic;
+        glow = Math.max(atk.antic, across) * 0.6;
+        break;
+      }
+      case 'drain': {
+        // The left hand reaches out; the lantern burns bright.
+        const reach = a.attack < 0 ? Math.max(0, a.windup) : 1 - sstep(0.88, 1, x);
+        lUp = -1.55 * reach;
+        lUpZ = -0.1 * reach;
+        lMid = -0.6 + 0.5 * reach;
+        headX = -0.05 * reach;
+        lean = 0.15 * reach;
+        glow = reach * (0.8 + 0.2 * Math.sin(t * 13));
+        break;
+      }
+      case 'summon': {
+        const atk = attackCurves(a, HIT.summon!);
+        const up = Math.max(atk.antic, atk.on);
+        rUp = -2.4 * up;
+        lUp = -2.4 * up;
+        rUpZ = 0.4 * up;
+        lUpZ = -0.4 * up;
+        phi = 0.2;
+        headX = -0.35 * up;
+        glow = up;
+        break;
+      }
+      case 'teleport':
+        break;
+      default: {
+        const atk = attackCurves(a, HIT[style] ?? 0.5);
+        lUp = -1.4 * (atk.antic + atk.strike);
+        glow = atk.strike;
+      }
+    }
+  }
+  const tele = style === 'teleport' && (a.attack >= 0 || a.windup > 0);
+  S(rig.body, tele ? 1 - 0.75 * sstep(0, 0.45, Math.max(0, a.attack, a.windup)) : 1 - 0.35 * dead, k(tele ? 14 : 6));
+  if (j.chest) R(j.chest, chestX + lean - 0.15 * h + 0.5 * dead, chestY, 0, k(9));
+  R(rig.head, headX + 0.06 * Math.sin(t * 0.6) - 0.15 * h + 0.4 * dead, 0.3 * Math.sin(t * 0.27) * (1 - mv), 0.04 * Math.sin(t * 0.9), k(5));
+  if (right) {
+    R(right.up, rUp + 0.9 * dead, 0, rUpZ, k(11));
+    R(right.mid, rMid, 0, 0, k(11));
+    // Dropped as it falls: the scythe tips over.
+    R(right.low, poleAngle(rUp, rMid, phi) + 1.2 * dead, 0, 0, k(11));
+  }
+  if (left) {
+    R(left.up, lUp + 0.6 * dead, 0, lUpZ, k(11));
+    R(left.mid, lMid, 0, 0, k(11));
+    R(left.low, 0.1, 0, 0, k(11));
+  }
+  animStrands(c, j.strands ?? NONE, 0.1 + 0.05 * fury, 0.4 + mv * 0.9 + 0.6 * dead, 0.05);
+  if (j.glow) j.glow.emissiveIntensity += ((1 + 0.6 * fury + 2 * glow + 0.15 * Math.sin(t * 4)) * (1 - 0.9 * dead) - j.glow.emissiveIntensity) * k(8);
+  (j.wisps ?? NONE).forEach((w, i) => {
+    if (i === 0) {
+      // The soul lantern.
+      const sc = (0.8 + 0.1 * Math.sin(t * 7) + 0.6 * glow) * (1 - dead);
+      w.scale.set(sc, sc, sc);
+      return;
+    }
+    const ph = t * 0.9 + (i / 3) * TAU;
+    w.position.set(Math.cos(ph) * 0.8, 0.6 + 0.4 * Math.sin(t * 1.3 + i), Math.sin(ph) * 0.8);
+    const sc = (0.3 + 0.08 * Math.sin(t * 5 + i) + 0.2 * glow) * (1 - dead);
+    w.scale.set(sc, sc, sc);
+  });
+  if (j.halo) {
+    const sc = 3.6 * (1 + 0.06 * Math.sin(t * 1.7) + 0.3 * glow) * (1 - dead);
+    j.halo.scale.set(sc, sc, sc);
+  }
+}
+
+/**
+ * Spiders: legs ripple in a many-legged walk, the abdomen breathes and
+ * sways, fangs twitch. The Giant Spider also hangs head-down from its thread
+ * (a.flying), rears to bite, crouches and springs to leap, swings its
+ * abdomen forward to shoot web and pulses to hatch its young.
+ */
+function animSpider(c: Ctx) {
+  const { rig, j, a, st, dt, k } = c;
+  const sc = rig.root.scale.x || 1;
+  const vn = st.v / sc;
+  const mv = sstep(0.1, 1, vn);
+  st.cyc = frac(st.cyc + (st.v * dt) / (1.1 * sc));
+  const t = a.t + st.seed;
+  const style = c.style;
+  const hang = a.flying ? 1 : 0;
+  const dead = a.dead >= 0 ? sstep(0, 0.7, a.dead) : 0;
+  const h = st.hurt * st.hurt;
+  let bodyX = 0, bodyY = 0.006 * Math.sin(t * 2), bodyZ = 0, rearUp = 0, fang = 0.1 + 0.08 * Math.max(0, Math.sin(t * 1.9)) ** 6;
+  let abdX = 0.04 * Math.sin(t * 1.3), abdY = 0.05 * Math.sin(t * 0.7), pulse = 0.02 * Math.sin(t * 3), crouch = 0, spread = 0, frontUp = 0;
+  if (a.attack >= 0 || a.windup > 0) {
+    switch (style) {
+      case 'bite': {
+        const atk = attackCurves(a, LANDS.bite![0]);
+        rearUp = 0.35 * atk.antic;
+        frontUp = atk.antic;
+        fang = 0.1 + 0.7 * atk.antic - 0.2 * atk.strike;
+        bodyZ = -0.04 * atk.antic + 0.12 * atk.strike;
+        bodyX = 0.15 * atk.strike;
+        break;
+      }
+      case 'web': {
+        // The abdomen swings down and forward under the body, and pulses as it shoots.
+        const atk = bigCurves(a, LANDS.web![0], 0.2);
+        abdX = 1.3 * Math.max(atk.antic, atk.strike);
+        rearUp = 0.25 * Math.max(atk.antic, atk.strike);
+        pulse = 0.12 * atk.strike * Math.max(0, Math.sin(t * 25));
+        break;
+      }
+      case 'leap': {
+        const atk = attackCurves(a, HIT.leap!);
+        crouch = atk.antic;
+        spread = a.attack >= 0 && a.attack < 0.99 ? 1 : 0;
+        frontUp = 0.6 * spread;
+        fang = 0.2 + 0.6 * spread;
+        break;
+      }
+      default: {
+        // Summon (hatchlings) and the roar: rear up, fangs wide, the abdomen heaving.
+        const atk = attackCurves(a, HIT[style] ?? 0.8);
+        rearUp = 0.6 * Math.max(atk.antic, atk.on * 0.8);
+        frontUp = rearUp * 1.6;
+        fang = 0.2 + 0.7 * rearUp;
+        pulse = style === 'summon' ? 0.1 * Math.max(0, Math.sin(t * 9)) * atk.on : 0;
+        abdY += 0.15 * Math.sin(t * 6) * atk.on;
+      }
+    }
+  }
+  // Hanging from its thread: nose down, legs gathered in.
+  const kb = k(10);
+  R(rig.body, -0.55 * rearUp + bodyX + 1.35 * hang - 0.1 * h + 0.02 * Math.sin(st.cyc * TAU * 2) * mv, 0.2 * Math.sin(t * 0.4) * hang, st.hurtSide * 0.12 * h + 3.0 * dead, kb);
+  P(rig.body, 0, bodyY - 0.12 * crouch + 0.1 * rearUp - 0.25 * dead + 0.3 * dead, bodyZ, kb);
+  R(rig.head, -0.15 * frontUp + 0.05 * Math.sin(t * 0.8), 0.15 * Math.sin(t * 0.5) * (1 - mv), 0, k(10));
+  for (const f of j.fangs ?? NONE) {
+    const s = (f.userData.bp as V3).x > 0 ? 1 : -1;
+    R(f, -0.4 * fang, s * 0.5 * fang, 0, k(fang > 0.4 ? 18 : 30));
+  }
+  if (j.abdomen) {
+    R(j.abdomen, abdX - 0.3 * hang + 0.2 * dead, abdY, 0.04 * Math.sin(t * 0.9), k(8));
+    S(j.abdomen, 1 + pulse + 0.015 * Math.sin(t * 2.2), k(20));
+  }
+  // Legs: the walk, plus the poses for rearing, crouching, leaping and hanging.
+  const limbs = j.limbs ?? NONE;
+  animSpiderLegs(c, limbs, 0.35, 0.5, mv * (1 - hang), dead);
+  const kl = k(dead ? 6 : 16);
+  limbs.forEach((l, i) => {
+    const pair = Math.floor(i / 2);
+    const s = l.side;
+    const front = pair === 0 ? 1 : pair === 1 ? 0.5 : 0;
+    const lift = frontUp * front;
+    const gather = hang * (0.6 + 0.2 * Math.sin(t * 1.5 + i));
+    if (lift + crouch + spread + gather <= 0.001) return;
+    // Added on top of the walk: raise the front pairs, splay or tuck.
+    l.up.rotation.z += (s * (0.9 * lift - 0.35 * crouch + 0.3 * spread + 0.5 * gather)) * kl;
+    l.mid.rotation.z += (-s * (0.6 * lift - 0.5 * crouch - 0.2 * spread + 0.9 * gather)) * kl;
+    l.up.rotation.x += (-0.4 * lift) * kl;
+  });
 }

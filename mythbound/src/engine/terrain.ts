@@ -61,7 +61,9 @@ function initFlatSpots() {
   if (flatSpots.length) return;
   for (const t of TRIALS) {
     if (t.id === 'forge') continue;
-    flatSpots.push({ x: t.x, z: t.z, r: t.radius + 4, fade: 22, h: Math.max(2.5, rawHeight(t.x, t.z)) });
+    // The Serpent's Shoal drops steeply into deep water, so the Leviathan can rise right beside the sand.
+    const steep = t.id === 'deep';
+    flatSpots.push({ x: t.x, z: t.z, r: t.radius + (steep ? 1 : 4), fade: steep ? 6 : 22, h: Math.max(2.5, rawHeight(t.x, t.z)) });
   }
   for (const s of SHRINES) flatSpots.push({ x: s.x, z: s.z, r: 5, fade: 8, h: Math.max(1.2, rawHeight(s.x, s.z)) });
 }

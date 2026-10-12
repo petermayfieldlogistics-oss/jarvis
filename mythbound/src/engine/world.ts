@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
-  ANVILS, DOCKS, EYES_RUINS, FISHING_SPOTS, ISLAND, LORE, NPCS, ORE_NODES, PAGES, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
+  ANVILS, DOCKS, EYES_RUINS, FISHING_SPOTS, ISLAND, LAIRS, LORE, NPCS, ORE_NODES, PAGES, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
@@ -871,6 +871,7 @@ export class World {
     this.buildDocks();
     this.buildShrines();
     this.buildTrials();
+    this.buildLairs();
     this.buildEyeRuins();
     this.buildLoreAndLoot();
     this.batch.build(this.root, quality !== 'low');
@@ -1564,11 +1565,12 @@ export class World {
   }
 
   private buildTrials() {
-    const palette: Record<string, number> = { hunt: 0x60ffb0, tides: 0x40d0ff, storms: 0x80b0ff, forge: 0xff6a20, war: 0xff4030, crossroads: 0xa070ff };
+    const palette: Record<string, number> = { hunt: 0x60ffb0, tides: 0x40d0ff, storms: 0x80b0ff, forge: 0xff6a20, war: 0xff4030, crossroads: 0xa070ff, deep: 0x40e0ff, court: 0x60fff0, roost: 0xff5020 };
+    const stones: Record<string, number> = { storms: 0xa08060, forge: 0x2a2220, deep: 0x7a8a84, court: 0x5a7a76, roost: 0x2e2624 };
     for (const t of TRIALS) {
       const y = this.groundY(t.x, t.z);
-      const color = palette[t.id];
-      const stone = t.id === 'storms' ? 0xa08060 : t.id === 'forge' ? 0x2a2220 : 0x6a665e;
+      const color = palette[t.id] ?? 0xffd080;
+      const stone = stones[t.id] ?? 0x6a665e;
       if (t.id === 'war') {
         // A ruined colosseum.
         for (let i = 0; i < 28; i++) {
@@ -1585,6 +1587,8 @@ export class World {
       } else if (t.id !== 'forge') {
         for (let i = 0; i < 9; i++) {
           const a = (i / 9) * Math.PI * 2;
+          // The shoal stays open to the sea: nothing between the heroes and the Leviathan.
+          if (t.id === 'deep' && Math.sin(a) > -0.2) continue;
           const r = t.radius + 1.5;
           const x = t.x + Math.cos(a) * r;
           const z = t.z + Math.sin(a) * r;
@@ -1603,6 +1607,7 @@ export class World {
         // Three roads, and the three-faced statue.
         for (let i = 0; i < 3; i++) this.batch.paint(BOX, 0x4a4652, t.x, y + 0.02, t.z, (i * Math.PI * 2) / 3, 3.5, 0.08, t.radius * 2.2);
       }
+      if (t.id === 'deep' || t.id === 'court' || t.id === 'roost') this.decorateElderArena(t.id, t.x, t.z, t.radius, y, stone);
       if (t.id === 'hunt') {
         // Antler totem.
         this.batch.paint(CYL, 0x3a2a1c, t.x, y + 2, t.z - t.radius + 4, 0, 0.4, 4, 0.4);
@@ -1632,6 +1637,132 @@ export class World {
       fog.visible = false;
       this.root.add(fog);
       this.trialFog.set(t.id, fog);
+    }
+  }
+
+  /** The elder foes' arenas: bones on the shoal, a drowned throne, a scorched roost. */
+  private decorateElderArena(id: string, cx: number, cz: number, radius: number, y: number, stone: number) {
+    const b = this.batch;
+    const bone = 0xd8d0b4;
+    if (id === 'deep') {
+      // The ribs of something the Leviathan ate, arching out of the sand.
+      for (let i = 0; i < 6; i++) {
+        const z = cz - 14 + i * 2.2, x = cx - 12;
+        for (const s of [-1, 1]) {
+          for (let k = 0; k < 4; k++) {
+            const a = (k / 4) * Math.PI * 0.5;
+            const r = 3.2 - i * 0.25;
+            b.paint(CYL6, bone, x + s * Math.sin(a) * r, y + Math.cos(a) * r * 0.9 + 0.2, z, 0, 0.32, 1.3, 0.32, 0, s * (a + 0.2));
+          }
+        }
+      }
+      b.paint(ROCK, bone, cx - 12, y + 0.6, cz - 17, 0.4, 1.6, 1.1, 2.4);
+      // Sea-worn rocks and shells along the sand.
+      for (let i = 0; i < 10; i++) {
+        const a = this.rand() * TAU, r = 8 + this.rand() * (radius - 9);
+        const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+        if (Math.sin(a) > 0.3 && r > radius - 6) continue;
+        b.paint(ROCK, this.rand() < 0.5 ? stone : 0x9a9488, x, y + 0.2, z, this.rand() * TAU, 0.6 + this.rand() * 0.8, 0.4 + this.rand() * 0.4, 0.6 + this.rand() * 0.8);
+      }
+    } else if (id === 'court') {
+      // Broken columns and a throne of coral facing the sea.
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * TAU + 0.2;
+        const r = radius - 4;
+        const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+        const h = 2 + this.rand() * 4;
+        b.paint(CYL, stone, x, y + h / 2, z, 0, 1.1, h, 1.1);
+        b.paint(BOX, 0x6a8a84, x, y + 0.15, z, a, 1.6, 0.3, 1.6);
+        if (this.rand() < 0.5) b.paint(CYL, stone, x + 1.5, y + 0.5, z + 0.6, 0.3, 1, 2.2, 1, Math.PI / 2, 0);
+        this.addCollider(x, z, 0.7);
+      }
+      const tz = cz + radius - 7;
+      b.paint(BOX, 0x4a6a66, cx, y + 0.5, tz, 0, 3.2, 1, 2.2);
+      b.paint(BOX, 0x4a6a66, cx, y + 2.4, tz + 0.9, 0, 3, 3.6, 0.5);
+      for (let i = 0; i < 7; i++) {
+        const x = cx - 1.5 + i * 0.5;
+        b.paint(CONE8, 0xe86a7a, x, y + 4.6 + (i % 2) * 0.4, tz + 0.9, 0, 0.3, 1.4 + (i % 3) * 0.5, 0.3);
+      }
+      this.addCollider(cx, tz, 1.8);
+    } else {
+      // A nest ring of scorched boulders, old bones and broken armour.
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * TAU + this.rand() * 0.2;
+        const r = radius - 1.5;
+        const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+        b.paint(ROCK, stone, x, this.groundY(x, z) + 0.6, z, this.rand() * TAU, 1.4 + this.rand(), 1 + this.rand() * 0.8, 1.4 + this.rand());
+      }
+      for (let i = 0; i < 14; i++) {
+        const a = this.rand() * TAU, r = 5 + this.rand() * (radius - 8);
+        const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+        b.paint(CYL6, bone, x, y + 0.15, z, this.rand() * TAU, 0.22, 1.6 + this.rand() * 1.4, 0.22, Math.PI / 2, 0);
+      }
+      // A great horned skull of an older dragon.
+      const sx = cx + 9, sz = cz - 10;
+      b.paint(ICO, bone, sx, y + 0.9, sz, 0.6, 1.3, 1, 1.8);
+      for (const s of [-1, 1]) b.paint(CONE4, bone, sx + s * 0.9, y + 1.9, sz - 0.6, 0.6, 0.35, 1.8, 0.35, -0.6, s * 0.5);
+    }
+  }
+
+  /** The hunted foes' lairs: a hollow strung with webs, a graveyard in the mire. */
+  private buildLairs() {
+    const b = this.batch;
+    for (const l of LAIRS) {
+      if (l.id === 'hollow') {
+        // Webs strung between the trees, egg sacs and the bones of the careless.
+        for (let w = 0; w < 7; w++) {
+          const a = (w / 7) * TAU + 0.3, r = 7 + this.rand() * 9;
+          const x = l.x + Math.cos(a) * r, z = l.z + Math.sin(a) * r;
+          const wy = this.groundY(x, z) + 3 + this.rand() * 3, size = 2.5 + this.rand() * 2, face = a + Math.PI / 2;
+          const cs = Math.cos(face), sn = Math.sin(face);
+          for (let k = 0; k < 8; k++) {
+            const ka = (k / 8) * TAU;
+            const ex = Math.cos(ka) * size, ey = Math.sin(ka) * size;
+            b.paint(THIN, 0xe8e8e0, x + (ex / 2) * cs, wy + ey / 2, z - (ex / 2) * sn, face, 0.05, size, 0.05, 0, -ka + Math.PI / 2);
+          }
+          for (let ring = 1; ring <= 3; ring++) {
+            const rr = (size * ring) / 3.4;
+            for (let k = 0; k < 8; k++) {
+              const ka = ((k + 0.5) / 8) * TAU;
+              const ex = Math.cos(ka) * rr * 0.96, ey = Math.sin(ka) * rr * 0.96;
+              b.paint(THIN, 0xd8d8d0, x + ex * cs, wy + ey, z - ex * sn, face, 0.035, rr * 0.78, 0.035, 0, -ka);
+            }
+          }
+          // A strand down to the ground.
+          b.paint(THIN, 0xe8e8e0, x, (wy + this.groundY(x, z)) / 2, z, 0, 0.04, wy - this.groundY(x, z), 0.04);
+        }
+        for (let i = 0; i < 9; i++) {
+          const a = this.rand() * TAU, r = 3 + this.rand() * 12;
+          const x = l.x + Math.cos(a) * r, z = l.z + Math.sin(a) * r;
+          if (i < 5) b.paint(ICO, 0xe0dcc8, x, this.groundY(x, z) + 0.45, z, this.rand() * TAU, 0.5, 0.65, 0.5);
+          else b.paint(CYL6, 0xd8d0b4, x, this.groundY(x, z) + 0.12, z, this.rand() * TAU, 0.14, 1.2, 0.14, Math.PI / 2, 0);
+        }
+      } else {
+        // Leaning headstones, a crypt and a dead tree.
+        for (let i = 0; i < 16; i++) {
+          const row = Math.floor(i / 4), col = i % 4;
+          const x = l.x - 9 + col * 6 + (this.rand() - 0.5) * 1.5, z = l.z - 6 + row * 4.5 + (this.rand() - 0.5) * 1.2;
+          const gy = this.groundY(x, z);
+          const tall = this.rand() < 0.3;
+          b.paint(BOX, 0x5a5c58, x, gy + (tall ? 0.9 : 0.55), z, (this.rand() - 0.5) * 0.3, 0.8, tall ? 1.8 : 1.1, 0.22, (this.rand() - 0.5) * 0.25, (this.rand() - 0.5) * 0.25);
+          if (tall) b.paint(BOX, 0x5a5c58, x, gy + 1.45, z, 0, 0.7, 0.18, 0.2);
+          this.addCollider(x, z, 0.45);
+        }
+        const cx = l.x, cz = l.z - 13;
+        const cy = this.groundY(cx, cz);
+        b.paint(BOX, 0x4a4c48, cx, cy + 1.6, cz, 0, 5, 3.2, 4);
+        b.paint(ROOF, 0x3a3c38, cx, cy + 3.2, cz, 0, 5.4, 1.6, 4.4);
+        b.paint(BOX, 0x101010, cx, cy + 1.1, cz + 2.01, 0, 1.4, 2.2, 0.05);
+        this.addCollider(cx, cz, 2.8);
+        const tx = l.x + 10, tz = l.z + 8, ty = this.groundY(tx, tz);
+        b.paint(TAPER, 0x2a2420, tx, ty + 2.5, tz, 0, 0.5, 5, 0.5);
+        for (let k = 0; k < 4; k++) b.paint(TAPER, 0x2a2420, tx, ty + 3.4 + k * 0.5, tz, k * 1.7, 0.18, 2.2, 0.18, 0.9, 0);
+        this.addCollider(tx, tz, 0.5);
+        const lamp = glowSprite(0x70ffb0, 2.2, 0.6);
+        lamp.position.set(cx, cy + 3.6, cz + 2.4);
+        this.root.add(lamp);
+        this.animated.push({ obj: lamp, kind: 'flicker', base: 2.2 });
+      }
     }
   }
 
