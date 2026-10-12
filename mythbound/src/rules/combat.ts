@@ -5,6 +5,8 @@ import { rank, type Character } from './character';
 
 /** BloodRage costs, lasts and recharges (seconds). */
 export const BLOODRAGE = { mana: 12, duration: 20, cooldown: 40 };
+/** BloodRage lasts longer with Battle Trance. */
+export const bloodrageDuration = (c: Character) => BLOODRAGE.duration + 5 * rank(c, 'battle-trance');
 /** Stacking would otherwise be unbounded; 12 stacks is already 4x damage. */
 export const MAX_FURY_STACKS = 12;
 
@@ -54,7 +56,7 @@ export function hasBloodrage(c: Character): boolean {
 export function powerShot(c: Character): { multiplier: number; splashFraction: number; radius: number } | null {
   if (c.subclassId !== 'bowman') return null;
   const radius = (3 + 0.75 * c.level) * (rank(c, 'deadeye') ? 1.5 : 1);
-  return { multiplier: 6, splashFraction: 0.5, radius };
+  return { multiplier: rank(c, 'killshot') ? 8 : 6, splashFraction: 0.5, radius };
 }
 
 // ---------------------------------------------------------- legendaries --
@@ -106,6 +108,9 @@ export interface HitContext {
   fury?: FuryState;
   /** Ranger bow draw, 0-1. */
   draw?: number;
+  /** The hero's and the target's health, 0-1 (Last Stand, Executioner). */
+  heroHp?: number;
+  targetHp?: number;
 }
 
 export interface HitResult {
@@ -126,11 +131,14 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
     }
     if (weapon?.kind === 'sword') dmg *= 1 + 0.1 * rank(c, 'keen-edge');
     if (weapon?.kind === 'axe') dmg *= 1 + 0.12 * rank(c, 'heavy-hand');
+    if (rank(c, 'blade-master')) dmg *= 1.15;
+    if (rank(c, 'berserker')) dmg *= 1.15;
   }
   if (hit.kind === 'bow') {
     if (c.classId === 'ranger') dmg *= 1.3;
     dmg *= 1 + 0.1 * (rank(c, 'fletcher') + rank(c, 'steady-aim'));
     dmg *= 0.35 + 0.65 * (hit.draw ?? 1);
+    if ((hit.draw ?? 1) >= 0.999) dmg *= 1 + 0.12 * rank(c, 'eagle-eye');
     if (legendaryEquipped(c, 'bow-of-artemis') && c.raceId === 'elf') dmg *= 1.5;
   }
   if (hit.kind === 'thrown' && legendaryEquipped(c, 'master-bolt') && c.classId !== 'ranger') {
@@ -139,6 +147,9 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
   if (hit.kind === 'spell') {
     dmg *= spellPowerMultiplier(c, hit.element);
   }
+  if (hit.undetected) dmg *= 1 + 0.15 * rank(c, 'ambusher');
+  if (hit.targetHp !== undefined && hit.targetHp < 0.3) dmg *= 1 + 0.15 * rank(c, 'executioner');
+  if (hit.kind !== 'spell' && hit.heroHp !== undefined && hit.heroHp < 0.3 && rank(c, 'last-stand')) dmg *= 1.25;
   if (hit.targetDark && c.roleId === 'darkslayer') {
     dmg *= 1.5;
     tags.push('slayer');
@@ -155,10 +166,11 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
 }
 
 export function spellPowerMultiplier(c: Character, element: DamageElement): number {
-  let m = 1 + 0.1 * rank(c, 'focus');
+  let m = (1 + 0.1 * rank(c, 'focus')) * (1 + 0.08 * rank(c, 'arcane-mastery'));
+  if (rank(c, 'archmage')) m *= 1.15;
   if (c.raceId === 'elf') m *= 1.2;
   if (c.raceId === 'elf' && c.elfElement === element) m *= 1.25;
-  if (c.subclassId === 'elemental' && c.wizardElement === element) m *= 1.5 + 0.1 * rank(c, 'attunement');
+  if (c.subclassId === 'elemental' && c.wizardElement === element) m *= (1.5 + 0.1 * rank(c, 'attunement')) * (rank(c, 'elemental-avatar') ? 1.2 : 1);
   if (legendaryEquipped(c, 'staff-of-hecate')) m *= 1.4;
   if (c.classId === 'ranger' && (element === 'lightning' || element === 'wind') && rank(c, 'storm-caller')) m *= 1.2;
   return m;
@@ -181,6 +193,7 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   if (c.raceId === 'elf' && c.elfElement === element) dmg *= 0.5;
   if (c.subclassId === 'elemental' && c.wizardElement === element) dmg *= rank(c, 'elemental-ward') ? 0 : 0.5;
   if (ctx.stoneSkin) dmg *= 0.5;
+  dmg *= (1 - 0.08 * rank(c, 'stalwart')) * (1 - 0.07 * rank(c, 'arcane-ward'));
   return Math.round(dmg);
 }
 
@@ -192,7 +205,7 @@ export function immuneToBleed(c: Character, fury: FuryState): boolean {
 export function bleedChance(c: Character): number {
   const weapon = WEAPONS[mainWeapon(c)?.id];
   if (!weapon) return 0;
-  if (weapon.kind === 'axe') return 0.25 + 0.15 * rank(c, 'rend');
+  if (weapon.kind === 'axe') return 0.25 + 0.15 * rank(c, 'rend') + 0.25 * rank(c, 'berserker');
   if (weapon.kind === 'sword' || weapon.kind === 'dagger') return 0.12;
   return 0;
 }
@@ -216,7 +229,9 @@ export interface CastCheck {
 export function spellCost(c: Character, spell: SpellId): number {
   const def = SPELLS[spell];
   let cost = def.mana;
-  if (c.subclassId === 'elemental' && c.wizardElement === def.element) cost *= 0.75;
+  if (c.subclassId === 'elemental' && c.wizardElement === def.element) cost *= rank(c, 'elemental-avatar') ? 0.75 * 0.85 : 0.75;
+  cost *= 1 - 0.08 * rank(c, 'spell-thrift');
+  if (def.school === 'sky') cost *= 1 - 0.15 * rank(c, 'thunderhead');
   if (legendaryEquipped(c, 'staff-of-hecate')) cost *= 0.7;
   return Math.round(cost);
 }
@@ -290,7 +305,7 @@ export function comboPower(combo: ComboDef): number {
 }
 
 export function cooldownMultiplier(c: Character): number {
-  return 1 - 0.15 * rank(c, 'quickening');
+  return (1 - 0.15 * rank(c, 'quickening')) * (rank(c, 'archmage') ? 0.9 : 1);
 }
 
 /** Elemental weaknesses that the Historian can read off a foe. */

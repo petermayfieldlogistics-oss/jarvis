@@ -66,6 +66,9 @@ export interface KillInfo {
   z: number;
   /** Ids of the players who hurt it. */
   by: number[];
+  /** Its level (with any level bonus) and whether a boss summoned it; older hosts leave these out. */
+  lv?: number;
+  minion?: boolean;
 }
 
 // ------------------------------------------------------------ remote hero --
@@ -1050,6 +1053,8 @@ export class Coop {
       x: num(m.x),
       z: num(m.z),
       by: arr(m.by).map((x) => num(x)),
+      lv: typeof m.lv === 'number' ? Math.max(1, Math.min(60, num(m.lv))) : undefined,
+      minion: m.minion === true,
     };
     const e = this.mirrors.get(num(m.nid));
     if (e) {

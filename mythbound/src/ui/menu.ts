@@ -1,7 +1,9 @@
-import { CLASSES, COMBOS, RACES, ROLES, SPELLS, SUBCLASSES, TREES, WEAPONS, type SpellId } from '../data/defs';
+import { CLASSES, COMBOS, RACES, ROLES, SPELLS, SUBCLASSES, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
 import { EYES_RUINS, ITEMS, LORE, PAGES, QUESTS, SHRINES, TRIALS, BOSSES, type QuestId } from '../data/world';
-import { dracoFlightHours, maxHp, maxMana, maxStamina, rank, treeFor, xpToNext } from '../rules/character';
+import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treeFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
+import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCost, type NodeView } from '../rules/skills';
+import { questLines, trackedId } from '../engine/questlog';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { heightAt } from '../engine/terrain';
@@ -16,12 +18,17 @@ const TABS: [Tab, string][] = [
 ];
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
 
 export class Menu {
   isOpen = false;
   private el: HTMLElement;
   private tab: Tab = 'character';
   private pickSpell: SpellId | null = null;
+  /** The skill node whose details show beside the tree. */
+  private pickNode: string | null = null;
+  /** The reset button waits for a second tap. */
+  private respecArmed = false;
   private coopCode = '';
 
   constructor(parent: HTMLElement, private g: Game) {
@@ -55,7 +62,7 @@ export class Menu {
     this.el.className = 'menu';
     this.el.innerHTML = `
       <div class="mpanel${entering ? ' in' : ''}">
-        <div class="mtabs">${TABS.map(([id, name]) => `<button data-tab="${id}" class="${id === this.tab ? 'on' : ''}">${name}</button>`).join('')}
+        <div class="mtabs">${TABS.map(([id, name]) => `<button data-tab="${id}" class="${id === this.tab ? 'on' : ''}">${name}${id === 'skills' && this.g.player.c.skillPoints > 0 ? `<i class="badge">${this.g.player.c.skillPoints}</i>` : ''}</button>`).join('')}
           <button data-act="resume" class="resume">Resume</button></div>
         <div class="mbody" data-tab="${this.tab}">${this.body()}</div>
       </div>`;
@@ -134,18 +141,64 @@ export class Menu {
       ${items.join('') || ''}`;
   }
 
+  /** The class's skill tree: tiers as rows, prerequisites as lines, the picked node's ranks beside it. */
   private skills(): string {
     const c = this.g.player.c;
-    const tree = TREES[treeFor(c)];
-    return `<h3>${esc(tree.name)} <small>${c.skillPoints} point${c.skillPoints === 1 ? '' : 's'} to spend</small></h3>
-      ${tree.nodes.map((n) => {
-        const r = rank(c, n.id);
-        const locked = c.level < n.level;
-        const can = !locked && r < n.maxRank && c.skillPoints > 0;
-        return `<div class="row${r ? ' on' : ''}"><div><b>${esc(n.name)}</b> <small>${r}/${n.maxRank}${locked ? ` · needs level ${n.level}` : ''}</small><div class="desc">${esc(n.description)}</div></div>
-          <button data-skill="${n.id}" ${can ? '' : 'disabled'}>+</button></div>`;
-      }).join('')}
-      <p class="hint">You gain a skill point every level.</p>`;
+    const treeId = treeFor(c);
+    const tree = TREES[treeId];
+    const views = tree.nodes.map((n) => nodeView(c, n, treeId));
+    const pick = views.find((v) => v.node.id === this.pickNode) ?? views.find((v) => v.ready) ?? views[0];
+    this.pickNode = pick.node.id;
+    const rows = Math.max(...tree.nodes.map((n) => n.tier));
+    const spent = pointsSpent(c, treeId);
+    const lines = tree.nodes.flatMap((n) => (n.req ?? []).map((id) => {
+      const from = findNode(treeId, id);
+      if (!from) return '';
+      const cls = rank(c, n.id) ? 'on' : rank(c, id) ? 'open' : '';
+      return `<line class="${cls}" x1="${from.col + 0.5}" y1="${from.tier - 0.5}" x2="${n.col + 0.5}" y2="${n.tier - 0.5}"/>`;
+    })).join('');
+    const tiers = Array.from({ length: rows }, (_, i) => {
+      const need = TIER_POINTS[i + 1] ?? 0;
+      return `<div class="stier${spent >= need ? ' open' : ''}"><b>${ROMAN[i]}</b>${spent >= need ? '' : `<small>🔒${need}</small>`}</div>`;
+    }).join('');
+    const nodes = views.map((v) => {
+      const n = v.node;
+      const cls = ['snode', v.rank && 'learned', v.maxed && 'maxed', v.ready && 'ready', !v.rank && v.reason && 'locked', n === pick.node && 'sel'].filter(Boolean).join(' ');
+      const pips = Array.from({ length: n.maxRank }, (_, i) => `<i${i < v.rank ? ' class="on"' : ''}></i>`).join('');
+      return `<button class="${cls}" data-node="${n.id}" style="grid-row:${n.tier};grid-column:${n.col + 1}" aria-label="${esc(n.name)}, rank ${v.rank} of ${n.maxRank}">
+        <span class="si">${n.icon}</span><span class="sn">${esc(n.name)}</span><span class="sp">${pips}</span>${v.maxed ? '' : `<span class="sc">${v.cost}</span>`}</button>`;
+    }).join('');
+    const cost = respecCost(c);
+    const resetLabel = this.respecArmed ? `Tap again to reset${cost ? ` (${cost} embers)` : ''}` : `Reset skills (${cost ? `${cost} embers` : 'free'})`;
+    return `<div class="skilltab">
+      <div class="shead"><h3>${esc(tree.name)}</h3><div class="spts${c.skillPoints ? ' have' : ''}"><b>${c.skillPoints}</b> point${c.skillPoints === 1 ? '' : 's'} to spend <small>· ${spent} spent</small></div></div>
+      <div class="sbody">
+        <div class="stree" style="--rows:${rows}">
+          <div class="stiers">${tiers}</div>
+          <div class="sgrid"><svg class="slines" viewBox="0 0 3 ${rows}" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>${nodes}</div>
+        </div>
+        ${this.skillDetail(pick)}
+      </div>
+      <div class="sfoot"><button data-act="respec" class="${this.respecArmed ? 'armed' : ''}" ${!spent || c.gold < cost ? 'disabled' : ''}>${resetLabel}</button>
+        <p class="hint">A point every level, and a bonus point every 5 levels. Deeper tiers open as you spend points in the tree, and cost more per rank. The first reset is free.</p></div>
+      <h3>Milestones</h3>
+      <div class="miles">${MILESTONES.map((m) => `<div class="mile${c.level >= m.level ? ' on' : ''}"><b>★ ${m.level}</b><span>${esc(m.name)}<small>${esc(m.text)}</small></span></div>`).join('')}</div>
+    </div>`;
+  }
+
+  private skillDetail(v: NodeView): string {
+    const c = this.g.player.c;
+    const n = v.node;
+    const ranks = Array.from({ length: n.maxRank }, (_, i) => `<li class="${i < v.rank ? 'on' : i === v.rank ? 'next' : ''}">${n.maxRank > 1 ? `<b>Rank ${i + 1}</b> ` : ''}${esc(rankText(n, i + 1))}</li>`).join('');
+    const req = n.req?.map((id) => `${esc(findNode(treeFor(c), id)?.name ?? id)}${rank(c, id) ? ' ✔' : ''}`).join(', ');
+    const status = v.maxed ? '<p class="sok">Mastered.</p>' : v.reason ? `<p class="swarn">🔒 ${esc(v.reason)}.</p>` : !v.ready ? `<p class="swarn">Needs ${v.cost} skill point${v.cost === 1 ? '' : 's'}.</p>` : '';
+    return `<div class="sdetail">
+      <div class="sdh"><span class="si">${n.icon}</span><div><b>${esc(n.name)}</b><small>Tier ${ROMAN[n.tier - 1]} · ${v.cost} point${v.cost === 1 ? '' : 's'} a rank · rank ${v.rank}/${n.maxRank}</small></div></div>
+      <ul class="sranks">${ranks}</ul>
+      ${req ? `<p class="sreq">Needs: ${req}</p>` : ''}${n.level > 1 ? `<p class="sreq">From level ${n.level}</p>` : ''}
+      ${status}
+      <button class="primary slearn" data-learn="${n.id}" ${v.ready ? '' : 'disabled'}>${v.maxed ? 'Mastered' : `${v.rank ? 'Rank up' : 'Learn'} · ${v.cost} point${v.cost === 1 ? '' : 's'}`}</button>
+    </div>`;
   }
 
   private spells(): string {
@@ -171,7 +224,16 @@ export class Menu {
     const ids = Object.keys(QUESTS) as QuestId[];
     const active = ids.filter((id) => st[id].state === 'active');
     const done = ids.filter((id) => st[id].state === 'done');
-    const row = (id: QuestId) => `<div class="row${st[id].state === 'done' ? ' done' : ''}"><div><b>${esc(QUESTS[id].name)}</b> <small>${st[id].state === 'done' ? 'complete' : `${st[id].progress}/${QUESTS[id].goal}`}</small><div class="desc">${esc(QUESTS[id].description)}</div></div></div>`;
+    const p = this.g.player.pos;
+    const lines = questLines(this.g.state, p.x, p.z);
+    const tracked = trackedId(this.g.state, lines);
+    const row = (id: QuestId) => {
+      const l = lines.find((x) => x.id === id);
+      const where = l?.target && !l.ready ? ` (${esc(l.target.name)}, ${Math.round(Math.hypot(l.target.x - p.x, l.target.z - p.z) / 10) * 10} m)` : '';
+      const next = l ? `<div class="desc qnext">➤ ${esc(l.objective)}${where}</div>` : '';
+      const track = l ? (id === tracked ? '<span class="tag">Tracked</span>' : `<button data-track="${id}">Track</button>`) : '';
+      return `<div class="row${st[id].state === 'done' ? ' done' : ''}${id === tracked ? ' on' : ''}"><div><b>${esc(QUESTS[id].name)}</b> <small>${st[id].state === 'done' ? 'complete' : `${st[id].progress}/${QUESTS[id].goal}`}</small><div class="desc">${esc(QUESTS[id].description)}</div>${next}</div>${track}</div>`;
+    };
     const trials = TRIALS.map((t) => `<div class="row${this.g.state.trialsDone.includes(t.id) ? ' done' : ''}"><div><b>${esc(t.name)}</b> <small>level ${t.level}</small><div class="desc">${esc(BOSSES[t.boss].name)} guards the ${esc(WEAPONS[BOSSES[t.boss].reward].name)}.</div></div></div>`);
     return `<h3>Active</h3>${active.map(row).join('') || '<p class="hint">Talk to the people of Hearthhold.</p>'}
       <h3>The Six Trials</h3>${trials.join('')}
@@ -251,7 +313,8 @@ export class Menu {
       <li>${k('R')} class ability (BloodRage, Power Shot, Tame, Combine, Volley)</li>
       <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+)</li>
       <li>${k('H')} drink flask · ${k('X')} eat fish · ${k('T')} switch weapon</li>
-      <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li></ul></div>
+      <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li>
+      <li>${k('J')} fold or open the quest bar (click a quest there to track it)</li></ul></div>
       <div><h4>Touch</h4><ul>
       <li>Left side: virtual joystick (push far to sprint)</li>
       <li>Right side: drag to look</li>
@@ -259,7 +322,8 @@ export class Menu {
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
       <li>Tap a spell slot to choose it; tap ❂ there to use your ability</li>
       <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>
-      <li>✋ appears when you can interact</li></ul></div></div>`;
+      <li>✋ appears when you can interact</li>
+      <li>Quest bar (top left): tap its header to fold it, tap a quest to track it</li></ul></div></div>`;
   }
 
   private bind() {
@@ -272,13 +336,40 @@ export class Menu {
         this.render();
       }),
     );
-    this.el.querySelectorAll<HTMLButtonElement>('[data-skill]').forEach((b) =>
+    this.el.querySelectorAll<HTMLButtonElement>('[data-node]').forEach((b) =>
       b.addEventListener('click', () => {
-        const id = b.dataset.skill!;
-        if (c.skillPoints <= 0) return;
-        c.skillPoints--;
-        c.skills[id] = (c.skills[id] ?? 0) + 1;
-        g.audio.play('pickup');
+        this.pickNode = b.dataset.node!;
+        this.render();
+      }),
+    );
+    this.el.querySelector<HTMLButtonElement>('[data-learn]')?.addEventListener('click', (e) => {
+      if (!learnSkill(c, (e.currentTarget as HTMLElement).dataset.learn!)) return;
+      g.audio.play('pickup');
+      this.render();
+    });
+    this.el.querySelector('[data-act="respec"]')?.addEventListener('click', () => {
+      if (!this.respecArmed) {
+        this.respecArmed = true;
+        setTimeout(() => {
+          if (!this.respecArmed) return;
+          this.respecArmed = false;
+          if (this.isOpen && this.tab === 'skills') this.render();
+        }, 3000);
+        return this.render();
+      }
+      this.respecArmed = false;
+      if (respec(c)) {
+        // Max health or mana lost with Iron Hide, Deep Well and the like can't be left over.
+        g.player.hp = Math.min(g.player.hp, g.player.maxHp);
+        g.player.mana = Math.min(g.player.mana, g.player.maxMana);
+        g.hud.toast(`Skills reset: ${c.skillPoints} points to spend.`, 'skill');
+        g.audio.play('holy');
+      }
+      this.render();
+    });
+    this.el.querySelectorAll<HTMLButtonElement>('[data-track]').forEach((b) =>
+      b.addEventListener('click', () => {
+        g.state.tracked = b.dataset.track as QuestId;
         this.render();
       }),
     );
