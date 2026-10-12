@@ -7,6 +7,12 @@ import { Boss } from '../engine/entities';
 import type { Game } from '../engine/game';
 import { mapImage, toMap } from './mapimage';
 
+/** Two or three letters that tell spells apart on small touch slots. */
+const shortName = (name: string) => {
+  const words = name.replace(/^(the|of)\s+/i, '').split(/\s+/).filter((w) => !/^(of|the)$/i.test(w));
+  return (words.length > 1 ? words.map((w) => w[0]).join('') : name.slice(0, 3)).slice(0, 3).toUpperCase();
+};
+
 const esc = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]!);
 
 const SPELL_ICON: Record<string, string> = {
@@ -245,6 +251,7 @@ export class Hud {
       el.innerHTML = `<div class="panel"><div class="dtitle">Fishing</div><div class="dsub">${this.g.input.touch ? 'Tap' : 'Click or press F/Space'} when the hook is in the green.</div>
         <div class="ftrack"><div class="fzone" style="left:${zoneX}%;width:${zoneW}%"></div><div class="fgold" style="left:${zoneX + zoneW / 2 - 3}%;width:6%"></div><div class="fhook"></div></div></div>`;
       this.root.appendChild(el);
+      this.prompt(null);
       const hook = el.querySelector<HTMLElement>('.fhook')!;
       let t = Math.random() * 3;
       let raf = 0;
@@ -304,7 +311,8 @@ export class Hud {
     const low = hpK < 0.3 && p.alive;
     this.setBar(this.hp, 'bar hp', hpK, dt, low ? ' low' : '', `<b>${Math.ceil(p.hp)}</b> / ${p.maxHp}`);
     this.setBar(this.mana, 'bar mana', p.mana / p.maxMana, dt, p.soulOrPower ? ' soul' : '', p.soulOrPower ? 'SOUL BARGAINED' : `<b>${Math.floor(p.mana)}</b> / ${p.maxMana}`);
-    this.setBar(this.stam, 'bar stam', p.stamina / p.maxStamina, dt, p.stamina < p.maxStamina * 0.25 ? ' low' : '', null);
+    this.setBar(this.stam, 'bar stam', p.stamina / p.maxStamina, dt, p.exhausted ? ' low exhausted' : p.stamina < p.maxStamina * 0.25 ? ' low' : '', null);
+    put(this.stam.root, 'width', `${Math.round(Math.min(34, 14 + p.maxStamina / 8) * 10) / 10}vw`);
     put(this.hp.root, 'width', `${Math.round(Math.min(46, 16 + p.maxHp / 12) * 10) / 10}vw`);
     put(this.mana.root, 'width', `${Math.round(Math.min(40, 12 + p.maxMana / 6) * 10) / 10}vw`);
 
@@ -415,7 +423,7 @@ export class Hud {
         ? c.spellSlots.map((s, i) => {
           if (!s) return `<div class="slot empty" data-slot="${i}"><i>${i + 1}</i></div>`;
           const def = SPELLS[s];
-          return `<div data-slot="${i}" class="slot" title="${esc(def.name)}"><span class="ic">${SPELL_ICON[def.school] ?? '✦'}</span><i>${i + 1}</i><em>${esc(def.name)}</em><small></small><div class="cd"><b></b></div></div>`;
+          return `<div data-slot="${i}" class="slot" title="${esc(def.name)}"><span class="ic">${SPELL_ICON[def.school] ?? '✦'}</span><i>${i + 1}</i><em>${esc(def.name)}</em><u>${esc(shortName(def.name))}</u><small></small><div class="cd"><b></b></div></div>`;
         }).join('')
         : '';
       this.spells.innerHTML = `${html}<div data-ability="1" class="slot ability" title="${esc(ability)}"><span class="ic">❂</span><i>R</i><em>${esc(ability)}</em><div class="cd"><b></b></div></div>`;

@@ -82,8 +82,8 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
   }, 50);
 }
 
-// Audio needs a user gesture.
-window.addEventListener('pointerdown', () => game?.audio.unlock(), { once: false });
+// Audio needs a user gesture (iOS only counts touchend and click for touch).
+for (const type of ['pointerdown', 'touchend', 'click']) window.addEventListener(type, () => game?.audio.unlock(), { capture: true, passive: true });
 
 declare global {
   interface Window {

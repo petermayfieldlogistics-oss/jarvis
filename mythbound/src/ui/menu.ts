@@ -74,7 +74,7 @@ export class Menu {
       case 'skills': return this.skills();
       case 'spells': return this.spells();
       case 'quests': return this.quests();
-      case 'map': return '<canvas class="bigmap" width="640" height="640"></canvas><p class="hint">Click a discovered shrine (gold) to travel there. Red: trials. Grey: conquered.</p>';
+      case 'map': return `<canvas class="bigmap" width="640" height="640"></canvas><p class="hint">${this.g.input.touch ? 'Tap' : 'Click'} a discovered shrine (gold) to travel there. Red: trials. Grey: conquered.</p>`;
       case 'lore': return this.lore();
       case 'coop': return this.coopTab();
       case 'settings': return this.settingsTab();
@@ -229,7 +229,7 @@ export class Menu {
       <p>Play together with up to 3 friends. One of you hosts, and everyone joins that world: its monsters, bosses and time of day are shared. Each of you keeps your own hero, items and progress.</p>
       <label>Your name <input type="text" maxlength="20" data-coop="name" value="${esc(name)}"></label>
       <div class="btnrow"><button data-act="coop-host"${co.busy ? ' disabled' : ''}>Host a game</button></div>
-      <label>Join with a room code <span><input type="text" class="codein" maxlength="6" data-coop="code" placeholder="ABCDE" value="${esc(this.coopCode)}"> <button data-act="coop-join"${co.busy ? ' disabled' : ''}>Join</button></span></label>
+      <label>Join with a room code <span><input type="text" class="codein" maxlength="6" data-coop="code" placeholder="ABCDE" value="${esc(this.coopCode)}"> <button class="primary" data-act="coop-join"${co.busy ? ' disabled' : ''}>Join</button></span></label>
       ${status}
       ${pages ? `<p class="hint">Co-op needs the online version of the game: <a href="${PAGES_URL}" target="_blank" rel="noopener">${PAGES_URL}</a></p>` : ''}
       <p class="hint">The free server naps when nobody is playing, so the first connection can take up to a minute.</p>
@@ -253,7 +253,7 @@ export class Menu {
       <li>${k('H')} drink flask · ${k('X')} eat fish · ${k('T')} switch weapon</li>
       <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li></ul></div>
       <div><h4>Touch</h4><ul>
-      <li>Left side: virtual joystick (push far to sprint)</li>
+      <li>Left side: virtual joystick (push past the ring to sprint; it glows)</li>
       <li>Right side: drag to look</li>
       <li>⚔ attack (hold with a bow) · 💥 heavy · ⤿ roll · ⤒ jump</li>
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
@@ -398,11 +398,17 @@ export class Menu {
       const rect = canvas.getBoundingClientRect();
       const mx = ((e.clientX - rect.left) / rect.width) * S;
       const my = ((e.clientY - rect.top) / rect.height) * S;
+      // The nearest discovered shrine within a finger's width on screen.
+      const reach = (22 * S) / rect.width;
+      let best: string | null = null;
+      let bestD = reach;
       for (const s of SHRINES) {
         if (!g.state.shrinesFound.includes(s.id)) continue;
         const [sx, sy] = toMap(s.x, s.z, S);
-        if (Math.hypot(sx - mx, sy - my) < 14) return this.travel(s.id);
+        const d = Math.hypot(sx - mx, sy - my);
+        if (d < bestD) (best = s.id), (bestD = d);
       }
+      if (best) this.travel(best);
     });
   }
 
