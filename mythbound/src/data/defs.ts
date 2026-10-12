@@ -108,7 +108,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
       'Daggers and throwing knives hit 15% harder. Fights with daggers, knives, swords and bows',
       'Evasive: rolls are quicker, cheaper and safer',
       'Quiet feet: harder to notice, even more so crouched',
-      'Vanish (R): vanish from every foe; your next strike is an ambush (a backstab, and then some)',
+      'Vanish (R): every foe but the great ones loses you; your next strike is an ambush (a backstab, and then some)',
       'Tricks: Smoke Bomb and Poison Blades (poison stacks on foes)',
     ],
   },

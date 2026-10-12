@@ -1092,7 +1092,7 @@ export class Player {
       g.hitStop(0.055 + 0.065 * big);
       g.shake(0.12 + 0.2 * big);
       this.gainChi(chiOnHit(c));
-      if (ambush) this.endVanish(g, true);
+      if (ambush) g.hud.toast('Ambush!', 'skill');
       if (palm) g.sfx.shockwave(this.tv.set(this.pos.x + Math.sin(this.yaw) * 1.2, this.pos.y + 1.1, this.pos.z + Math.cos(this.yaw) * 1.2), 1.6, this.chiColor(), 0.25);
     }
     return landed;
@@ -1658,13 +1658,6 @@ export class Player {
       e.state = 'return';
     }
     g.coop.dropAggro(range);
-  }
-
-  /** Vanish ends: struck from it (an ambush), or simply worn off. */
-  private endVanish(g: Game, struck: boolean) {
-    if (this.vanish <= 0) return;
-    this.vanish = 0;
-    if (struck) g.hud.toast('Ambush!', 'skill');
   }
 
   /** Arcane Surge: for a while, spells cost nothing and hit harder. */

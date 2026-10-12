@@ -617,7 +617,7 @@ export class Story {
       subtitle: `You have ${c.gold} embers`,
       text: id === 'brann'
         ? 'Greatswords, spears, axes for two hands, knives for throwing. And runes: carve one into a blade at the anvil and it bites with fire, frost, storm or venom.'
-        : 'Odd things from far roads. A wand for a mage, a ring of runes, and music: a lyre to lift your friends, a horn to scatter your foes.',
+        : 'Odd things from far roads. A wand for a mage or a sorcerer, a ring of runes, and music: a lyre to lift your friends, a horn to scatter your foes.',
       options,
     });
   }
