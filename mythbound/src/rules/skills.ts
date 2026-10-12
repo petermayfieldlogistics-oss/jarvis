@@ -2,7 +2,7 @@
 // resetting. The trees themselves are content (TREES in data/defs).
 
 import { TIER_COST, TIER_POINTS, TREES, type SkillNode, type TreeId } from '../data/defs';
-import { pointsEarned, rank, treeFor, type Character } from './character';
+import { pointsEarned, rank, treeFor, treesFor, type Character } from './character';
 
 /** Skill points one rank of this node costs. */
 export const nodeCost = (n: Pick<SkillNode, 'tier'>) => TIER_COST[n.tier] ?? 1;
@@ -46,11 +46,16 @@ export function nodeView(c: Character, n: SkillNode, tree: TreeId = treeFor(c)):
   return { node: n, rank: r, cost, maxed, ready: !maxed && !reason && c.skillPoints >= cost, reason };
 }
 
-/** Spends points on one rank of a node in the hero's tree. */
+/** Which of the hero's trees holds a node (the newer classes learn from two). */
+export function treeOf(c: Character, id: string): TreeId | undefined {
+  return treesFor(c).find((t) => findNode(t, id));
+}
+
+/** Spends points on one rank of a node in one of the hero's trees. */
 export function learnSkill(c: Character, id: string): boolean {
-  const tree = treeFor(c);
-  const n = findNode(tree, id);
-  if (!n || !nodeView(c, n, tree).ready) return false;
+  const tree = treeOf(c, id);
+  const n = tree && findNode(tree, id);
+  if (!tree || !n || !nodeView(c, n, tree).ready) return false;
   c.skillPoints -= nodeCost(n);
   c.skills[id] = rank(c, id) + 1;
   return true;

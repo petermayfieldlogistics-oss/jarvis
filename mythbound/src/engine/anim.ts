@@ -8,6 +8,9 @@ export type AttackStyle =
   | 'cast' | 'bow' | 'throw' | 'roar'
   // Two-handed backhand sweep; playing a lyre (a strum, a whole song) or a war horn.
   | 'cleave' | 'strum' | 'song' | 'blow'
+  // Unarmed (monks): a left jab, a right cross, a high kick, a two-handed palm strike, a storm of
+  // punches, sitting to meditate, a leaping spin kick. Sorcerers channel a beam; duelists parry.
+  | 'jab' | 'cross' | 'kick' | 'palm' | 'flurry' | 'meditate' | 'cyclone' | 'channel' | 'parry'
   // Monster and boss moves.
   | 'bite' | 'claw' | 'sting' | 'sweep' | 'charge' | 'slam' | 'leap' | 'stomp' | 'volley' | 'ring' | 'summon' | 'teleport' | 'strikes' | 'combo'
   // The elder and hunted foes (bosses.ts): their strike runs anim.attack 0..1 straight through.
@@ -29,8 +32,10 @@ export interface AnimState {
   /** Bow draw 0..1 while aiming. */
   draw: number;
   blocking: boolean;
-  /** -1, or 0..1 progress through a dodge roll. */
+  /** -1, or 0..1 progress through a dodge roll (or a dash or flip, see rollKind). */
   rolling: number;
+  /** What `rolling` plays: 0 a roll, 1 a dash (upright, low and fast), 2 a backflip, 3 a front flip in the air. */
+  rollKind: number;
   airborne: boolean;
   flying: boolean;
   swimming: boolean;
@@ -50,7 +55,7 @@ export interface AnimState {
 }
 
 export const newAnim = (): AnimState => ({
-  phase: 0, moving: 0, speed: 0, moveX: 0, moveZ: 0, attack: -1, attackStyle: 'slash', draw: 0, blocking: false, rolling: -1,
+  phase: 0, moving: 0, speed: 0, moveX: 0, moveZ: 0, attack: -1, attackStyle: 'slash', draw: 0, blocking: false, rolling: -1, rollKind: 0,
   airborne: false, flying: false, swimming: false, crouching: false, dead: -1, t: 0, landing: 0, hurt: 0, fury: 0, windup: 0,
 });
 
@@ -70,6 +75,9 @@ export function breathSweep(k: number, span: number): number {
   const u = Math.min(1, Math.max(0, (k - 0.06) / 0.86));
   return span * (1 - 2 * u);
 }
+
+/** When each punch of a Flurry of Blows lands, as fractions of the move (alternating left and right). */
+export const FLURRY_AT = [0.16, 0.25, 0.34, 0.43, 0.52, 0.61, 0.7, 0.8];
 
 /** Strike progress (anim.attack) at which each of these moves lands: the Leviathan's head, the Queen's thrusts... */
 export const LANDS: Partial<Record<AttackStyle, number[]>> = {

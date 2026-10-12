@@ -1,3 +1,4 @@
+import { MAX_KNIVES, classWields } from './weapons';
 import {
   CLASSES,
   MAGE_STARTING_SPELLS,
@@ -98,6 +99,7 @@ export function validateChoice(choice: CharacterChoice, ancientUnlocked: boolean
 export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random): Character {
   const weapons: WeaponInstance[] = [];
   const arrows = { wood: 0, steel: 0 };
+  let knives = 0;
   switch (choice.subclassId ?? choice.classId) {
     case 'swordsman':
       weapons.push({ id: 'iron-sword', level: 2 });
@@ -120,16 +122,40 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     case 'elemental':
       weapons.push({ id: 'oak-staff', level: 1 });
       break;
+    case 'ironfist':
+      weapons.push({ id: 'iron-knuckles', level: 2 });
+      break;
+    case 'windwalker':
+      weapons.push({ id: 'ash-quarterstaff', level: 2 }, { id: 'linen-wraps', level: 1 });
+      break;
+    case 'monk':
+      weapons.push({ id: 'linen-wraps', level: 1 });
+      break;
+    case 'darkmage':
+    case 'lightmage':
+    case 'sorcerer':
+      weapons.push({ id: 'willow-wand', level: 1 });
+      break;
+    case 'shadow':
+      weapons.push({ id: 'shadow-dagger', level: 2 }, { id: 'throwing-knives', level: 1 });
+      knives = MAX_KNIVES;
+      break;
+    case 'duelist':
+      weapons.push({ id: 'duelist-saber', level: 2 }, { id: 'shadow-dagger', level: 1 });
+      break;
+    case 'rogue':
+      weapons.push({ id: 'shadow-dagger', level: 1 });
+      break;
   }
   if (weapons.some((w) => WEAPONS[w.id].kind === 'bow')) arrows.wood += 40;
-  if (choice.raceId === 'elf') {
-    // Elves start at bow level 3: rangers swap their bow for it, others carry it.
+  if (choice.raceId === 'elf' && classWields(choice.classId, 'bow')) {
+    // Elves start at bow level 3: rangers swap their bow for it, others carry it (if their class can draw one).
     const bow = weapons.findIndex((w) => WEAPONS[w.id].kind === 'bow');
     if (bow >= 0 && weapons[bow].level < 3) weapons[bow] = { id: weapons[bow].id === 'copper-bow' ? 'copper-bow' : 'elven-bow', level: 3 };
     else if (bow < 0) weapons.push({ id: 'elven-bow', level: 3 });
     if (arrows.wood === 0) arrows.wood = 30;
   }
-  if (choice.roleId === 'assassin') weapons.push({ id: 'shadow-dagger', level: 1 });
+  if (choice.roleId === 'assassin' && !weapons.some((w) => w.id === 'shadow-dagger') && classWields(choice.classId, 'dagger')) weapons.push({ id: 'shadow-dagger', level: 1 });
   if (choice.classId === 'ranger' || choice.subclassId === 'bowman') {
     // A melee backup for when they close in.
     if (!weapons.some((w) => WEAPONS[w.id].kind === 'dagger')) weapons.push({ id: 'shadow-dagger', level: 1 });
@@ -155,7 +181,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     weapons,
     mainHand: 0,
     arrows,
-    knives: 0,
+    knives,
     knownSpells: [],
     spellSlots: [null, null, null, null],
     devilDeals: 0,
@@ -170,10 +196,15 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
   return c;
 }
 
-export function startingSpells(c: Pick<Character, 'classId' | 'raceId' | 'roleId'>): SpellId[] {
+export function startingSpells(c: Pick<Character, 'classId' | 'raceId' | 'roleId'> & Partial<Pick<Character, 'subclassId'>>): SpellId[] {
   const spells: SpellId[] = [];
   if (c.classId === 'mage') spells.push(...MAGE_STARTING_SPELLS);
   if (c.classId === 'ranger') spells.push('wrath-of-thor', 'way-of-the-wind');
+  // The newer classes know their own arts from the start, their subclass's first.
+  if (c.classId === 'monk') spells.push('palm-shockwave', 'meditate', c.subclassId === 'windwalker' ? 'cyclone-kick' : 'iron-skin');
+  if (c.subclassId === 'darkmage') spells.push('shadow-bolt', 'life-drain', 'hex', 'summon-shade');
+  if (c.subclassId === 'lightmage') spells.push('radiant-beam', 'smite-undead', 'mending-light', 'ward-of-dawn');
+  if (c.classId === 'rogue') spells.push('smoke-bomb', 'poison-blades', c.subclassId === 'duelist' ? 'parry' : 'shadowstep');
   if (c.raceId === 'elf') spells.push('deal-with-the-devil', 'imp-familiar');
   if (c.roleId === 'knight') spells.push('holy-smite', 'radiant-heal', 'aegis-of-light');
   if (c.raceId === 'angelic') spells.push('holy-smite');
@@ -193,8 +224,18 @@ export function learnSpell(c: Character, spell: SpellId): boolean {
  * are limited to sky magic (plus Imp magic if they are elves); warriors cast
  * only what their race or role grants; mages can learn everything.
  */
-export function canLearnSpell(c: Pick<Character, 'classId' | 'raceId' | 'roleId'>, spell: SpellId): boolean {
+export function canLearnSpell(c: Pick<Character, 'classId' | 'raceId' | 'roleId'> & Partial<Pick<Character, 'subclassId'>>, spell: SpellId): boolean {
   const school = SPELLS[spell].school;
+  // Each class's own arts are its alone.
+  if (school === 'chi') return c.classId === 'monk';
+  if (school === 'trick') return c.classId === 'rogue';
+  if (school === 'shadow') return c.subclassId === 'darkmage';
+  if (c.classId === 'sorcerer') {
+    // Arcane tomes, and the path's own school (a Light Mage's is light).
+    if (school === 'arcane') return true;
+    if (school === 'light' && c.subclassId === 'lightmage') return true;
+  }
+  if (SORCERER_LIGHT.has(spell)) return c.subclassId === 'lightmage';
   if (c.classId === 'mage') return true;
   if (school === 'light' && (c.roleId === 'knight' || c.raceId === 'angelic') && spell !== 'power-of-the-light') return true;
   if (school === 'devil' && c.raceId === 'elf') return true;
@@ -202,17 +243,36 @@ export function canLearnSpell(c: Pick<Character, 'classId' | 'raceId' | 'roleId'
   return false;
 }
 
+/** The Light Mage's own spells (light school, but no tome teaches them to anyone else). */
+const SORCERER_LIGHT = new Set<SpellId>(['radiant-beam', 'smite-undead', 'mending-light', 'ward-of-dawn']);
+
+/** The classes that learn from a class tree and their subclass's tree. */
+export const isNewClass = (classId: ClassId) => classId === 'monk' || classId === 'sorcerer' || classId === 'rogue';
+
+/** The hero's first (for the older classes, only) skill tree. */
 export function treeFor(c: Pick<Character, 'classId' | 'subclassId'>): TreeId {
+  return treesFor(c)[0];
+}
+
+/**
+ * Every tree the hero learns from: one for the older classes; a class tree
+ * and the subclass's tree for the Monk, the Sorcerer and the Rogue.
+ */
+export function treesFor(c: Pick<Character, 'classId' | 'subclassId'>): TreeId[] {
   switch (c.subclassId) {
     case 'swordsman':
     case 'axeman':
     case 'bowman':
     case 'trainer':
     case 'elemental':
-      return c.subclassId;
+      return [c.subclassId];
   }
-  if (c.classId === 'warrior') return 'swordsman';
-  return c.classId === 'ranger' ? 'ranger' : 'mage';
+  if (isNewClass(c.classId)) {
+    const own = c.classId as 'monk' | 'sorcerer' | 'rogue';
+    return c.subclassId ? [own, c.subclassId as TreeId] : [own];
+  }
+  if (c.classId === 'warrior') return ['swordsman'];
+  return [c.classId === 'ranger' ? 'ranger' : 'mage'];
 }
 
 export const rank = (c: Character, node: string) => c.skills[node] ?? 0;
@@ -259,17 +319,33 @@ export const hasRelic = (c: Pick<Character, 'items'>, id: RelicId) => (c.items[i
 
 // ------------------------------------------------------------------ stats --
 
+/** Per level: health, mana, and the class's extra stamina and speed. */
+const GROWTH: Record<ClassId, { hp: number; mana: number; stamina: number; speed: number; manaRegen: number }> = {
+  warrior: { hp: 12, mana: 2, stamina: 10, speed: 1, manaRegen: 0.8 },
+  ranger: { hp: 9, mana: 4, stamina: 0, speed: 1, manaRegen: 1.3 },
+  mage: { hp: 7, mana: 8, stamina: 0, speed: 1, manaRegen: 2.2 },
+  monk: { hp: 10, mana: 3, stamina: 20, speed: 1.08, manaRegen: 1.0 },
+  sorcerer: { hp: 7, mana: 9, stamina: 0, speed: 1, manaRegen: 2.4 },
+  rogue: { hp: 9, mana: 3, stamina: 15, speed: 1.05, manaRegen: 1.0 },
+};
+
+/** A level 1 human of this class (no role bonuses): the numbers its creator card shows. */
+export function classStats(classId: ClassId): { hp: number; mana: number; stamina: number; speed: number } {
+  const c = createCharacter({ name: '-', classId, subclassId: subclassesFor(classId, false)[0] ?? null, raceId: 'human', roleId: 'historian', expansion: false }, () => 0.5);
+  return { hp: maxHp(c), mana: maxMana(c), stamina: maxStamina(c), speed: moveSpeed(c) };
+}
+
 export function maxHp(c: Character): number {
-  const perLevel = c.classId === 'warrior' ? 12 : c.classId === 'ranger' ? 9 : 7;
+  const perLevel = GROWTH[c.classId].hp;
   let base = CLASSES[c.classId].hp + perLevel * (c.level - 1) + (hasRelic(c, 'dragon-heart') ? 30 : 0);
-  base += 15 * rank(c, 'iron-hide') + 12 * rank(c, 'hardy');
+  base += 15 * rank(c, 'iron-hide') + 12 * rank(c, 'hardy') + 14 * rank(c, 'tempered-body') + 20 * rank(c, 'iron-will');
   base *= 1 + 0.1 * perk(c, 10) + 0.1 * perk(c, 30);
   if (c.raceId === 'orc') base *= ORC.hp;
   return Math.max(1, Math.round(base - c.hpLost));
 }
 
 export function maxMana(c: Character): number {
-  const perLevel = c.classId === 'mage' ? 8 : c.classId === 'ranger' ? 4 : 2;
+  const perLevel = GROWTH[c.classId].mana;
   let m = CLASSES[c.classId].mana + perLevel * (c.level - 1);
   if (c.roleId === 'knight') m += 10;
   if (c.raceId === 'ancient') m += 15;
@@ -286,7 +362,7 @@ export function swimsTireless(c: Character): boolean {
 }
 
 export function maxStamina(c: Character): number {
-  const s = 100 + (c.raceId === 'elf' ? 20 : 0) + (c.classId === 'warrior' ? 10 : 0) + 2 * (c.level - 1) + 15 * rank(c, 'trail-runner');
+  const s = 100 + (c.raceId === 'elf' ? 20 : 0) + GROWTH[c.classId].stamina + 2 * (c.level - 1) + 15 * rank(c, 'trail-runner');
   return Math.round(s * (1 + 0.15 * perk(c, 20)));
 }
 
@@ -296,15 +372,16 @@ export function staminaRegen(c: Character): number {
 }
 
 export function moveSpeed(c: Character): number {
-  let s = 7;
+  let s = 7 * GROWTH[c.classId].speed;
   if (c.raceId === 'elf') s *= 1.15;
-  s *= 1 + 0.06 * rank(c, 'fleet-foot');
+  s *= 1 + 0.06 * rank(c, 'fleet-foot') + 0.05 * (rank(c, 'zephyr') + rank(c, 'footwork'));
+  if (rank(c, 'avatar-of-wind')) s *= 1.1;
   s *= (1 + 0.06 * perk(c, 25)) * (rank(c, 'windrunner') ? 1.1 : 1);
   return s;
 }
 
 export function manaRegen(c: Character): number {
-  const base = c.classId === 'mage' ? 2.2 : c.classId === 'ranger' ? 1.3 : 0.8;
+  const base = GROWTH[c.classId].manaRegen;
   return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1) * (hasRelic(c, 'tide-crown') ? 1.3 : 1);
 }
 
@@ -389,7 +466,7 @@ export interface KillFoe {
 
 /** How much more kills restore, from skills and the Reaper perk. */
 export function killRegenMultiplier(c: Character): number {
-  return 1 + 0.5 * (rank(c, 'bloodlust') + rank(c, 'hunters-feast')) + 0.6 * rank(c, 'soul-harvest') + 0.5 * perk(c, 15);
+  return 1 + 0.5 * (rank(c, 'bloodlust') + rank(c, 'hunters-feast') + rank(c, 'inner-peace') + rank(c, 'cutpurse')) + 0.6 * rank(c, 'soul-harvest') + 0.5 * perk(c, 15);
 }
 
 /**
@@ -440,8 +517,9 @@ export function wingsGrown(c: Pick<Character, 'raceId' | 'level'>): boolean {
   return c.raceId === 'angelic' || (c.raceId === 'draco' && c.level >= 6);
 }
 
-/** Extra wing beats an angel gets per jump. */
-export const airFlaps = (c: Pick<Character, 'raceId'>) => (c.raceId === 'angelic' ? ANGELIC.flaps : 0);
+/** Extra wing beats an angel gets per jump; a monk flips once in the air (twice with Feather Fall). */
+export const airFlaps = (c: Pick<Character, 'raceId' | 'classId' | 'skills'>) =>
+  c.raceId === 'angelic' ? ANGELIC.flaps : c.classId === 'monk' ? 1 + (c.skills['feather-fall'] ? 1 : 0) : 0;
 
 /** Zombies have no breath to lose. */
 export const drowns = (c: Pick<Character, 'raceId'>) => c.raceId !== 'zombie';

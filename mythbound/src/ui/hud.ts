@@ -19,12 +19,13 @@ const shortName = (name: string) => {
 const esc = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]!);
 
 const SPELL_ICON: Record<string, string> = {
-  devil: '😈', fire: '🔥', sky: '⚡', water: '💧', light: '✨', arcane: '🜂', earth: '🪨',
+  devil: '😈', fire: '🔥', sky: '⚡', water: '💧', light: '✨', arcane: '🜂', earth: '🪨', chi: '☯', shadow: '🌑', trick: '🃏',
 };
 
 const WEAPON_ICON: Record<WeaponKind, string> = {
   sword: '⚔', axe: '⚔', bow: '➶', staff: '⚚', dagger: '🗡', hammer: '⚒', trident: 'Ψ', bolt: 'ϟ',
   greatsword: '⚔', longsword: '⚔', spear: '↟', battleaxe: '🪓', knives: '✦', wand: '✧', runecircle: '◎', lyre: '♪', horn: '📯',
+  wraps: '👊', quarterstaff: '⚊',
 };
 
 /** The HUD runs every frame, so writes go through here and only reach the DOM when a value changes. */

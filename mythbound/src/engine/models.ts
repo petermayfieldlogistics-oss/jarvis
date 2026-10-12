@@ -223,7 +223,77 @@ const RUNE_SPOTS: Record<WeaponKind, number[][]> = {
   runecircle: [],
   lyre: [[0, 0.07, 0.042, 0.08, 0]],
   horn: [],
+  wraps: [[0, 0.005, 0.096, 0.045, 0]],
+  quarterstaff: [[0, 0.62, 0.032, 0.08, 0], [0, 0.62, -0.032, 0.08, Math.PI]],
 };
+
+/** Colours of each pair of hand wraps: the cloth, its darker bands, and the knuckle plate (none for plain linen). */
+const WRAP_LOOK: Record<string, { cloth: number; band: number; plate?: number; claws?: boolean }> = {
+  'linen-wraps': { cloth: 0xd8ccae, band: 0xa8987a },
+  'iron-knuckles': { cloth: 0x8a6a4a, band: 0x5a4430, plate: 0x6a6e74 },
+  'tiger-claws': { cloth: 0x2a2624, band: 0x1a1614, plate: 0x8a8e94, claws: true },
+};
+
+/**
+ * One hand's wraps. The right hand holds its fist with the forearm along
+ * local +z (fingers toward +y); the left hand, turned about y, along local -y.
+ */
+export function buildWraps(variant: string, left: boolean, rune?: RuneId): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.kind = 'wraps';
+  const look = WRAP_LOOK[variant] ?? WRAP_LOOK['linen-wraps'];
+  const cloth = mat(look.cloth, { rough: 0.95 });
+  const band = mat(look.band, { rough: 0.95 });
+  // A ring of cloth round the hand at `at` (along the forearm), its ellipse rx by ry.
+  const ring = (at: number, r: number, h: number, m: THREE.Material, sx = 1, sy = 1) => {
+    const p = part(cyl(r, r, h, 10), m, 0, 0, 0, g);
+    p.scale.set(sx, 1, sy);
+    if (left) p.position.y = -at;
+    else {
+      p.rotation.x = Math.PI / 2;
+      p.position.z = at;
+      // Turned, its depth (sy) lies along local y.
+      p.scale.set(sx, 1, sy);
+    }
+    return p;
+  };
+  // Over the knuckles and palm, round the wrist, and a little up the forearm.
+  ring(0.03, 0.05, 0.05, cloth, 0.92, 1.04);
+  ring(0.0, 0.047, 0.03, band, 0.95, 1.0);
+  ring(-0.04, 0.042, 0.05, cloth, 0.95, 0.98);
+  ring(-0.08, 0.044, 0.03, band, 1, 1);
+  ring(-0.11, 0.046, 0.04, cloth, 1, 1);
+  // A loose tail of cloth hanging from the wrist.
+  const tail = part(box(0.022, 0.1, 0.006), cloth, 0, 0, 0, g);
+  if (left) tail.position.set(0.045, 0.06, 0);
+  else tail.position.set(0.045, 0, -0.06), (tail.rotation.x = Math.PI / 2);
+  tail.rotation.z = 0.25;
+  if (look.plate) {
+    // A plate over the knuckles, which lead the fist along the forearm (local +z right, -y left).
+    const metal = mat(look.plate, { rough: 0.4, metal: 0.45 });
+    const plate = part(left ? box(0.085, 0.022, 0.034) : box(0.085, 0.034, 0.022), metal, 0, 0, 0, g);
+    if (left) plate.position.set(0, -0.092, 0.01);
+    else plate.position.set(0, 0.005, 0.082);
+    for (let i = -1; i <= 1; i++) {
+      const stud = part(sphere(0.011, 6, 4), metal, 0, 0, 0, g);
+      if (left) stud.position.set(i * 0.028, -0.104, 0.01);
+      else stud.position.set(i * 0.028, 0.005, 0.094);
+      if (look.claws) {
+        // Three steel claws jutting past the knuckles.
+        const claw = part(cone(0.008, 0.085, 4), mat(0xc4c8cc, { rough: 0.3, metal: 0.5 }), 0, 0, 0, g);
+        if (left) claw.position.set(i * 0.028, -0.14, 0.01), (claw.rotation.x = Math.PI);
+        else claw.position.set(i * 0.028, 0.005, 0.13), (claw.rotation.x = Math.PI / 2);
+      }
+    }
+  }
+  if (rune && !left) {
+    const c = RUNES[rune].color;
+    const m = mat(c, { emissive: c, emissiveIntensity: 2.2 });
+    for (const [x, y, z, sz, turn] of RUNE_SPOTS.wraps) glyph(rune, m, g, x, y, z + 0.0, sz, turn);
+  }
+  compact(g);
+  return g;
+}
 
 export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId): THREE.Group {
   const g = new THREE.Group();
@@ -470,6 +540,24 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       part(box(0.012, 0.3, 0.032), steel, 0, 1.64, 0, g);
       break;
     }
+    case 'quarterstaff': {
+      // A plain fighting staff held at its middle, shod with iron at both ends.
+      const wood = mat(0x7a5634, { rough: 0.8 });
+      part(cyl(0.028, 0.028, 1.9, 8), wood, 0, 0.1, 0, g);
+      part(cyl(0.032, 0.032, 0.28, 8), wrap, 0, 0, 0, g);
+      cord(0.0335, [-0.12, -0.06, 0, 0.06, 0.12]);
+      for (const y of [-0.85, 1.05]) {
+        part(cyl(0.034, 0.034, 0.12, 8), darkSteel, 0, y, 0, g);
+        part(cyl(0.036, 0.036, 0.02, 8), brass, 0, y + (y > 0 ? -0.07 : 0.07), 0, g);
+      }
+      part(sphere(0.034, 8, 5), darkSteel, 0, 1.11, 0, g);
+      part(sphere(0.034, 8, 5), darkSteel, 0, -0.91, 0, g);
+      for (const y of [-0.45, 0.65]) part(cyl(0.031, 0.031, 0.018, 8), brass, 0, y, 0, g);
+      break;
+    }
+    case 'wraps':
+      // Built per hand by buildWraps; this is only reached for a bare preview.
+      return buildWraps('linen-wraps', false, rune);
     case 'battleaxe': {
       // A long haft, iron-shod at the foot, with a wrapped grip.
       part(cyl(0.027, 0.033, 1.36, 8), grip, 0, 0.47, 0, g);

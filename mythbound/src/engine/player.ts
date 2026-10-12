@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RUNES, SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type WeaponKind } from '../data/defs';
+import { RUNES, SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type SubclassId, type WeaponKind } from '../data/defs';
 import {
   airFlaps, ANGELIC, dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, drowns, lightHealMultiplier, manaRegen, maxHp, maxMana,
   maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, swimsTireless, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
@@ -12,7 +12,7 @@ import {
 import {
   KNIFE_VOLLEY, RUNE_EFFECT, RUNE_SEAL, RUNE_TRAP, SONG, SONGS, STORM_CHAIN, WAND, isOffhand, isTwoHanded, meleeReach, songOf, swingArc, type SongId,
 } from '../rules/weapons';
-import { buildShield, buildWeapon, compact, disposeObject, setBowString } from './models';
+import { buildShield, buildWeapon, buildWraps, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
@@ -96,6 +96,8 @@ export const BLADE: Record<WeaponKind, [number, number]> = {
   sword: [0.55, 1.2], axe: [0.6, 1.0], hammer: [0.8, 1.2], dagger: [0.2, 0.5], trident: [1.35, 2.0], staff: [1.1, 1.6], bolt: [0.4, 1.0], bow: [0, 0],
   greatsword: [0.75, 1.8], longsword: [0.6, 1.34], spear: [1.3, 1.82], battleaxe: [0.72, 1.14], knives: [0.08, 0.27], wand: [0.3, 0.45],
   runecircle: [0, 0], lyre: [0, 0], horn: [0, 0],
+  // Fists and feet leave their own trails (see limbTrail); a quarterstaff's upper end does.
+  wraps: [0, 0], quarterstaff: [0.62, 1.12],
 };
 
 export const ELEMENT_COLOR: Record<DamageElement, number> = {
@@ -104,6 +106,7 @@ export const ELEMENT_COLOR: Record<DamageElement, number> = {
 
 const SCHOOL_COLOR: Record<SpellSchool, number> = {
   devil: 0xb8121a, fire: 0xff6a1a, sky: 0xa8ccff, water: 0x2ad8ff, light: 0xffd25a, arcane: 0xa060ff, earth: 0xa8743a,
+  chi: 0x7ff0c8, shadow: 0x8a3cff, trick: 0xb8b0a0,
 };
 
 export const RAGE_RED = 0xff2a12;
@@ -1818,6 +1821,15 @@ function rotateTowards(from: number, to: number, dt: number, rate: number, maxSp
  */
 export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: RuneId): { weapon: THREE.Object3D; shield: THREE.Object3D | null } {
   const w = WEAPONS[weaponId];
+  if (w.kind === 'wraps') {
+    // Wraps on both fists; the left one rides where a shield would (but is not one).
+    const weapon = buildWraps(weaponId, false, rune);
+    const left = buildWraps(weaponId, true);
+    left.userData.offhand = true;
+    rig.handR.add(weapon);
+    rig.handL.add(left);
+    return { weapon, shield: left };
+  }
   const weapon = compact(buildWeapon(w.kind, !!w.legendary, rune));
   if (isOffhand(w.kind)) rig.handL.add(weapon);
   else rig.handR.add(weapon);
@@ -1856,22 +1868,48 @@ const GRAVE_DUST = new THREE.Color(0x5e5a4a);
 /** A colour faded with grave dust. */
 const faded = (hex: number) => new THREE.Color(hex).lerp(GRAVE_DUST, 0.45).getHex();
 
-export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'>): Rig {
+type Look = { armor: number; cloth: number; accent: number; build: 'heavy' | 'light' | 'robe' | 'gi'; head: 'helmet' | 'hood' | 'hat' | 'bare' | 'mask'; cape?: number; headband?: number; circlet?: number };
+
+/** Each class's clothes; the newer classes dress for their subclass. */
+function classLook(classId: ClassId, subclassId: SubclassId | null | undefined): Look {
+  switch (classId) {
+    case 'warrior':
+      return { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy', head: 'helmet', cape: 0x5a1a14 };
+    case 'ranger':
+      return { armor: 0x4a5a3a, cloth: 0x2e3a26, accent: 0x8a7a4a, build: 'light', head: 'hood', cape: 0x2a3a22 };
+    case 'mage':
+      return { armor: 0x3a2e5a, cloth: 0x2a2244, accent: 0xc0a050, build: 'robe', head: 'hat' };
+    case 'monk':
+      // A gi (its trousers take `armor`), a sash and a headband in the sash's colour.
+      return subclassId === 'windwalker'
+        ? { armor: 0x4a5a64, cloth: 0xd6d2c2, accent: 0x2f8a86, build: 'gi', head: 'bare', headband: 0x2f8a86 }
+        : subclassId === 'ironfist'
+          ? { armor: 0x3a2a20, cloth: 0x8a4420, accent: 0x161412, build: 'gi', head: 'bare', headband: 0x161412 }
+          : { armor: 0x4a3424, cloth: 0xc0702a, accent: 0x8a1c18, build: 'gi', head: 'bare', headband: 0x8a1c18 };
+    case 'sorcerer':
+      return subclassId === 'lightmage'
+        ? { armor: 0xd8cfa8, cloth: 0xe6dec8, accent: 0xe0b84a, build: 'robe', head: 'bare', circlet: 0xe0b84a }
+        : { armor: 0x2a1c3a, cloth: 0x1c1426, accent: 0x8a4ad8, build: 'robe', head: 'hood' };
+    case 'rogue':
+      // Dark leathers, a hood and a mask; a duelist shows a little more colour.
+      return subclassId === 'duelist'
+        ? { armor: 0x3a2622, cloth: 0x241a1a, accent: 0xb08a4a, build: 'light', head: 'mask', cape: 0x5a1418 }
+        : { armor: 0x262224, cloth: 0x161418, accent: 0x6a5e50, build: 'light', head: 'mask' };
+  }
+}
+
+export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'> & { subclassId?: SubclassId | null }): Rig {
   const skin = SKIN[c.raceId];
-  const look = {
-    warrior: { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy' as const, head: 'helmet' as const, cape: 0x5a1a14 },
-    ranger: { armor: 0x4a5a3a, cloth: 0x2e3a26, accent: 0x8a7a4a, build: 'light' as const, head: 'hood' as const, cape: 0x2a3a22 },
-    mage: { armor: 0x3a2e5a, cloth: 0x2a2244, accent: 0xc0a050, build: 'robe' as const, head: 'hat' as const, cape: undefined },
-  }[c.classId];
+  const look = classLook(c.classId, c.subclassId);
   if (c.roleId === 'knight') {
     look.armor = 0xc8c0a8;
     look.accent = 0xffe080;
-    look.cape = 0xb8ae94;
+    if (look.build !== 'gi') look.cape = 0xb8ae94;
   }
-  if (c.roleId === 'assassin' || c.roleId === 'darkslayer') {
+  if ((c.roleId === 'assassin' || c.roleId === 'darkslayer') && c.classId !== 'rogue') {
     look.cloth = 0x18161a;
-    look.cape = 0x101012;
-    if (c.classId !== 'warrior') look.armor = 0x24222a;
+    if (look.build !== 'gi') look.cape = 0x101012;
+    if (c.classId !== 'warrior' && look.build !== 'gi') look.armor = 0x24222a;
   }
   if (c.raceId === 'zombie') {
     look.cloth = faded(look.cloth);

@@ -233,6 +233,15 @@ form.acct .link { align-self: center; }
 .card li { margin: 3px 0; line-height: 1.25; }
 .card li::marker { content: '◆  '; color: var(--gold-dim); font-size: 0.6em; }
 .card .lock { margin-top: 8px; color: #60ff90; font-style: italic; }
+.cstats { display: grid; gap: 3px; margin: 2px 0 8px; font-size: 12px; }
+.cstat { display: grid; grid-template-columns: 58px 1fr 34px; align-items: center; gap: 6px; color: var(--ink-dim); }
+.cstat i { height: 6px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(200, 170, 110, 0.25); border-radius: 3px; overflow: hidden; }
+.cstat b { display: block; height: 100%; }
+.cstat em { font-style: normal; text-align: right; color: #f2dca0; }
+.cstat.hp b { background: linear-gradient(90deg, #7a1410, #d2402a); }
+.cstat.mana b { background: linear-gradient(90deg, #13306e, #3a7ae0); }
+.cstat.stam b { background: linear-gradient(90deg, #2a5a14, #6cc040); }
+.cstat.speed b { background: linear-gradient(90deg, #6a5a20, #e0c050); }
 .elements { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .elements .el { border: 1px solid var(--line); padding: 4px 10px; border-radius: 2px; text-transform: capitalize; background: rgba(0, 0, 0, 0.3); }
 .elements .el.on { border-color: var(--gold); background: rgba(216, 180, 104, 0.2); box-shadow: 0 0 10px rgba(216, 180, 104, 0.3); }

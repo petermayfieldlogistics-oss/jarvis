@@ -1,6 +1,7 @@
 import { CLASSES, SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId, type SpellId, type ComboDef, type Element } from '../data/defs';
 import { ANGELIC, hasRelic, ORC, ZOMBIE, rank, type Character } from './character';
-import { WAND, family } from './weapons';
+import { ambushPower, backstabMultiplier, finisherPower, IRON_SKIN, opportunistPower, pathPower, RAW_POWER, rogueBladePower } from './classes';
+import { KIND_NAME, WAND, classWields, family, isMartial } from './weapons';
 
 // -------------------------------------------------------- warrior fury --
 
@@ -74,6 +75,10 @@ export function canWield(c: Character, weaponId: string): WieldCheck {
   if (def?.classes && !def.classes.includes(c.classId)) {
     return { ok: false, reason: `Only a ${def.classes.map((k) => CLASSES[k].name).join(' or ')} can wield the ${def.name}.` };
   }
+  // The newer classes keep to their own weapons (a legendary chooses for itself).
+  if (def && !def.legendary && !classWields(c.classId, def.kind)) {
+    return { ok: false, reason: `A ${CLASSES[c.classId].name} does not fight with ${KIND_NAME[def.kind].endsWith('s') ? '' : 'a '}${KIND_NAME[def.kind]}.` };
+  }
   const legendary = WEAPONS[weaponId]?.legendary as LegendaryId | undefined;
   switch (legendary) {
     case undefined:
@@ -118,6 +123,14 @@ export interface HitContext {
   targetHp?: number;
   /** An orc's War Cry is still ringing. */
   warCry?: boolean;
+  /** The foe's state (Cheap Shot, Coup de Grâce). */
+  targetStunned?: boolean;
+  targetPoisoned?: boolean;
+  targetBleeding?: boolean;
+  /** A rogue's first strike out of Vanish. */
+  ambush?: boolean;
+  /** A combo's last swing. */
+  finisher?: boolean;
 }
 
 export interface HitResult {
@@ -141,7 +154,14 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
     if (fam === 'axe') dmg *= 1 + 0.12 * rank(c, 'heavy-hand');
     if (rank(c, 'blade-master')) dmg *= 1.15;
     if (rank(c, 'berserker')) dmg *= 1.15;
+    if (weapon && isMartial(weapon.kind)) dmg *= 1 + 0.1 * rank(c, 'open-palm');
+    if (rank(c, 'grandmaster') || rank(c, 'virtuoso')) dmg *= 1.15;
+    if (hit.finisher) dmg *= finisherPower(c);
     if (c.raceId === 'orc') dmg *= ORC.melee;
+  }
+  if (hit.kind === 'melee' || hit.kind === 'thrown') {
+    dmg *= rogueBladePower(c, mainWeapon(c)?.id);
+    dmg *= opportunistPower(c, !!hit.targetStunned, !!hit.targetPoisoned, !!hit.targetBleeding);
   }
   if (hit.kind === 'bow') {
     if (c.classId === 'ranger') dmg *= 1.3;
@@ -171,7 +191,18 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
     tags.push('slayer');
   }
   if (hit.targetDark && hit.element === 'light') dmg *= 2;
-  if (hit.undetected && hit.fromBehind && c.roleId === 'assassin' && hit.kind === 'melee') {
+  if (c.classId === 'rogue' && (hit.kind === 'melee' || hit.kind === 'thrown')) {
+    // A rogue's backstab (from behind, or unseen), and an ambush out of Vanish.
+    const m = backstabMultiplier(c, hit.undetected, hit.fromBehind);
+    if (m > 1) {
+      dmg *= m;
+      tags.push('backstab');
+    }
+    if (hit.ambush) {
+      dmg *= ambushPower(c);
+      tags.push('ambush');
+    }
+  } else if (hit.undetected && hit.fromBehind && c.roleId === 'assassin' && hit.kind === 'melee') {
     dmg *= 4;
     tags.push('backstab');
   } else if (hit.undetected && hit.kind === 'melee') {
@@ -192,6 +223,7 @@ export function spellPowerMultiplier(c: Character, element: DamageElement): numb
   if (c.classId === 'ranger' && (element === 'lightning' || element === 'wind') && rank(c, 'storm-caller')) m *= 1.2;
   if (c.raceId === 'angelic' && element === 'light') m *= ANGELIC.lightPower;
   if (c.raceId === 'orc') m *= ORC.spellPower;
+  if (c.classId === 'sorcerer') m *= RAW_POWER * pathPower(c, element) * (rank(c, 'overflow') ? 1.15 : 1);
   return m;
 }
 
@@ -199,6 +231,8 @@ export interface IncomingContext {
   blocking: boolean;
   stoneSkin: boolean;
   invulnerable: boolean;
+  /** A monk's Iron Skin. */
+  ironSkin?: boolean;
 }
 
 /** Damage the hero actually takes. */
@@ -207,7 +241,8 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   // A warrior's shield blocks all damage.
   if (ctx.blocking && c.classId === 'warrior') return 0;
   let dmg = amount;
-  if (ctx.blocking) dmg *= 0.4;
+  // A guard lets 40% through (a monk's Iron Guard turns more aside).
+  if (ctx.blocking) dmg *= Math.max(0.1, 0.4 - 0.15 * rank(c, 'iron-guard'));
   if (element === 'fire' && c.raceId === 'draco') dmg *= 0.5;
   if (element === 'fire' && c.raceId === 'zombie') dmg *= ZOMBIE.fireTaken;
   if (element === 'dark' && c.raceId === 'angelic') dmg *= ANGELIC.darkTaken;
@@ -216,7 +251,9 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   if (c.raceId === 'elf' && c.elfElement === element) dmg *= 0.5;
   if (c.subclassId === 'elemental' && c.wizardElement === element) dmg *= rank(c, 'elemental-ward') ? 0 : 0.5;
   if (ctx.stoneSkin) dmg *= 0.5;
+  if (ctx.ironSkin) dmg *= IRON_SKIN.taken;
   dmg *= (1 - 0.08 * rank(c, 'stalwart')) * (1 - 0.07 * rank(c, 'arcane-ward'));
+  dmg *= (1 - 0.07 * rank(c, 'diamond-soul')) * (1 - 0.08 * (rank(c, 'mountain-stance') + rank(c, 'dancer'))) * (1 - 0.06 * (rank(c, 'shadow-shroud') + rank(c, 'sanctified')));
   return Math.round(dmg);
 }
 
@@ -230,7 +267,9 @@ export function bleedChance(c: Character): number {
   if (!weapon) return 0;
   const fam = family(weapon.kind);
   if (fam === 'axe') return 0.25 + 0.15 * rank(c, 'rend') + 0.25 * rank(c, 'berserker');
-  if (fam === 'sword' || fam === 'dagger' || fam === 'spear') return 0.12;
+  if (fam === 'sword' || fam === 'dagger' || fam === 'spear') return 0.12 + 0.1 * rank(c, 'bleeding-edge');
+  // Tiger claws rake.
+  if (weapon.id === 'tiger-claws') return 0.2;
   return 0;
 }
 
@@ -256,8 +295,11 @@ export function spellCost(c: Character, spell: SpellId): number {
   if (c.subclassId === 'elemental' && c.wizardElement === def.element) cost *= rank(c, 'elemental-avatar') ? 0.75 * 0.85 : 0.75;
   cost *= 1 - 0.08 * rank(c, 'spell-thrift');
   if (def.school === 'sky') cost *= 1 - 0.15 * rank(c, 'thunderhead');
+  if (def.school === 'shadow' && rank(c, 'lord-of-shadows')) cost *= 0.8;
+  if (def.school === 'light' && rank(c, 'saint')) cost *= 0.8;
+  if (def.channel) cost *= 1 - 0.15 * rank(c, 'channeler');
   if (legendaryEquipped(c, 'staff-of-hecate')) cost *= 0.7;
-  return Math.round(cost);
+  return def.channel ? Math.max(1, Math.round(cost * 10) / 10) : Math.round(cost);
 }
 
 export const isLightSealed = (c: Character, gameMinutes: number) => gameMinutes < c.lightSealedUntil;

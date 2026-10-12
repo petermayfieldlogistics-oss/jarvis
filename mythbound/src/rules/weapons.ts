@@ -2,11 +2,31 @@
 // hit, throwing-knife stacks, runes inscribed at an anvil, the bard's songs
 // and what the town's shops sell.
 
-import { RUNES, WEAPONS, runeItem, type DamageElement, type RuneId, type ShopId, type WeaponDef, type WeaponKind } from '../data/defs';
+import { RUNES, WEAPONS, runeItem, type ClassId, type DamageElement, type RuneId, type ShopId, type WeaponDef, type WeaponKind } from '../data/defs';
 import type { Affinity } from '../data/world';
 import type { Character } from './character';
 
 // ------------------------------------------------------------- handling --
+
+/**
+ * The weapon kinds each newer class fights with (instruments suit anyone).
+ * The older classes take up anything; legendaries keep their own rules.
+ */
+export const CLASS_KINDS: Partial<Record<ClassId, readonly WeaponKind[]>> = {
+  monk: ['wraps', 'quarterstaff', 'staff', 'spear', 'lyre', 'horn'],
+  sorcerer: ['wand', 'runecircle', 'staff', 'dagger', 'lyre', 'horn'],
+  rogue: ['dagger', 'knives', 'sword', 'bow', 'lyre', 'horn'],
+};
+
+/** Whether a class fights with this kind of weapon at all. */
+export const classWields = (classId: ClassId, kind: WeaponKind) => CLASS_KINDS[classId]?.includes(kind) ?? kind !== 'wraps';
+
+/** What a weapon kind is called in a sentence. */
+export const KIND_NAME: Record<WeaponKind, string> = {
+  sword: 'sword', axe: 'axe', bow: 'bow', staff: 'staff', dagger: 'dagger', hammer: 'hammer', trident: 'trident', bolt: 'thunderbolt',
+  greatsword: 'greatsword', longsword: 'longsword', spear: 'spear', battleaxe: 'battle axe', knives: 'throwing knives', wand: 'wand',
+  runecircle: 'rune circle', lyre: 'lyre', horn: 'war horn', wraps: 'hand wraps', quarterstaff: 'quarterstaff',
+};
 
 /** Held in the left hand; the right stays free. */
 export const isOffhand = (k: WeaponKind) => k === 'bow' || k === 'lyre' || k === 'runecircle';
@@ -17,7 +37,10 @@ export const isInstrument = (k: WeaponKind) => k === 'lyre' || k === 'horn';
 
 /** The older kind whose talents (Keen Edge, Heavy Hand, Rend) and bleeding a weapon shares. */
 export const family = (k: WeaponKind): WeaponKind =>
-  k === 'longsword' || k === 'greatsword' ? 'sword' : k === 'battleaxe' ? 'axe' : k === 'knives' ? 'dagger' : k;
+  k === 'longsword' || k === 'greatsword' ? 'sword' : k === 'battleaxe' ? 'axe' : k === 'knives' ? 'dagger' : k === 'quarterstaff' ? 'staff' : k;
+
+/** A monk's own weapons: their talents (Open Palm) and chi on hit. */
+export const isMartial = (k: WeaponKind) => k === 'wraps' || k === 'quarterstaff';
 
 /** Weapons whose `range` is a throw or a spell keep this reach up close (stabbing with a knife, a wand's bonk). */
 const CLOSE_REACH: Partial<Record<WeaponKind, number>> = { knives: 1.9, wand: 1.6, runecircle: 1.6, lyre: 1.8, horn: 1.8 };
@@ -32,6 +55,9 @@ export const meleeReach = (def: WeaponDef) => CLOSE_REACH[def.kind] ?? def.range
  */
 export function swingArc(kind: WeaponKind, move: 'light' | 'heavy' | 'spin', cleave: boolean): number {
   if (move === 'spin') return -1.01;
+  // A palm strike drives straight ahead; a quarterstaff sweeps wide.
+  if (kind === 'wraps') return move === 'heavy' ? 0.45 : 0.3;
+  if (kind === 'quarterstaff') return move === 'heavy' ? -1.01 : -0.1;
   if (kind === 'spear') return move === 'heavy' ? -0.6 : 0.55;
   if (kind === 'greatsword' || kind === 'battleaxe') return cleave ? -0.45 : -0.25;
   return cleave ? -0.2 : 0.25;
