@@ -52,5 +52,9 @@ describe('horses', () => {
     // A trot rests it.
     expect(rideStep(50, false, true, 1).stamina).toBe(50 + HORSE.regen);
     expect(rideStep(HORSE.stamina, false, false, 1).stamina).toBe(HORSE.stamina);
+    // Each frame's step can reuse one result object.
+    const out = { stamina: 0, galloping: false };
+    expect(rideStep(50, true, true, 0.5, out)).toBe(out);
+    expect(out).toEqual({ stamina: 50 - HORSE.gallopDrain * 0.5, galloping: true });
   });
 });

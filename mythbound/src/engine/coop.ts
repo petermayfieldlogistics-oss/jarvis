@@ -109,8 +109,9 @@ interface HeroSample {
   chargeLevel: number;
   fury: number;
   flags: number;
-  /** On horseback: the horse's coat (-1 on foot). */
+  /** Their horse's coat while it is out (-1: none), and where it stands when nobody rides it. */
   horse: number;
+  horseAt: number[] | null;
 }
 
 interface Pet {
@@ -269,6 +270,7 @@ export class RemoteHero implements Hero {
       fury: num(a[4]),
       flags: num(a[6]),
       horse: Math.min(COATS.length - 1, Math.round(num(m.hc, -1))),
+      horseAt: Array.isArray(m.ha) ? arr(m.ha).slice(0, 5).map((x) => num(x)) : null,
     };
     if (!this.latest) this.pos.set(s.x, s.y, s.z);
     this.latest = s;
@@ -408,10 +410,10 @@ export class RemoteHero implements Hero {
       this.boat.rotation.y = yaw;
       root.position.y = WATER_LEVEL + 0.35;
     } else if (this.boat) this.boat.visible = false;
-    // On horseback: their horse under them, at their pace; they sit the saddle.
+    // Their horse: under them as they ride (they sit the saddle), or standing (or running) where it is.
     const riding = (f & 1024) !== 0 && A.horse >= 0;
     a.riding = riding ? Math.min(1, speed / HORSE.gallop) : -1;
-    if (riding) {
+    if (A.horse >= 0 && (riding || A.horseAt)) {
       if (!this.horse || this.horseCoat !== A.horse) {
         this.dropHorse();
         this.horse = buildHorse(A.horse);
@@ -419,15 +421,22 @@ export class RemoteHero implements Hero {
         this.scene.add(this.horse.root);
       }
       const h = this.horse;
-      h.root.position.copy(view);
-      h.root.rotation.y = yaw;
-      h.root.visible = root.visible;
-      animateHorse(h, dt, speed, a.t);
-      a.speed = a.moving = a.moveX = a.moveZ = 0;
-      a.airborne = a.crouching = false;
-      a.phase = h.phase;
-      root.position.y = view.y + SEAT + h.bob - RIDER_HIP;
-    } else if (this.horse) this.dropHorse();
+      h.root.visible = riding ? root.visible : true;
+      if (riding) {
+        h.root.position.copy(view);
+        h.root.rotation.y = yaw;
+        animateHorse(h, dt, speed, a.t);
+        a.speed = a.moving = a.moveX = a.moveZ = 0;
+        a.airborne = a.crouching = false;
+        a.phase = h.phase;
+        root.position.y = view.y + SEAT + h.bob - RIDER_HIP;
+      } else {
+        const P = A.horseAt!, Q = B.horseAt ?? P;
+        h.root.position.set(P[0] + (Q[0] - P[0]) * k, P[1] + (Q[1] - P[1]) * k, P[2] + (Q[2] - P[2]) * k);
+        h.root.rotation.y = P[3] + wrap(Q[3] - P[3]) * k;
+        animateHorse(h, dt, P[4] + (Q[4] - P[4]) * k, a.t);
+      }
+    } else if (this.horse) this.horse.root.visible = false;
     animateHumanoid(rig, a);
     const weapon = this.weapon;
     if (weapon && WEAPONS[this.weaponId]?.kind === 'bow') poseBowString(rig, weapon, a, true);
@@ -765,7 +774,8 @@ export class Coop {
       w: mainWeapon(p.c).id,
       wr: mainWeapon(p.c).rune ?? '',
       it: g.inTrial ? 1 : 0,
-      hc: p.riding ? p.c.steed.coat : -1,
+      hc: p.horse ? p.c.steed.coat : -1,
+      ha: p.horse && !p.riding ? [r2(p.horse.pos.x), r2(p.horse.pos.y), r2(p.horse.pos.z), r2(p.horse.yaw), r2(p.horse.speed)] : undefined,
       pt: pets,
     });
   }

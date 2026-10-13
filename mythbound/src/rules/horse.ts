@@ -92,11 +92,19 @@ export function rideBlock(s: {
  * has the wind for it) and its stamina after. A spent horse trots until it
  * has rested a little.
  */
-export function rideStep(stamina: number, wantGallop: boolean, wasGalloping: boolean, dt: number): { stamina: number; galloping: boolean } {
+export function rideStep(
+  stamina: number,
+  wantGallop: boolean,
+  wasGalloping: boolean,
+  dt: number,
+  out: { stamina: number; galloping: boolean } = { stamina: 0, galloping: false },
+): { stamina: number; galloping: boolean } {
   const can = stamina > 0 && (wasGalloping || stamina >= HORSE.rested);
   const galloping = wantGallop && can;
   const next = galloping ? stamina - HORSE.gallopDrain * dt : stamina + HORSE.regen * dt;
-  return { stamina: Math.max(0, Math.min(HORSE.stamina, next)), galloping: galloping && next > 0 };
+  out.stamina = Math.max(0, Math.min(HORSE.stamina, next));
+  out.galloping = galloping && next > 0;
+  return out;
 }
 
 /** How fast the horse goes. */

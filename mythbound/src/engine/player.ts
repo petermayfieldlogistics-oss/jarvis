@@ -502,14 +502,14 @@ export class Player {
     if (input.wheel) this.selectSlot((this.selected + (input.wheel > 0 ? 1 : 3)) % 4, g, true);
     if (input.pressed.has('combine')) this.toggleCombine(g);
 
-    if (input.pressed.has('crouch') && !this.flying && !this.swimming) this.crouching = !this.crouching;
+    if (input.pressed.has('crouch') && !this.flying && !this.swimming && !this.riding) this.crouching = !this.crouching;
     if (input.pressed.has('swap') && canAct) this.swapWeapon(g);
     if (input.pressed.has('heal') && canAct) this.drinkFlask(g);
     if (input.pressed.has('eat') && canAct) this.eat(g);
     if (input.pressed.has('ability') && canAct) this.useAbility(g);
     // The horse: call it, climb on, get down. Reaching for a weapon hops down first.
     if (input.pressed.has('horse')) this.horseButton(g);
-    else if (this.riding && !busy && ['attack', 'heavy', 'block', 'cast', 'ability', 'roll'].some((x) => input.pressed.has(x as Action))) this.dismount(g);
+    else if (this.riding && !busy && isDismountPress(input)) this.dismount(g);
     if (this.horse) this.updateHorse(dt, g);
 
     // Movement intent relative to the camera.
@@ -537,7 +537,7 @@ export class Player {
     if (busy) speed = 0;
     // On horseback: a trot, or a gallop (sprint) on the horse's wind.
     if (this.riding) {
-      const step = rideStep(this.steedStamina, input.held.has('sprint') && wantLen > 0.1, this.galloping, dt);
+      const step = rideStep(this.steedStamina, input.held.has('sprint') && wantLen > 0.1, this.galloping, dt, RIDE_STEP);
       if (this.galloping && !step.galloping && step.stamina <= 0) g.hud.toast(`${this.c.steed.name} is winded.`);
       this.steedStamina = step.stamina;
       this.galloping = step.galloping;
@@ -694,7 +694,7 @@ export class Player {
       }
       this.vel.y -= 24 * dt;
       // Wings of Light: holding Jump on the way down glides (and lands softly).
-      this.gliding = c.raceId === 'angelic' && !this.grounded && this.vel.y < 0 && input.held.has('jump') && !this.attack;
+      this.gliding = c.raceId === 'angelic' && !this.grounded && this.vel.y < 0 && input.held.has('jump') && !this.attack && !this.riding;
       if (this.gliding) this.vel.y = Math.max(this.vel.y, -ANGELIC.glideFall);
       this.pos.y += this.vel.y * dt;
     }
@@ -2800,6 +2800,7 @@ export class Player {
   // ----------------------------------------------------------------- boats --
 
   board(g: Game, boat: THREE.Object3D) {
+    if (this.riding) this.dismount(g);
     this.sailing = true;
     this.boat = boat;
     this.crouching = false;
@@ -2834,9 +2835,10 @@ export class Player {
     if (h && h.state !== 'fleeing' && h.pos.distanceTo(this.pos) < HORSE.mountRange) return this.mount(g);
     const why = this.rideBlock(g);
     if (why) return g.hud.toast(why, 'warn');
-    if (h && h.state !== 'fleeing') {
-      // Already out: it comes at a run.
+    if (h) {
+      // Already out (even bolting): it turns and comes at a run.
       h.state = 'coming';
+      h.t = 0;
       g.audio.play('horn');
       return;
     }
@@ -2847,7 +2849,7 @@ export class Player {
   private rideBlock(g: Game): string | null {
     return rideBlock({
       alive: this.alive,
-      inTrial: !!g.activeTrial,
+      inTrial: g.inTrial,
       threatened: this.threatened(g),
       sinceHurt: this.now - this.hurtAt,
       swimming: this.swimming,
@@ -2857,16 +2859,20 @@ export class Player {
     });
   }
 
-  /** A monster close by is hunting this hero: a fight. */
+  /**
+   * A fight: a monster close by is up and hunting. (Any aware one counts: a
+   * co-op guest's copies of the host's monsters don't know whom they hunt.)
+   */
   private threatened(g: Game): boolean {
     for (const e of g.enemies) {
-      if (e.alive && e.aware && e.target === this && e.pos.distanceTo(this.pos) < HORSE.threatRange) return true;
+      if (e.alive && e.aware && e.pos.distanceTo(this.pos) < HORSE.threatRange) return true;
     }
     return false;
   }
 
   /** A whistle: the horse comes galloping from a little way off (on land). */
   private callHorse(g: Game) {
+    if (this.horse) this.sendHorseHome();
     const back = g.camYaw + Math.PI;
     const at = new THREE.Vector3();
     let found = false;
@@ -2959,7 +2965,7 @@ export class Player {
     h.t += dt;
     if (this.riding) {
       if (!this.alive) this.dismount(g);
-      else if (g.activeTrial) {
+      else if (g.inTrial) {
         this.dismount(g);
         g.hud.toast(`${this.c.steed.name} won't go into the fog.`);
       }
@@ -3155,6 +3161,15 @@ export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: 
   weapon.traverse((o) => (o.castShadow = true));
   return { weapon, shield };
 }
+
+/** Reaching for a weapon (or a dodge) on horseback hops the hero down first. */
+const DISMOUNT_ACTIONS: readonly Action[] = ['attack', 'heavy', 'block', 'cast', 'ability', 'roll'];
+const isDismountPress = (input: { pressed: Set<Action> }) => {
+  for (const x of DISMOUNT_ACTIONS) if (input.pressed.has(x)) return true;
+  return false;
+};
+/** Reused for each frame's riding step. */
+const RIDE_STEP = { stamina: 0, galloping: false };
 
 /** How high a seated rider's hips sit above their feet's rest height (the seat lifts them onto the saddle). */
 export const RIDER_HIP = 0.95;

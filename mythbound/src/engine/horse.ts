@@ -109,7 +109,7 @@ export function buildHorse(coatIndex: number): HorseRig {
     shins.push(shin);
   }
   // Merge the parts that never move apart (fewer draw calls on phones).
-  for (const g of [head, tail, ...shins]) compact(g);
+  compact(root);
   root.traverse((o) => (o.castShadow = true));
   return { root, body, neck, head, tail, legs, shins, phase: 0, gallop: 0, move: 0, bob: 0 };
 }
