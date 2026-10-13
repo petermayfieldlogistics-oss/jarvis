@@ -152,8 +152,10 @@ export class Story {
       parts.push('+1 flask');
     }
     if (q.reward.item) {
-      c.items[q.reward.item] = (c.items[q.reward.item] ?? 0) + 1;
-      parts.push(ITEMS[q.reward.item].name);
+      // Seeds come as a pack.
+      const n = q.reward.item.startsWith('seed-') ? SEED_PACK : 1;
+      c.items[q.reward.item] = (c.items[q.reward.item] ?? 0) + n;
+      parts.push(n > 1 ? `${n} ${ITEMS[q.reward.item].name.toLowerCase()}` : ITEMS[q.reward.item].name);
     }
     if (q.reward.xp) {
       this.g.gainXp(q.reward.xp);
@@ -525,13 +527,18 @@ export class Story {
     const done = () => g.farm.refresh(g);
     if (i >= farm.owned) {
       const price = rentPrice(c, farm);
+      // Wren rents the beds out in order, the rows nearest the gate first.
+      if (i > farm.owned || price === null) {
+        return this.open({
+          title: 'Overgrown bed',
+          text: 'Weeds. Wren rents the beds out in order: the next one is nearer the gate.',
+          options: [{ label: 'Leave it' }],
+        });
+      }
       return this.open({
         title: 'Overgrown bed',
-        text: price === null ? 'Weeds.' : `Wren rents this bed out for ${price} embers. You have ${c.gold}.`,
-        options: [
-          price !== null && i === farm.owned ? { label: `Rent it (${price})`, disabled: c.gold < price, action: () => this.rentBed() } : null,
-          { label: 'Leave it' },
-        ].filter(Boolean) as DialogOption[],
+        text: `Wren rents this bed out for ${price} embers. You have ${c.gold}.`,
+        options: [{ label: `Rent it (${price})`, disabled: c.gold < price, action: () => this.rentBed() }, { label: 'Leave it' }],
       });
     }
     if (!p) {

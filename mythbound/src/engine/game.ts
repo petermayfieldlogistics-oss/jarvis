@@ -19,7 +19,7 @@ import type { Hero } from './hero';
 import { SharedFx } from './sharedfx';
 import { Fx } from './fx';
 import { Input } from './input';
-import { buildThrowingKnife, buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
+import { buildHoe, buildThrowingKnife, buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
 import { Armory } from './armory';
 import { FarmView } from './farm';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
@@ -279,7 +279,7 @@ export class Game {
       if (n.id === 'brann') rig.handR.add(buildWeapon('hammer'));
       if (n.id === 'mara') rig.handR.add(buildWeapon('trident'));
       // Wren leans on a hoe.
-      if (n.id === 'wren') rig.handR.add(buildWeapon('staff'));
+      if (n.id === 'wren') rig.handR.add(buildHoe());
       compact(rig.root);
       const pos = new THREE.Vector3(n.x, heightAt(n.x, n.z), n.z);
       rig.root.position.copy(pos);
@@ -1467,10 +1467,11 @@ export class Game {
     for (const n of this.npcs) {
       n.anim.t += dt;
       const d = n.pos.distanceTo(p);
-      // Townsfolk far off are neither drawn nor moved (cheap on phones).
-      const near = d < 90;
+      // Townsfolk far off (deep in the fog) are neither drawn nor moved, and
+      // those a little nearer are drawn but not animated (cheap on phones).
+      const near = d < 150;
       if (n.rig.root.visible !== near) n.rig.root.visible = near;
-      if (!near) continue;
+      if (d > 90) continue;
       const want = d < 8 ? Math.atan2(p.x - n.pos.x, p.z - n.pos.z) : n.facing;
       let diff = want - n.rig.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));

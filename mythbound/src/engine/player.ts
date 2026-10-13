@@ -2274,24 +2274,28 @@ export class Player {
     if (foodCount(items) <= 0) return g.hud.toast('You have nothing to eat.');
     const id = pickFood(items, (this.hp + this.healing) / this.maxHp, this.soulOrPower ? 1 : this.mana / this.maxMana);
     if (!id) return g.hud.toast("You're not hungry.");
-    this.eatItem(g, id, false);
+    this.eatItem(g, id);
   }
 
   /**
-   * Eats one of something; a bite every second at most. In the thick of it
-   * (X) a bite heals over a moment, like a flask; from the menu, at once.
+   * Eats one of something (X, or the Gear menu): a bite a second at most,
+   * not mid-roll, staggered or in the saddle, and it heals over a moment like
+   * a flask (so pausing the game to eat is no quicker than eating in play).
    */
-  eatItem(g: Game, id: string, instant = true) {
+  eatItem(g: Game, id: string) {
     if (!this.alive) return;
-    if (this.now - this.lastBite < EAT_GAP) return;
+    if (this.blackout > 0 || this.stagger > 0 || this.rollT >= 0) return g.hud.toast('Not now!');
+    if (this.riding || this.sailing) return g.hud.toast('Get down first.');
+    // The game's clock runs on while the menu is open (the hero's own pauses with it).
+    if (g.clock - this.lastBite < EAT_GAP) return g.hud.toast('Still chewing…');
     const got = eatItem(this.c.items, id);
     if (!got) return g.hud.toast('You have none.');
-    this.lastBite = this.now;
-    if (instant) this.heal(got.heal);
-    else this.healing += got.heal;
-    if (!this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + got.mana);
+    this.lastBite = g.clock;
+    this.healing += got.heal;
+    const mana = this.soulOrPower ? 0 : Math.min(this.maxMana - this.mana, got.mana);
+    this.mana += mana;
     const name = ITEMS[id].name.toLowerCase();
-    g.hud.toast(`You eat ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}.${got.heal ? ` (+${got.heal} HP)` : ''}${got.mana ? ` (+${got.mana} mana)` : ''}`);
+    g.hud.toast(`You eat ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}.${got.heal ? ` (+${got.heal} HP)` : ''}${mana >= 1 ? ` (+${Math.round(mana)} mana)` : ''}`);
     g.audio.play('drink');
   }
 

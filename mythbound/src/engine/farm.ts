@@ -85,6 +85,7 @@ export class FarmView {
     const rent = rentPrice(g.player.c, farm);
     let dirty = false;
     let ripeBeds = 0;
+    let ripened = '';
     for (let i = 0; i < FARM.plots; i++) {
       const plot = farm.plots[i];
       const owned = i < farm.owned;
@@ -99,11 +100,13 @@ export class FarmView {
       this.drawBed(i, farm, owned, stage, wet);
       // Ripe since last look: say so (not for crops found ripe on loading).
       const ripe = stage === 4 ? 1 : 0;
-      if (ripe && !this.ripe[i] && this.primed && plot) g.hud.toast(`Your ${CROPS[plot.crop].plural} are ripe in Wren's field.`, 'quest');
+      if (ripe && !this.ripe[i] && this.primed && plot && !ripened.includes(CROPS[plot.crop].plural)) ripened += (ripened ? ' and ' : '') + CROPS[plot.crop].plural;
       this.ripe[i] = ripe;
     }
     this.primed = true;
     this.ripeBeds = ripeBeds;
+    // One word for everything that ripened together.
+    if (ripened) g.hud.toast(`Your ${ripened} ${ripened.includes(' and ') || !ripened.endsWith('wheat') ? 'are' : 'is'} ripe in Wren's field.`, 'quest');
     if (dirty) {
       for (const m of [this.soil, this.leaves, this.produce, this.stalks]) {
         m.instanceMatrix.needsUpdate = true;
