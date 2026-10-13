@@ -1527,17 +1527,18 @@ export class World {
           const a = (i / 8) * Math.PI * 2;
           b.paint(ICO, i % 2 ? 0x6a645a : 0x5a554c, x + Math.cos(a) * 0.75, y + 0.12, z + Math.sin(a) * 0.75, a, 0.22, 0.16, 0.2);
         }
-        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, Math.PI / 2, 0.15);
+        // Three logs crossed like a star (laid flat by rz, aimed by ry).
+        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14 + i * 0.05, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, 0, Math.PI / 2);
         // A tripod and its pot.
         for (let i = 0; i < 3; i++) {
           const a = (i / 3) * Math.PI * 2 + 0.3;
-          b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, Math.cos(a) * 0.35, true);
+          b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, 0.35, true);
         }
         b.paint(CYL, 0x2a2a2c, x, y + 0.85, z, 0, 0.5, 0.35, 0.5, 0, 0, true);
         const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 6), mat(0xffa040, { emissive: 0xff6a10, emissiveIntensity: 2.2 }));
         flame.position.set(x, y + 0.42, z);
         this.root.add(flame);
-        this.animated.push({ obj: flame, kind: 'flicker', base: 2.2 });
+        this.animated.push({ obj: flame, kind: 'flicker', base: 1 });
         const glow = glowSprite(0xff8a30, 1.6);
         glow.position.set(x, y + 0.6, z);
         this.root.add(glow);
@@ -1553,7 +1554,8 @@ export class World {
         }
         b.paint(BOX, 0x3a3a3e, x + 0.7, y + 1.02, z - 0.25, 0.4, 0.22, 0.18, 0.16, 0, 0, true);
         b.paint(BOX, 0x9a9aa0, x - 0.4, y + 0.95, z + 0.1, 0.9, 0.7, 0.02, 0.18, 0, 0, true);
-        for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.05, y + 0.97, z - 0.1, 0.4, 0.02, 0.8, 0.02, Math.PI / 2);
+        // A bundle of arrows lying along the table.
+        for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.019, y + 0.95, z - 0.1 + i * 0.046, 0.4, 0.02, 0.8, 0.02, 0, Math.PI / 2);
         this.crate(x + 1.6, z + 0.9, 0.2, 0.7);
         this.barrel(x - 1.6, z + 0.6);
         this.addCollider(x, z, 1.2);

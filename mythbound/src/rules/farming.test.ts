@@ -195,6 +195,12 @@ describe('saves', () => {
     delete (old.world as Partial<typeof old.world>).farm;
     const fixed = normalizeSave(old);
     expect(fixed.world.farm).toEqual(newFarm());
+    // A watering can's longer wetness survives a reload.
+    const can = newFarm();
+    can.clock = 100;
+    plant({ items: { [seedItem('carrot')]: 1 } }, can, 0, 'carrot');
+    waterAll(can, FARM.canLasts);
+    expect(normalizeFarm(JSON.parse(JSON.stringify(can))).plots[0]!.wetUntil).toBe(100 + FARM.canLasts);
     expect(normalizeFarm(undefined)).toEqual(newFarm());
     expect(normalizeFarm('junk')).toEqual(newFarm());
     const bad = normalizeFarm({

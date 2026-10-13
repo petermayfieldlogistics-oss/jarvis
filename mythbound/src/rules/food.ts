@@ -24,26 +24,24 @@ export function foodCount(items: Record<string, number>): number {
  * is down. Null when there is nothing worth eating.
  */
 export function pickFood(items: Record<string, number>, hpFrac: number, manaFrac: number): string | null {
-  let best: string | null = null;
-  if (hpFrac < 1) {
-    const big = hpFrac < 0.4;
-    let bestHeal = big ? -1 : Infinity;
+  const heal = hpFrac < 1 ? pickFor(items, 'heal', hpFrac < 0.4) : null;
+  return heal ?? (manaFrac < 1 ? pickFor(items, 'mana', false) : null);
+}
+
+/** The food for one need: foods mostly for that need first, a mixed meal mostly for the other only when there is nothing else. */
+function pickFor(items: Record<string, number>, stat: 'heal' | 'mana', biggest: boolean): string | null {
+  const other = stat === 'heal' ? 'mana' : 'heal';
+  for (const strict of [true, false]) {
+    let best: string | null = null;
+    let bestV = biggest ? -1 : Infinity;
     for (const id of FOOD_IDS) {
-      const heal = ITEMS[id].heal ?? 0;
-      if (heal <= 0 || (items[id] ?? 0) <= 0) continue;
-      if (big ? heal > bestHeal : heal < bestHeal) (bestHeal = heal), (best = id);
+      const v = ITEMS[id][stat] ?? 0;
+      if (v <= 0 || (items[id] ?? 0) <= 0 || (strict && (ITEMS[id][other] ?? 0) > v)) continue;
+      if (biggest ? v > bestV : v < bestV) (bestV = v), (best = id);
     }
     if (best) return best;
   }
-  if (manaFrac < 1) {
-    let bestMana = Infinity;
-    for (const id of FOOD_IDS) {
-      const mana = ITEMS[id].mana ?? 0;
-      if (mana <= 0 || (items[id] ?? 0) <= 0) continue;
-      if (mana < bestMana) (bestMana = mana), (best = id);
-    }
-  }
-  return best;
+  return null;
 }
 
 /** Eats one: takes it from the pack and says what it restores (null when there is none). */
