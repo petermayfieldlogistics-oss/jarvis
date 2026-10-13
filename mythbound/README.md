@@ -156,7 +156,7 @@ is what was chosen; each is easy to change:
     Horseshoes (your horse gallops a third longer). A Blacksmith pays half the embers.
   - **Materials** drop from monsters (each hero rolls their own in co-op): hide (wolves, boars), silk (spiderlings; three
     from Broodmother), chitin (scorpions), kelp (the drowned, or a missed catch), bone (skeletons), wisps (wraiths),
-    cinder hearts (imps, magma hounds). Quill buys them. The Gear tab groups the pack (food, tools, materials) and has a
+    cinder hearts (imps, magma hounds). Quill buys them (not kelp). The Gear tab groups the pack (food, tools, materials) and has a
     recipe book.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
