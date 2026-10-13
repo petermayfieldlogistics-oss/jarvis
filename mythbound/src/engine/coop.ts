@@ -17,7 +17,9 @@ import { animateHumanoid, type Rig } from './humanoid';
 import type { Hero } from './hero';
 import { buildBoat, disposeObject } from './models';
 import { DEFAULT_SERVER, Net, type ServerMsg } from './net';
-import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, limbTrail, poseBowString, RAGE_RED, TIMING } from './player';
+import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, limbTrail, poseBowString, RAGE_RED, RIDER_HIP, TIMING } from './player';
+import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
+import { COATS, HORSE } from '../rules/horse';
 import { WATER_LEVEL } from './terrain';
 import type { Game, ProjectileKind, ProjectileSpec } from './game';
 
@@ -107,6 +109,8 @@ interface HeroSample {
   chargeLevel: number;
   fury: number;
   flags: number;
+  /** On horseback: the horse's coat (-1 on foot). */
+  horse: number;
 }
 
 interface Pet {
@@ -140,6 +144,9 @@ export class RemoteHero implements Hero {
   weaponId = '';
   weaponRune: RuneId | undefined;
   rig: Rig | null = null;
+  /** Their horse while they ride (and its coat). */
+  private horse: HorseRig | null = null;
+  private horseCoat = -1;
   anim = newAnim();
   private weapon: THREE.Object3D | null = null;
   private tag: THREE.Sprite | null = null;
@@ -261,6 +268,7 @@ export class RemoteHero implements Hero {
       chargeLevel: Math.max(0, Math.min(1, num(a[10]))),
       fury: num(a[4]),
       flags: num(a[6]),
+      horse: Math.min(COATS.length - 1, Math.round(num(m.hc, -1))),
     };
     if (!this.latest) this.pos.set(s.x, s.y, s.z);
     this.latest = s;
@@ -400,6 +408,26 @@ export class RemoteHero implements Hero {
       this.boat.rotation.y = yaw;
       root.position.y = WATER_LEVEL + 0.35;
     } else if (this.boat) this.boat.visible = false;
+    // On horseback: their horse under them, at their pace; they sit the saddle.
+    const riding = (f & 1024) !== 0 && A.horse >= 0;
+    a.riding = riding ? Math.min(1, speed / HORSE.gallop) : -1;
+    if (riding) {
+      if (!this.horse || this.horseCoat !== A.horse) {
+        this.dropHorse();
+        this.horse = buildHorse(A.horse);
+        this.horseCoat = A.horse;
+        this.scene.add(this.horse.root);
+      }
+      const h = this.horse;
+      h.root.position.copy(view);
+      h.root.rotation.y = yaw;
+      h.root.visible = root.visible;
+      animateHorse(h, dt, speed, a.t);
+      a.speed = a.moving = a.moveX = a.moveZ = 0;
+      a.airborne = a.crouching = false;
+      a.phase = h.phase;
+      root.position.y = view.y + SEAT + h.bob - RIDER_HIP;
+    } else if (this.horse) this.dropHorse();
     animateHumanoid(rig, a);
     const weapon = this.weapon;
     if (weapon && WEAPONS[this.weaponId]?.kind === 'bow') poseBowString(rig, weapon, a, true);
@@ -460,8 +488,17 @@ export class RemoteHero implements Hero {
     this.tag = null;
   }
 
+  private dropHorse() {
+    if (!this.horse) return;
+    this.scene.remove(this.horse.root);
+    disposeObject(this.horse.root);
+    this.horse = null;
+    this.horseCoat = -1;
+  }
+
   dispose() {
     this.disposeModel();
+    this.dropHorse();
     if (this.boat) {
       this.scene.remove(this.boat);
       disposeObject(this.boat);
@@ -708,7 +745,7 @@ export class Coop {
     const a = p.anim;
     const w = p.rig.wings?.userData;
     const flags = (a.blocking ? 1 : 0) | (p.crouching ? 2 : 0) | (a.swimming ? 4 : 0) | (a.flying ? 8 : 0) | (a.airborne ? 16 : 0) | (p.sailing ? 32 : 0) | (p.unseen ? 64 : 0) |
-      (w?.enabled ? 128 : 0) | (w?.spread ? 256 : 0) | (w?.soar ? 512 : 0);
+      (w?.enabled ? 128 : 0) | (w?.spread ? 256 : 0) | (w?.soar ? 512 : 0) | (p.riding ? 1024 : 0);
     const pets: number[][] = [];
     for (const al of g.allies) {
       if (pets.length >= 6 || !al.alive) continue;
@@ -728,6 +765,7 @@ export class Coop {
       w: mainWeapon(p.c).id,
       wr: mainWeapon(p.c).rune ?? '',
       it: g.inTrial ? 1 : 0,
+      hc: p.riding ? p.c.steed.coat : -1,
       pt: pets,
     });
   }

@@ -2,7 +2,7 @@
 
 export type Action =
   | 'attack' | 'heavy' | 'block' | 'roll' | 'jump' | 'sprint' | 'interact' | 'cast' | 'ability' | 'lock'
-  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock' | 'quests'
+  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock' | 'quests' | 'horse'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4';
 
 /** Releasing Shift sooner than this toggles shift lock; holding it longer sprints. */
@@ -27,6 +27,7 @@ const KEYS: Record<string, Action> = {
   KeyC: 'roll',
   KeyZ: 'crouch',
   KeyV: 'fly',
+  KeyB: 'horse',
   Digit1: 'slot1',
   Digit2: 'slot2',
   Digit3: 'slot3',
@@ -195,6 +196,7 @@ export class Input {
         <button data-a="swap">⇄</button>
         <button data-a="crouch">▼</button>
         <button data-a="fly">🪽</button>
+        <button data-a="horse">🐎</button>
         <button data-a="combine">⊕</button>
         <button data-a="eat">🐟</button>
         <button data-a="map">🗺</button>

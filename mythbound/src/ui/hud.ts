@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RUNES, SPELLS, WEAPONS, type SpellId, type WeaponKind } from '../data/defs';
 import { SONGS } from '../rules/weapons';
 import { BURST_COLOR, type Burst } from '../rules/power';
+import { HORSE } from '../rules/horse';
 import { EYES_RUINS, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
@@ -404,7 +405,9 @@ export class Hud {
     const low = hpK < 0.3 && p.alive;
     this.setBar(this.hp, 'bar hp', hpK, dt, low ? ' low' : '', `<b>${Math.ceil(p.hp)}</b> / ${p.maxHp}`);
     this.setBar(this.mana, 'bar mana', p.mana / p.maxMana, dt, p.soulOrPower ? ' soul' : '', p.soulOrPower ? 'SOUL BARGAINED' : `<b>${Math.floor(p.mana)}</b> / ${p.maxMana}`);
-    this.setBar(this.stam, 'bar stam', p.stamina / p.maxStamina, dt, p.exhausted ? ' low exhausted' : p.stamina < p.maxStamina * 0.25 ? ' low' : '', null);
+    // In the saddle, the bar is the horse's wind (tinted brown).
+    if (p.riding) this.setBar(this.stam, 'bar stam', p.steedStamina / HORSE.stamina, dt, p.steedStamina < HORSE.rested ? ' horse low' : ' horse', null);
+    else this.setBar(this.stam, 'bar stam', p.stamina / p.maxStamina, dt, p.exhausted ? ' low exhausted' : p.stamina < p.maxStamina * 0.25 ? ' low' : '', null);
     put(this.stam.root, 'width', `${Math.round(Math.min(34, 14 + p.maxStamina / 8) * 10) / 10}vw`);
     put(this.hp.root, 'width', `${Math.round(Math.min(46, 16 + p.maxHp / 12) * 10) / 10}vw`);
     put(this.mana.root, 'width', `${Math.round(Math.min(40, 12 + p.maxMana / 6) * 10) / 10}vw`);
@@ -441,6 +444,7 @@ export class Hud {
     if (c.raceId === 'zombie' && !c.riseSpent) chips.push('<b class="skill">Not Dead Yet</b>');
     if (p.warCry > 0) chips.push(`<b class="rage">War Cry ${Math.ceil(p.warCry)}s</b>`);
     if (p.gliding) chips.push('<b>Gliding</b>');
+    if (p.riding) chips.push(`<b>🐎 ${esc(c.steed.name)}${p.galloping ? ' · galloping' : ''}</b>`);
     if (c.elfMystery && c.mysteryRevealed) chips.push('<b class="devil">Eye-Touched</b>');
     put(this.status, 'html', chips.join(''));
 

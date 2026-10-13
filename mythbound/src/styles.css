@@ -358,6 +358,8 @@ form.acct .link { align-self: center; }
 @keyframes lowHalo { from { opacity: 0.35; } to { opacity: 1; } }
 @keyframes lowFill { to { filter: brightness(1.55) saturate(1.25); } }
 .bar.stam.low .fill { animation: lowFill 0.5s ease-in-out infinite alternate; background: linear-gradient(#f0c060, #b07820 50%, #5a3a0c); }
+.bar.stam.horse .fill { background: linear-gradient(#e0b878, #9a6a34 50%, #4a2e14); }
+.bar.stam.horse.low .fill { background: linear-gradient(#f0a060, #b06020 50%, #5a2a0c); }
 
 .status { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; font-family: var(--serif); font-size: 13px; }
 .status b {

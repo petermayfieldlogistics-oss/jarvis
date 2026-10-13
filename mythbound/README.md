@@ -33,6 +33,7 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | 1-4, mouse wheel | tap a spell slot | choose spell |
 | R | ❂ | class ability: BloodRage, Power Shot, Tame, Combine, Volley, Flurry of Blows, Arcane Surge, Vanish |
 | G / V | ⊕ / 🪽 | combine spells (Mage Lv 3+) / fly (Draco Lv 6+) |
+| B (Shift gallops) | 🐎 (push stick far) | call your horse, climb on, get down |
 | Tab, middle click | ◎ | lock on |
 | H / X / T | ⚗ / 🐟 / ⇄ | flask / eat fish / switch weapon |
 | F | ✋ | interact |
@@ -126,6 +127,13 @@ is what was chosen; each is easy to change:
   twice as strong, and it bursts where it lands; an empowered beam flows on its own for a few seconds). Pacts and
   wards (Deal with the Devil, Soul or Power, Power of the Light) can't be empowered; instruments don't charge. Co-op
   friends see the charge-up, glowing projectiles and burning ground.
+- **Horses**: every hero has one, named and coloured at creation (older heroes get theirs on loading). B or 🐎 whistles
+  for it: it gallops in from behind and you climb on (or press F / ✋ beside it). It trots at 8 m/s, and gallops at
+  14 m/s while you sprint, on its own stamina (shown in the stamina bar while riding; about 7 seconds from full, then it
+  trots until it has its wind back). Jump to jump; it wades but won't swim. No riding in a fight or a trial: you can't
+  climb on with a monster hunting you nearby or just after a blow, reaching for a weapon hops you down, and a blow
+  throws you from the saddle (the horse bolts and goes home; whistle again). Left behind, it waits; far away it wanders
+  home. Friends see you ride, in your horse's coat.
 - **Deal with the Devil**: lock on to one-shot a single foe (bosses too, as written), otherwise it takes every level
   1–5 foe nearby. You black out, and light magic is sealed for 1, 2, then 3 game hours; the 4th deal seals it forever.
 - **Expansion** (toggle in the creator): Bowman (level 2 copper bow, 50 steel arrows, Power Shot: 6x damage plus 0.5 NDP

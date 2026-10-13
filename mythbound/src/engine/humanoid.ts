@@ -1719,6 +1719,11 @@ const HOVER = poseOf({ [BRX]: 0.15, [SPX]: 0.05, [ALX]: -0.2, [ALZ]: 0.45, [ARX]
 const TUCK = poseOf({ [SPX]: 0.65, [CHX]: 0.35, [HDX]: 0.5, [ALX]: -0.9, [ALZ]: 0.15, [FLX]: -1.9, [ARX]: -0.9, [ARZ]: -0.15, [FRX]: -1.9, [WRX]: -1.3, [LLX]: -2.25, [LRX]: -2.15, [KLX]: 2.4, [KRX]: 2.35, [LLZ]: 0.08, [LRZ]: -0.08 }, NEUTRAL);
 const DEATH = poseOf({ [SPX]: -0.25, [CHX]: -0.15, [HDX]: -0.4, [HDZ]: 0.3, [ALX]: -2.2, [ALZ]: 0.9, [FLX]: -0.4, [ARX]: -2.4, [ARZ]: -0.7, [FRX]: -0.6, [LLX]: -0.4, [KLX]: 0.7, [LRX]: 0.05, [KRX]: 0.15, [LLZ]: 0.12, [LRZ]: -0.1 }, NEUTRAL);
 // A dash: low, leaning hard into it, arms swept back, legs mid-stride.
+// Astride a horse: thighs forward and apart, shins hanging, both hands low on the reins.
+const RIDE = poseOf({
+  [SPX]: 0.06, [CHX]: 0.02, [HDX]: -0.06, ...armRp(-0.5, 0, -0.06, -1.2, 0, 0.3), ...armLp(-0.5, 0, 0.06, -1.2),
+  [LLX]: -1.3, [LLZ]: 0.4, [LLY]: -0.12, [KLX]: 1.45, [TLX]: -0.25, [LRX]: -1.3, [LRZ]: -0.4, [LRY]: 0.12, [KRX]: 1.45, [TRX]: -0.25,
+}, NEUTRAL);
 const DASH = poseOf({ [BZ]: 0.04, [SPX]: 0.55, [CHX]: 0.14, [HDX]: -0.5, [ALX]: 1.0, [ALZ]: 0.18, [FLX]: -0.35, [ARX]: 1.0, [ARZ]: -0.18, [FRX]: -0.35, [LLX]: -0.85, [KLX]: 0.75, [LRX]: 0.55, [KRX]: 1.15 }, NEUTRAL);
 const STAGGER = poseOf({ [SPX]: -0.35, [CHX]: -0.2, [HDX]: -0.45, [ALX]: -0.6, [ALZ]: 0.7, [ARX]: -0.5, [ARZ]: -0.7, [FLX]: -0.6, [FRX]: -0.6, [LLX]: 0.25, [KLX]: 0.55, [LRX]: -0.2, [KRX]: 0.5 }, NEUTRAL);
 
@@ -1740,6 +1745,8 @@ interface State {
   airT: number;
   swim: number;
   fly: number;
+  /** Sitting a horse (0..1). */
+  ride: number;
   aim: number;
   fury: number;
   back: number;
@@ -1791,7 +1798,7 @@ const states = new WeakMap<O3, State>();
 function newState(j: Joints, prof: Profile): State {
   return {
     j, prof, cur: NEUTRAL.slice(), tgt: new Float32Array(NCH), out: new Float32Array(NCH), tmp: new Float32Array(NCH), t: 0, fresh: true,
-    mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
+    mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, ride: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
     act: 0, spin: 0, roll: 0, tuck: 0, latched: false, lastStyle: '', lastAttack: -1, lastWindup: 0, lastDraw: 0, lastHurt: 0, hurtSide: 1, deadSide: 1,
     cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, upright: false, orbit: undefined, shoulder: false, shield: false, leftTwist: 0, carry: 0,
     fists: false, staff: false, rollKind: 0,
@@ -1948,6 +1955,7 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   s.airT = airborne ? s.airT + dt : 0;
   s.swim = approach(s.swim, swimming ? 1 : 0, 5);
   s.fly = approach(s.fly, flying ? 1 : 0, 4);
+  s.ride = approach(s.ride, a.riding >= 0 && !dead ? 1 : 0, 12);
   s.aim = approach(s.aim, a.draw > 0.01 && !dead ? 1 : 0, 10);
   s.fury = approach(s.fury, a.fury, 4);
   s.back = approach(s.back, mz < -0.2 ? 1 : 0, 6);
@@ -2023,6 +2031,15 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   }
   if (s.fly > 0.001) {
     for (let c = 0; c < NCH; c++) g[c] += (lerp(HOVER[c], FLIGHT[c], s.mv) - g[c]) * s.fly;
+  }
+  if (s.ride > 0.001) {
+    for (let c = 0; c < NCH; c++) g[c] += (RIDE[c] - g[c]) * s.ride;
+    // At a gallop the rider leans in over the neck and the seat rocks with the stride.
+    const gait = Math.max(0, a.riding);
+    g[SPX] += (0.3 * gait + 0.05 * gait * Math.sin(a.phase)) * s.ride;
+    g[HDX] -= 0.22 * gait * s.ride;
+    g[ARX] -= 0.15 * gait * s.ride;
+    g[ALX] -= 0.15 * gait * s.ride;
   }
   // The move owns the upper body; the legs share with locomotion while moving.
   if (v >= 0) {
@@ -2184,8 +2201,8 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   // ---- Undamped motion on top: stride, breathing, swim strokes, flight.
   const o = s.out;
   o.set(cur);
-  const legsFree = (1 - rollW) * (1 - dashW) * (1 - s.swim) * (1 - s.fly) * (1 - s.air) * (dead ? 0 : 1);
-  const armsFree = (1 - s.act) * (1 - s.block) * (1 - s.aim) * (1 - s.swim) * (1 - s.fly) * (1 - s.tuck) * (dead ? 0 : 1);
+  const legsFree = (1 - rollW) * (1 - dashW) * (1 - s.swim) * (1 - s.fly) * (1 - s.air) * (1 - s.ride) * (dead ? 0 : 1);
+  const armsFree = (1 - s.act) * (1 - s.block) * (1 - s.aim) * (1 - s.swim) * (1 - s.fly) * (1 - s.tuck) * (1 - s.ride) * (dead ? 0 : 1);
   if (s.mv > 0.001) {
     const w = s.mv;
     const legs = w * legsFree * (1 - (busy ? (mv.ownLegs ? 1 : (mv.legs ?? 1) * 0.3) : 0));
@@ -2241,7 +2258,7 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   }
 
   // Feet: flat on the ground while planted, relaxed in the air.
-  const planted = (1 - rollW) * (1 - s.swim) * (1 - s.fly) * (1 - s.air) * (1 - fall);
+  const planted = (1 - rollW) * (1 - s.swim) * (1 - s.fly) * (1 - s.air) * (1 - s.ride) * (1 - fall);
   const lowL = footLow(o, LLX, KLX, TLX, LLZ);
   const lowR = footLow(o, LRX, KRX, TRX, LRZ);
   const low = Math.min(lowL, lowR);

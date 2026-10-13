@@ -873,6 +873,8 @@ export class Game {
     p.hp = Math.min(p.hp, maxHp(p.c)) - dmg;
     if (dmg >= 1) {
       p.endMeditation();
+      // A blow throws a rider (and no climbing on for a moment).
+      if (!environmental) p.struck(this);
       p.anim.hurt = 1;
       this.hud.hurt(Math.min(1, dmg / 30));
       this.audio.play('hurt');
@@ -1083,12 +1085,16 @@ export class Game {
       if (d < it.radius && d < bestD && Math.abs(it.y - p.y) < 4) (best = it), (bestD = d);
     }
     if (this.player.sailing) best = null;
+    // By your waiting horse (and nearer it than anything else): climb on.
+    const horse = this.player.horsePrompt();
+    if (horse && best && this.player.horse!.pos.distanceTo(p) < bestD) best = null;
     this.nearest = best;
-    const label = best ? this.story.label(best) : null;
+    const label = best ? this.story.label(best) : horse;
     this.hud.prompt(label);
     // While sailing the interact button steps ashore (the player handles it).
     this.input.setInteract(label ?? (this.player.sailing ? 'Step ashore' : null));
     if (best && this.input.pressed.has('interact')) this.story.interact(best);
+    else if (horse && this.input.pressed.has('interact')) this.player.mountHorse(this);
   }
 
   // ---------------------------------------------------------------- saving --

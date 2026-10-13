@@ -52,11 +52,13 @@ export interface AnimState {
   fury: number;
   /** Windup 0..1 before an attack lands, for anticipation poses (bosses use it while telegraphing). */
   windup: number;
+  /** -1 on foot, else riding a horse at this gait (0 standing still, 1 a full gallop). */
+  riding: number;
 }
 
 export const newAnim = (): AnimState => ({
   phase: 0, moving: 0, speed: 0, moveX: 0, moveZ: 0, attack: -1, attackStyle: 'slash', draw: 0, blocking: false, rolling: -1, rollKind: 0,
-  airborne: false, flying: false, swimming: false, crouching: false, dead: -1, t: 0, landing: 0, hurt: 0, fury: 0, windup: 0,
+  airborne: false, flying: false, swimming: false, crouching: false, dead: -1, t: 0, landing: 0, hurt: 0, fury: 0, windup: 0, riding: -1,
 });
 
 export const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);

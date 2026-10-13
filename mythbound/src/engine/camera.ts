@@ -71,7 +71,7 @@ export class CameraRig {
     this.zoom += (this.dist - this.zoom) * (snap ? 1 : damp(9, dt));
 
     // The point the camera orbits: above the hero, followed with damping.
-    const h = p.swimming ? 0.6 : p.crouching ? 1.2 : p.sailing ? 1.9 : 1.55;
+    const h = p.swimming ? 0.6 : p.crouching ? 1.2 : p.sailing ? 1.9 : p.riding ? 2.5 : 1.55;
     const want = this.v.set(p.pos.x, p.pos.y + h + 0.08 * this.over, p.pos.z);
     if (snap || this.focus.distanceToSquared(want) > 400) this.focus.copy(want);
     else {

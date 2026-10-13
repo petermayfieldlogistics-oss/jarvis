@@ -344,7 +344,7 @@ export class Menu {
       <li>${k('Tab')} or middle click: lock on</li>
       <li>${k('Q')} cast (hold for alternate form) · ${k('1')}–${k('4')} / wheel: choose spell</li>
       <li>${k('R')} class ability (BloodRage, Power Shot, Tame, Combine, Volley)</li>
-      <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+)</li>
+      <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+) · ${k('B')} call or ride your horse (Shift gallops)</li>
       <li>${k('H')} drink flask · ${k('X')} eat fish · ${k('T')} switch weapon</li>
       <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li>
       <li>${k('J')} fold or open the quest bar (click a quest there to track it)</li></ul></div>
@@ -354,7 +354,7 @@ export class Menu {
       <li>⚔ attack (hold with a bow) · 💥 heavy (hold to charge a power strike) · ⤿ roll · ⤒ jump</li>
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
       <li>Tap a spell slot to choose it; tap ❂ there to use your ability</li>
-      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>
+      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · 🐎 horse (push the stick far to gallop) · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>
       <li>✋ appears when you can interact</li>
       <li>Quest bar (top left): tap its header to fold it, tap a quest to track it</li></ul></div></div>`;
   }
