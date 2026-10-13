@@ -262,10 +262,14 @@ export const NPCS: NpcDef[] = [
   { id: 'wren', name: 'Wren', title: 'Farmer', x: 13, z: 8, color: 0x7a6a3a, facing: Math.PI / 2 },
 ];
 
-/** Wren's field: a 3x3 grid of seed beds east of the square (bed `i` is at `plotCentre(i)`). */
+/**
+ * Wren's field: a 3x3 grid of seed beds east of the square (bed `i` is at
+ * `plotCentre(i)`). Beds 0-2, the ones every hero gets, are the row by the
+ * gate nearest Wren.
+ */
 export const FIELD = { x: 22, z: 2, pitch: 3.4, bed: 2.6 };
 export function plotCentre(i: number): { x: number; z: number } {
-  return { x: FIELD.x + ((i % 3) - 1) * FIELD.pitch, z: FIELD.z + (Math.floor(i / 3) - 1) * FIELD.pitch };
+  return { x: FIELD.x + ((i % 3) - 1) * FIELD.pitch, z: FIELD.z + (1 - Math.floor(i / 3)) * FIELD.pitch };
 }
 
 /** Docks: sailors board boats here. */

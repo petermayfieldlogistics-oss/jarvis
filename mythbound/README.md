@@ -35,7 +35,7 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | G / V | ⊕ / 🪽 | combine spells (Mage Lv 3+) / fly (Draco Lv 6+) |
 | B (Shift gallops) | 🐎 (push stick far) | call your horse, climb on, get down |
 | Tab, middle click | ◎ | lock on |
-| H / X / T | ⚗ / 🐟 / ⇄ | flask / eat fish / switch weapon |
+| H / X / T | ⚗ / 🐟 / ⇄ | flask / eat (fish, crops) / switch weapon |
 | F | ✋ | interact |
 | M, Esc | 🗺, ☰ | map (fast travel between shrines), menu |
 
@@ -82,7 +82,8 @@ code; friends type it and press **Join**. Co-op needs the online version
 ## The world
 
 - **Hearthhold** (town): Orrin the Historian (main quest, spell tomes), Brann the Smith (upgrades), Sister Lumen
-  (healing, light magic), Quill the merchant, Mara the fisher (on the coast), and the Chronicler.
+  (healing, light magic), Quill the merchant, Wren the farmer (seed beds), Mara the fisher (on the coast), and the
+  Chronicler.
 - **Regions**: the Golden Reach, Whisperwood, the Ashen Dunes, Molten Peak, the Sunken Coast (and its island), the
   Weeping Mire, Hecate's Crossroads and the Field of Mars.
 - **Six trials** (fog-walled boss arenas): Hunt → Bow of Artemis, Tides → Poseidon's Trident, Storms → Master Bolt,
@@ -134,6 +135,18 @@ is what was chosen; each is easy to change:
   climb on with a monster hunting you nearby or just after a blow, reaching for a weapon hops you down, and a blow
   throws you from the saddle (the horse bolts and goes home; whistle again). Left behind, it waits; far away it wanders
   home. Friends see you ride, in your horse's coat.
+- **Farming**: Wren the farmer keeps a fenced field of nine seed beds just east of Hearthhold's square, by the forge.
+  Three beds are yours (the row by the gate); Wren rents the other six (120, then 250 embers each) and gives a first
+  pack of carrot seeds. Buy seeds from Wren in packs of four (carrots 3 h, wheat 4 h, bluecap mushrooms 5 h, pumpkins
+  12 h of play to ripen), stand at a bed and tap ✋ / F: plant, then water (one tap waters the whole row; watered soil
+  grows at full speed for 4 h, dry soil at half), and harvest the row when ripe. Nothing withers. A fish fed to a bed
+  before it is half grown brings in one more crop (a golden fish, two). Crops grow while you play, not while you pass
+  time at a shrine. The field shows a green dot on the minimap and says when crops ripen. Carrots and pumpkins heal,
+  bluecaps restore mana; Wren buys any crop, and wheat is for bread later. Wren's quest: bring in four harvests. In
+  co-op each hero tends their own crops in the same field.
+- **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
+  golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
+  button by each food.
 - **Deal with the Devil**: lock on to one-shot a single foe (bosses too, as written), otherwise it takes every level
   1–5 foe nearby. You black out, and light magic is sealed for 1, 2, then 3 game hours; the 4th deal seals it forever.
 - **Expansion** (toggle in the creator): Bowman (level 2 copper bow, 50 steel arrows, Power Shot: 6x damage plus 0.5 NDP

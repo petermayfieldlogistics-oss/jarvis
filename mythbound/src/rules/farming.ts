@@ -1,6 +1,7 @@
 // Farming: seed beds in Wren's field at Hearthhold. Each hero tends their
 // own (it saves with their world); crops grow on the farm's own clock, which
-// runs while the game is played and when time is passed at a shrine. Pure
+// runs only while the game is played: not while time is passed at a shrine
+// (no sleeping a harvest in), and not on the host's clock in co-op. Pure
 // rules: the engine (farm.ts, story.ts) plays them out.
 
 import { CROPS, CROP_IDS, SEED_PACK, seedItem, type CropId } from '../data/goods';
