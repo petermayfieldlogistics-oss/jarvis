@@ -5,8 +5,9 @@
 
 import { MATERIALS, MATERIAL_DROPS, RECIPES, SUPPLIES, type Output, type RecipeDef, type StationId } from '../data/goods';
 import type { Character } from './character';
+import { grantDye, grantGarment, knowsDye, ownsGarment } from './outfit';
 
-type Pack = Pick<Character, 'items' | 'arrows' | 'gold' | 'roleId'>;
+type Pack = Pick<Character, 'items' | 'arrows' | 'gold' | 'roleId' | 'wardrobe'>;
 
 /** The recipes made here (at a shrine, only camp cooking). */
 export function recipesAt(station: StationId, camp = false): RecipeDef[] {
@@ -35,9 +36,19 @@ export function lacking(c: Pack, r: RecipeDef): { id: string; have: number; need
   return out;
 }
 
+/** Made once and already had: a tool in the pack, a garment in the wardrobe, a dye colour known. */
+export function hasMade(c: Pick<Character, 'items' | 'wardrobe'>, r: RecipeDef): boolean {
+  if (!r.once) return false;
+  const out = r.makes;
+  if (out.kind === 'item') return hasTool(c, out.id);
+  if (out.kind === 'garment') return ownsGarment(c.wardrobe, out.id);
+  if (out.kind === 'dye') return knowsDye(c.wardrobe, out.id);
+  return false;
+}
+
 /** How many batches the pack (and purse) can make (a tool already owned: none). */
 export function batches(c: Pack, r: RecipeDef): number {
-  if (r.once && r.makes.kind === 'item' && hasTool(c, r.makes.id)) return 0;
+  if (hasMade(c, r)) return 0;
   let n = Infinity;
   for (const [id, need] of Object.entries(r.needs)) n = Math.min(n, Math.floor((c.items[id] ?? 0) / need));
   if (r.arrows) n = Math.min(n, Math.floor(c.arrows.wood / r.arrows));
@@ -47,9 +58,11 @@ export function batches(c: Pack, r: RecipeDef): number {
   return n === Infinity ? 0 : Math.max(0, n);
 }
 
-/** Puts what a recipe makes into the pack. */
-export function give(c: Pick<Character, 'items' | 'arrows'>, out: Output, times = 1) {
+/** Puts what a recipe makes into the pack (or the wardrobe). */
+export function give(c: Pick<Character, 'items' | 'arrows' | 'wardrobe'>, out: Output, times = 1) {
   if (out.kind === 'arrows') c.arrows[out.type] += out.n * times;
+  else if (out.kind === 'garment') grantGarment(c.wardrobe, out.id);
+  else if (out.kind === 'dye') grantDye(c.wardrobe, out.id);
   else c.items[out.id] = (c.items[out.id] ?? 0) + out.n * times;
 }
 

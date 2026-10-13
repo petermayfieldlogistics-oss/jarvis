@@ -1,5 +1,6 @@
 import { MAX_KNIVES, classWields } from './weapons';
 import { newSteed, normalizeSteed, type Steed } from './horse';
+import { newWardrobe, normalizeWardrobe, type Wardrobe } from './outfit';
 import {
   CLASSES,
   MAGE_STARTING_SPELLS,
@@ -76,6 +77,8 @@ export interface Character extends CharacterChoice {
   respecs: number;
   /** The hero's horse (called with B or 🐎). */
   steed: Steed;
+  /** Clothes and dye colours (for looks only), and what is worn. */
+  wardrobe: Wardrobe;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -195,6 +198,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     milestone: 0,
     respecs: 0,
     steed: newSteed(rng),
+    wardrobe: newWardrobe(),
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -316,6 +320,7 @@ export function normalizeCharacter(c: Character): Character {
   }
   if (typeof c.respecs !== 'number') c.respecs = 0;
   c.steed = normalizeSteed(c.steed);
+  c.wardrobe = normalizeWardrobe(c.wardrobe);
   return c;
 }
 

@@ -2,7 +2,7 @@
 // Each becomes an ordinary item in a hero's pack (ITEMS in data/world.ts
 // spreads goodsItems() in). Later features add their goods here too.
 
-export type CropId = 'carrot' | 'wheat' | 'bluecap' | 'pumpkin';
+export type CropId = 'carrot' | 'wheat' | 'bluecap' | 'pumpkin' | 'flax' | 'madder' | 'woad' | 'weld';
 
 export interface CropDef {
   id: CropId;
@@ -16,6 +16,8 @@ export interface CropDef {
   yield: [number, number];
   /** What Wren pays for one. */
   sell: number;
+  /** Grown for the loom (fibre and dye), not the table. */
+  fibre?: boolean;
   /** Eaten: health and mana it restores. */
   heal?: number;
   mana?: number;
@@ -42,6 +44,23 @@ export const CROPS: Record<CropId, CropDef> = {
   pumpkin: {
     id: 'pumpkin', name: 'Pumpkin', plural: 'pumpkins', seedPrice: 60, grow: 720, yield: [1, 2], sell: 18, heal: 60,
     shape: 'gourd', leaf: 0x3e7a2e, fruit: 0xe08a20, use: 'Slow, but filling. Eat for 60 HP.',
+  },
+  // Fibre and dye plants, for the loom.
+  flax: {
+    id: 'flax', name: 'Flax', plural: 'flax', seedPrice: 16, grow: 300, yield: [3, 4], sell: 2, fibre: true,
+    shape: 'stalks', leaf: 0x5a8a4a, fruit: 0x8aa8e0, use: 'Blue-flowered fibre. The loom spins 3 into linen.',
+  },
+  madder: {
+    id: 'madder', name: 'Madder', plural: 'madder', seedPrice: 24, grow: 420, yield: [2, 3], sell: 3, fibre: true,
+    shape: 'tops', leaf: 0x4a7a3a, fruit: 0xa83a2a, use: 'Its root dyes cloth red.',
+  },
+  woad: {
+    id: 'woad', name: 'Woad', plural: 'woad', seedPrice: 24, grow: 420, yield: [2, 3], sell: 3, fibre: true,
+    shape: 'tops', leaf: 0x5a8a6a, fruit: 0xe0d040, use: 'Its leaves dye cloth blue.',
+  },
+  weld: {
+    id: 'weld', name: 'Weld', plural: 'weld', seedPrice: 24, grow: 420, yield: [2, 3], sell: 3, fibre: true,
+    shape: 'stalks', leaf: 0x7a9a3a, fruit: 0xd8c040, use: 'Dyer’s rocket: dyes cloth yellow.',
   },
 };
 
@@ -72,14 +91,15 @@ export function goodsItems(): Record<string, GoodsItem> {
 // ---------------------------------------------------------------- crafting --
 
 /** Where things are made: the cookfire and workbench by Wren's field, and any anvil. */
-export type StationId = 'cookfire' | 'bench' | 'anvil';
+export type StationId = 'cookfire' | 'bench' | 'anvil' | 'loom';
 
 export const STATIONS: { id: Exclude<StationId, 'anvil'>; name: string; x: number; z: number; label: string }[] = [
   { id: 'cookfire', name: 'Hearthhold Cookfire', x: 13.5, z: 13.5, label: 'Cook at the fire' },
   { id: 'bench', name: 'Workbench', x: 31.5, z: 4, label: 'Workbench: craft' },
+  { id: 'loom', name: 'Loom', x: 22, z: -7.5, label: 'Loom: weave, dye and dress' },
 ];
 
-export const STATION_NAME: Record<StationId, string> = { cookfire: 'Cookfire', bench: 'Workbench', anvil: 'Anvil' };
+export const STATION_NAME: Record<StationId, string> = { cookfire: 'Cookfire', bench: 'Workbench', anvil: 'Anvil', loom: 'Loom' };
 
 /** Monster parts and the sea's leavings: crafting materials (Quill buys them). */
 export const MATERIALS: Record<string, { name: string; description: string; sell: number }> = {
@@ -90,6 +110,10 @@ export const MATERIALS: Record<string, { name: string; description: string; sell
   bone: { name: 'Old Bone', description: 'From skeletons. Arrows and compost.', sell: 3 },
   wisp: { name: 'Wraith Wisp', description: 'From wraiths. Storm Runes.', sell: 8 },
   cinder: { name: 'Cinder Heart', description: 'From imps and magma hounds. Ember Runes.', sell: 6 },
+  linen: { name: 'Linen', description: 'Spun from flax at the loom (bandits carry some). Clothes.', sell: 4 },
+  bronze: { name: 'Bronze Scrap', description: 'From the legionaries of Mars. Helms and plate.', sell: 10 },
+  scale: { name: 'Drake Scale', description: 'From ash drakes. Drake Crimson dye.', sell: 15 },
+  lens: { name: 'Watcher Lens', description: 'From watchers. Eyeglow dye.', sell: 12 },
 };
 
 /** Which foes drop which material, and how often (each hero rolls their own). */
@@ -103,6 +127,11 @@ export const MATERIAL_DROPS: Partial<Record<string, { item: string; chance: numb
   wraith: { item: 'wisp', chance: 0.25 },
   'fire-imp': { item: 'cinder', chance: 0.2 },
   'magma-hound': { item: 'cinder', chance: 0.25 },
+  bandit: { item: 'linen', chance: 0.1 },
+  'bandit-archer': { item: 'linen', chance: 0.1 },
+  'mars-legionary': { item: 'bronze', chance: 0.4 },
+  drake: { item: 'scale', chance: 0.4 },
+  'eye-watcher': { item: 'lens', chance: 0.25 },
 };
 
 /** Cooked food: heals (and restores mana) more than what went into it. */
@@ -125,7 +154,113 @@ export const SUPPLIES: Record<string, GoodsItem & { tool?: boolean }> = {
   horseshoes: { name: 'Horseshoes', description: 'Your horse gallops longer before it tires.', tool: true },
 };
 
-export type Output = { kind: 'item'; id: string; n: number } | { kind: 'arrows'; type: 'wood' | 'steel'; n: number };
+// ---------------------------------------------------------------- clothing --
+// Purely for looks (no stats). Three slots; four dye channels. The arrays'
+// order is the wire order in co-op: only ever append.
+
+export type Build = 'heavy' | 'light' | 'robe' | 'gi';
+export type HeadLook = 'helmet' | 'hood' | 'hat' | 'bare' | 'mask' | 'plume' | 'crown';
+export type Slot = 'head' | 'body' | 'cloak';
+export const SLOTS: Slot[] = ['head', 'body', 'cloak'];
+/** What each dye colours: cloth (hood, hat, robe, trousers), the leather or plate, the trim, the cloak. */
+export type DyeChannel = 'cloth' | 'armor' | 'trim' | 'cape';
+export const CHANNELS: DyeChannel[] = ['cloth', 'armor', 'trim', 'cape'];
+export const CHANNEL_NAME: Record<DyeChannel, string> = { cloth: 'Cloth', armor: 'Leather / plate', trim: 'Trim', cape: 'Cloak' };
+
+type Make = { station: 'loom' | 'anvil'; group: string; needs: Record<string, number> };
+
+export interface GarmentDef {
+  id: string;
+  name: string;
+  slot: Slot;
+  /** Head: what is drawn on the head, and a band over bare hair. */
+  head?: HeadLook;
+  band?: 'headband' | 'circlet';
+  /** Body: the cut of the clothes. */
+  build?: Build;
+  /** Cloak: worn or not. */
+  cape?: boolean;
+  /** Every hero has it. */
+  free?: boolean;
+  make?: Make;
+  /** Quill sells it, for this many embers. */
+  price?: number;
+  /** Won, not made: how. */
+  earned?: string;
+  blurb: string;
+}
+
+const loom = (group: string, needs: Record<string, number>): Make => ({ station: 'loom', group, needs });
+const smith = (needs: Record<string, number>): Make => ({ station: 'anvil', group: 'Gear', needs });
+
+export const GARMENTS: GarmentDef[] = [
+  { id: 'bare-head', name: 'Bare Head', slot: 'head', head: 'bare', free: true, blurb: 'Nothing on your head.' },
+  { id: 'hood', name: 'Traveller’s Hood', slot: 'head', head: 'hood', make: loom('Weave', { linen: 2 }), price: 60, blurb: 'A plain hood against the rain.' },
+  { id: 'mask', name: 'Rogue’s Mask', slot: 'head', head: 'mask', make: loom('Weave', { linen: 2, silk: 1 }), blurb: 'A hood, and a mask over the lower face.' },
+  { id: 'hat', name: 'Wide-Brimmed Hat', slot: 'head', head: 'hat', make: loom('Weave', { linen: 3 }), price: 80, blurb: 'A tall, wide-brimmed hat.' },
+  { id: 'headband', name: 'Headband', slot: 'head', head: 'bare', band: 'headband', make: loom('Weave', { linen: 1 }), price: 30, blurb: 'A cloth band, in your trim colour.' },
+  { id: 'circlet', name: 'Silver Circlet', slot: 'head', head: 'bare', band: 'circlet', make: smith({ 'ember-ore': 1, bronze: 1 }), blurb: 'A thin band of metal with a gem on the brow.' },
+  { id: 'helm', name: 'Great Helm', slot: 'head', head: 'helmet', make: smith({ 'ember-ore': 3, hide: 1 }), blurb: 'A full steel helm.' },
+  { id: 'galea', name: 'Legion Galea', slot: 'head', head: 'plume', make: smith({ 'ember-ore': 2, bronze: 3 }), blurb: 'A crested helm in the legion’s style.' },
+  { id: 'crown', name: 'Crown of the Six', slot: 'head', head: 'crown', earned: 'Conquer all six weapon trials.', blurb: 'For one who has beaten every trial.' },
+  { id: 'jerkin', name: 'Leather Jerkin', slot: 'body', build: 'light', make: loom('Tailor', { linen: 2, hide: 2 }), price: 140, blurb: 'Light leathers over a linen shirt.' },
+  { id: 'robe', name: 'Scholar’s Robe', slot: 'body', build: 'robe', make: loom('Tailor', { linen: 5 }), price: 120, blurb: 'A long robe to the ankle.' },
+  { id: 'gi', name: 'Training Gi', slot: 'body', build: 'gi', make: loom('Tailor', { linen: 3 }), price: 90, blurb: 'A wrap top, a sash and loose trousers.' },
+  { id: 'plate', name: 'Plate Harness', slot: 'body', build: 'heavy', make: smith({ 'ember-ore': 5, hide: 2, bronze: 2 }), blurb: 'Plate over mail.' },
+  { id: 'cloak', name: 'Wool Cloak', slot: 'cloak', cape: true, make: loom('Tailor', { linen: 3 }), price: 100, blurb: 'A cloak down the back, in your cloak colour.' },
+  { id: 'no-cloak', name: 'No Cloak', slot: 'cloak', cape: false, free: true, blurb: 'Nothing down your back.' },
+];
+
+export const GARMENT_INDEX = new Map(GARMENTS.map((g, i) => [g.id, i]));
+export const garment = (id: string | null | undefined) => (id ? GARMENTS[GARMENT_INDEX.get(id) ?? -1] ?? null : null);
+/** A new cloak's colour, before it is dyed (a class's own cloak keeps its colour). */
+export const UNDYED_CLOAK = 0x6a5a4a;
+
+export interface DyeDef {
+  id: string;
+  name: string;
+  hex: number;
+  make?: { group: string; needs: Record<string, number> };
+  /** Quill sells the colour, for this many embers. */
+  price?: number;
+  earned?: string;
+  blurb: string;
+}
+
+const dye = (id: string, name: string, hex: number, group: 'Plant dyes' | 'Rare dyes', needs: Record<string, number>, blurb: string, price?: number): DyeDef => ({
+  id, name, hex, make: { group, needs }, ...(price ? { price } : {}), blurb,
+});
+
+/** Making a dye teaches the colour for good: dye anything with it, as often as you like. */
+export const DYES: DyeDef[] = [
+  dye('madder', 'Madder Red', 0x9a2a22, 'Plant dyes', { madder: 3 }, 'A deep red, from madder root.', 40),
+  dye('woad', 'Woad Blue', 0x2a4a8a, 'Plant dyes', { woad: 3 }, 'A strong blue, from woad leaves.', 40),
+  dye('weld', 'Weld Yellow', 0xc8a83a, 'Plant dyes', { weld: 3 }, 'A warm yellow, from weld.', 40),
+  dye('purple', 'Royal Purple', 0x5a2a6a, 'Plant dyes', { madder: 2, woad: 2 }, 'Red and blue in one vat.'),
+  dye('green', 'Forest Green', 0x2e5a2a, 'Plant dyes', { woad: 2, weld: 2 }, 'Blue and yellow in one vat.'),
+  dye('orange', 'Sunset Orange', 0xc8642a, 'Plant dyes', { madder: 2, weld: 2 }, 'Red and yellow in one vat.'),
+  dye('cream', 'Undyed Cream', 0xd8cfb0, 'Plant dyes', { flax: 3 }, 'Bleached linen’s own colour.'),
+  dye('charcoal', 'Charcoal', 0x2a2826, 'Rare dyes', { cinder: 2 }, 'Soot black, from cinder hearts.'),
+  dye('bone', 'Bone White', 0xe8e2d0, 'Rare dyes', { bone: 3 }, 'Ground bone: a chalky white.'),
+  dye('teal', 'Sea Teal', 0x2f8a86, 'Rare dyes', { kelp: 3 }, 'The colour of the shallows.'),
+  dye('venom', 'Venom Green', 0x6abf2a, 'Rare dyes', { chitin: 2, weld: 1 }, 'A bright, poisonous green.'),
+  dye('crimson', 'Drake Crimson', 0x7a1410, 'Rare dyes', { scale: 1, madder: 2 }, 'Darker than blood.'),
+  dye('gold', 'Gold Leaf', 0xe0b84a, 'Rare dyes', { 'golden-fish': 1, 'ember-ore': 1 }, 'Beaten gold, for show.'),
+  dye('eyeglow', 'Eyeglow', 0x8cff5a, 'Rare dyes', { lens: 1, wisp: 1 }, 'What the eye-cult dyed its robes with, so they say.'),
+  { id: 'pearl', name: 'Pearl', hex: 0xe8e4f0, earned: 'Claim the Pearl of the Leviathan.', blurb: 'The sheen of the Leviathan’s pearl.' },
+  { id: 'tidal', name: 'Tidal Blue', hex: 0x1f5f8a, earned: 'Claim the Crown of the Tides.', blurb: 'The deep sea’s blue.' },
+  { id: 'dragonfire', name: 'Dragonfire', hex: 0xd8401a, earned: 'Claim the Heart of the Elder Dragon.', blurb: 'The Elder Dragon’s flame.' },
+];
+
+export const DYE_INDEX = new Map(DYES.map((d, i) => [d.id, i]));
+export const dyeOf = (id: string | null | undefined) => (id ? DYES[DYE_INDEX.get(id) ?? -1] ?? null : null);
+
+export type Output =
+  | { kind: 'item'; id: string; n: number }
+  | { kind: 'arrows'; type: 'wood' | 'steel'; n: number }
+  /** A garment for the wardrobe, or a dye colour learned for good. */
+  | { kind: 'garment'; id: string }
+  | { kind: 'dye'; id: string };
 
 export interface RecipeDef {
   id: string;
@@ -173,6 +308,15 @@ export const RECIPES: RecipeDef[] = [
   { id: 'forge-rune-storm', name: 'Storm Rune', station: 'anvil', group: 'Runes', needs: { 'ember-ore': 2, wisp: 3 }, gold: 40, makes: { kind: 'item', id: 'rune-storm', n: 1 }, blurb: 'Hits arc lightning to two foes nearby.' },
   { id: 'forge-rune-venom', name: 'Venom Rune', station: 'anvil', group: 'Runes', needs: { 'ember-ore': 2, chitin: 3 }, gold: 30, makes: { kind: 'item', id: 'rune-venom', n: 1 }, blurb: 'Hits poison foes for a while.' },
   { id: 'horseshoes', name: 'Horseshoes', station: 'anvil', group: 'Gear', needs: { 'ember-ore': 3, hide: 2 }, makes: { kind: 'item', id: 'horseshoes', n: 1 }, once: true, blurb: SUPPLIES.horseshoes.description },
+  // Loom.
+  { id: 'linen', name: 'Linen', station: 'loom', group: 'Weave', needs: { flax: 3 }, makes: { kind: 'item', id: 'linen', n: 1 }, blurb: 'Spins 3 flax into a bolt of linen.' },
+  // Clothes (loom and anvil) and dyes (loom), from their tables below.
+  ...GARMENTS.filter((g) => g.make).map((g): RecipeDef => ({
+    id: `sew-${g.id}`, name: g.name, station: g.make!.station, group: g.make!.group, needs: g.make!.needs, makes: { kind: 'garment', id: g.id }, once: true, blurb: g.blurb,
+  })),
+  ...DYES.filter((d) => d.make).map((d): RecipeDef => ({
+    id: `dye-${d.id}`, name: d.name, station: 'loom', group: d.make!.group, needs: d.make!.needs, makes: { kind: 'dye', id: d.id }, once: true, blurb: d.blurb,
+  })),
 ];
 
 /** Materials, meals and supplies as items for the pack. */
