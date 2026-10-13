@@ -67,7 +67,7 @@ export function normalizeFarm(raw: unknown): FarmState {
       crop,
       grown: Math.max(0, Math.min(CROPS[crop].grow, finite(p.grown))),
       at: Math.max(0, Math.min(f.clock, finite(p.at))),
-      wetUntil: Math.max(0, Math.min(f.clock + FARM.waterLasts, finite(p.wetUntil))),
+      wetUntil: Math.max(0, Math.min(f.clock + Math.max(FARM.waterLasts, FARM.canLasts), finite(p.wetUntil))),
       fed: Math.max(0, Math.min(2, Math.round(finite(p.fed)))),
     };
   }

@@ -31,6 +31,16 @@ describe('eating', () => {
     expect(pickFood({ bluecap: 1 }, 0.5, 0.5)).toBe('bluecap');
   });
 
+  it('eats mixed meals for what they are mostly for', () => {
+    // Broth is mostly mana: not eaten for a scratch while there is a fish.
+    expect(pickFood({ fish: 1, 'bluecap-broth': 1 }, 0.8, 1)).toBe('fish');
+    // Soup is mostly health: not eaten for mana while there is a bluecap.
+    expect(pickFood({ bluecap: 1, 'pumpkin-soup': 1 }, 1, 0.3)).toBe('bluecap');
+    // With nothing else, a mixed meal still does.
+    expect(pickFood({ 'bluecap-broth': 1 }, 0.5, 1)).toBe('bluecap-broth');
+    expect(pickFood({ 'pumpkin-soup': 1 }, 1, 0.5)).toBe('pumpkin-soup');
+  });
+
   it('takes one from the pack', () => {
     const pack: Record<string, number> = { pumpkin: 2 };
     expect(eatItem(pack, 'pumpkin')).toEqual({ heal: 60, mana: 0 });

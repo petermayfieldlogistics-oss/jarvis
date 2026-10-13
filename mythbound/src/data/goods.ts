@@ -86,7 +86,8 @@ export const MATERIALS: Record<string, { name: string; description: string; sell
   hide: { name: 'Rough Hide', description: 'From wolves and boars. Lures, tools, horseshoes.', sell: 3 },
   silk: { name: 'Spider Silk', description: 'From spiderlings (and Broodmother). A strong fishing line.', sell: 3 },
   chitin: { name: 'Scorpion Chitin', description: 'From desert scorpions. Venom Runes.', sell: 6 },
-  kelp: { name: 'Sea Kelp', description: 'From the drowned, or a missed catch. Compost, Frost Runes.', sell: 2 },
+  // Quill won't buy weed (a missed cast brings it in for nothing).
+  kelp: { name: 'Sea Kelp', description: 'From the drowned, or a missed catch. Compost, Frost Runes.', sell: 0 },
   bone: { name: 'Old Bone', description: 'From skeletons. Arrows and compost.', sell: 3 },
   wisp: { name: 'Wraith Wisp', description: 'From wraiths. Storm Runes.', sell: 8 },
   cinder: { name: 'Cinder Heart', description: 'From imps and magma hounds. Ember Runes.', sell: 6 },
