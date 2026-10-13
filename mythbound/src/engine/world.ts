@@ -5,6 +5,7 @@ import {
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
+import { STATIONS } from '../data/goods';
 import { mulberry32, noise2, smoothstep } from './noise';
 import { buildTerrainMesh, detailTexture, heightAt, inLava, LAVA_LEVEL, normalAt, zoneAt, WATER_LEVEL } from './terrain';
 
@@ -18,7 +19,7 @@ export interface Collider {
   top: number;
 }
 
-export type InteractKind = 'npc' | 'shrine' | 'lore' | 'tome' | 'page' | 'anvil' | 'dock' | 'fish' | 'ore' | 'trial' | 'loot' | 'plot';
+export type InteractKind = 'npc' | 'shrine' | 'lore' | 'tome' | 'page' | 'anvil' | 'dock' | 'fish' | 'ore' | 'trial' | 'loot' | 'plot' | 'station';
 
 export interface Interactable {
   id: string;
@@ -875,6 +876,7 @@ export class World {
     this.buildEyeRuins();
     this.buildLoreAndLoot();
     this.buildField();
+    this.buildStations();
     this.batch.build(this.root, quality !== 'low');
     this.buildMotes();
     this.buildSmoke();
@@ -1510,6 +1512,63 @@ export class World {
     this.crate(x0 - 1.1, z1 - 0.6, 1.1, 0.6);
   }
 
+  /**
+   * The crafting stations by Wren's field: a cookfire (stones, logs, a
+   * tripod and pot over a flickering flame, with smoke and firelight) and a
+   * workbench. Draws no random numbers (the rest of the world stays as it was).
+   */
+  private buildStations() {
+    const b = this.batch;
+    for (const s of STATIONS) {
+      const { x, z } = s;
+      const y = this.groundY(x, z);
+      if (s.id === 'cookfire') {
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          b.paint(ICO, i % 2 ? 0x6a645a : 0x5a554c, x + Math.cos(a) * 0.75, y + 0.12, z + Math.sin(a) * 0.75, a, 0.22, 0.16, 0.2);
+        }
+        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, Math.PI / 2, 0.15);
+        // A tripod and its pot.
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2 + 0.3;
+          b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, Math.cos(a) * 0.35, true);
+        }
+        b.paint(CYL, 0x2a2a2c, x, y + 0.85, z, 0, 0.5, 0.35, 0.5, 0, 0, true);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 6), mat(0xffa040, { emissive: 0xff6a10, emissiveIntensity: 2.2 }));
+        flame.position.set(x, y + 0.42, z);
+        this.root.add(flame);
+        this.animated.push({ obj: flame, kind: 'flicker', base: 2.2 });
+        const glow = glowSprite(0xff8a30, 1.6);
+        glow.position.set(x, y + 0.6, z);
+        this.root.add(glow);
+        this.emitters.push({ pos: new THREE.Vector3(x, y + 1, z), color: 0xff8030, intensity: 10, distance: 12, flicker: 0.35 });
+        this.fixedSmoke(x, y + 1.3, z, 0, 0.61);
+        this.addCollider(x, z, 1.1);
+      } else {
+        // A trestle table with a vice, a saw, a bundle of arrows, and crates.
+        b.paint(BOX, 0x6a4a2a, x, y + 0.88, z, 0.4, 2.2, 0.1, 0.9);
+        for (const [dx, dz] of [[-0.95, -0.35], [0.95, -0.35], [-0.95, 0.35], [0.95, 0.35]]) {
+          const c = Math.cos(0.4), sn = Math.sin(0.4);
+          b.paint(BOX, 0x4a3420, x + dx * c + dz * sn, y + 0.42, z - dx * sn + dz * c, 0.4, 0.1, 0.84, 0.1);
+        }
+        b.paint(BOX, 0x3a3a3e, x + 0.7, y + 1.02, z - 0.25, 0.4, 0.22, 0.18, 0.16, 0, 0, true);
+        b.paint(BOX, 0x9a9aa0, x - 0.4, y + 0.95, z + 0.1, 0.9, 0.7, 0.02, 0.18, 0, 0, true);
+        for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.05, y + 0.97, z - 0.1, 0.4, 0.02, 0.8, 0.02, Math.PI / 2);
+        this.crate(x + 1.6, z + 0.9, 0.2, 0.7);
+        this.barrel(x - 1.6, z + 0.6);
+        this.addCollider(x, z, 1.2);
+      }
+      this.interactables.push({ id: `station-${s.id}`, kind: 'station', x, y: y + 1, z, radius: 2.8, label: s.label });
+    }
+  }
+
+  /** A smoke plume with a fixed seed (so it draws no random number). */
+  private fixedSmoke(x: number, y: number, z: number, kind: 0 | 1 | 2, seed: number) {
+    const count = SMOKE[kind].n[this.quality === 'low' ? 0 : 1];
+    const last = this.smokeSrc[this.smokeSrc.length - 1];
+    this.smokeSrc.push({ x, y, z, kind, first: last ? last.first + last.count : 0, count, seed, on: false });
+  }
+
   private anvil(x: number, z: number) {
     const y = this.groundY(x, z);
     this.batch.paint(BOX, 0x2a2a2c, x, y + 0.75, z, 0, 1.3, 0.35, 0.55, 0, 0, true);
@@ -1517,7 +1576,7 @@ export class World {
     this.batch.paint(CONE4, 0x2a2a2c, x + 0.85, y + 0.8, z, Math.PI / 4, 0.25, 0.5, 0.25, 0, Math.PI / 2, true);
     this.batch.paint(CYL, 0x4a3624, x, y + 0.05, z, 0, 1.0, 0.1, 1.0);
     this.addCollider(x, z, 0.8);
-    this.interactables.push({ id: `anvil-${x}-${z}`, kind: 'anvil', x, y: y + 1, z, radius: 3, label: 'Anvil: upgrade weapons' });
+    this.interactables.push({ id: `anvil-${x}-${z}`, kind: 'anvil', x, y: y + 1, z, radius: 3, label: 'Anvil: upgrade and smith' });
   }
 
   private buildDocks() {

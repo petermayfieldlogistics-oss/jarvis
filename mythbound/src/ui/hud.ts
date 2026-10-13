@@ -336,15 +336,16 @@ export class Hud {
     put(this.bossFill, 'width', pct(this.bossK));
   }
 
-  /** Timing minigame: stop the marker inside the green zone. */
-  fishing(sailor: boolean): Promise<'none' | 'fish' | 'golden'> {
+  /** Timing minigame: stop the marker inside the green zone (`perks`: its width and the golden window's). */
+  fishing(sailor: boolean, perks: { zone: number; golden: number } = { zone: sailor ? 34 : 22, golden: 3 }): Promise<'none' | 'fish' | 'golden'> {
     return new Promise((resolve) => {
       const el = document.createElement('div');
       el.className = 'fishing';
-      const zoneW = sailor ? 34 : 22;
+      const zoneW = perks.zone;
+      const gw = perks.golden;
       const zoneX = 15 + Math.random() * (70 - zoneW);
       el.innerHTML = `<div class="panel"><div class="dtitle">Fishing</div><div class="dsub">${this.g.input.touch ? 'Tap' : 'Click or press F/Space'} when the hook is in the green.</div>
-        <div class="ftrack"><div class="fzone" style="left:${zoneX}%;width:${zoneW}%"></div><div class="fgold" style="left:${zoneX + zoneW / 2 - 3}%;width:6%"></div><div class="fhook"></div></div></div>`;
+        <div class="ftrack"><div class="fzone" style="left:${zoneX}%;width:${zoneW}%"></div><div class="fgold" style="left:${zoneX + zoneW / 2 - gw}%;width:${gw * 2}%"></div><div class="fhook"></div></div></div>`;
       this.root.appendChild(el);
       this.prompt(null);
       const hook = el.querySelector<HTMLElement>('.fhook')!;
@@ -371,7 +372,7 @@ export class Hud {
         const now = (performance.now() - start) / 1000;
         if (now < wait) return resolve('none');
         const inZone = pos >= zoneX && pos <= zoneX + zoneW;
-        const gold = Math.abs(pos - (zoneX + zoneW / 2)) < 3;
+        const gold = Math.abs(pos - (zoneX + zoneW / 2)) < gw;
         resolve(!inZone ? 'none' : gold || (sailor && Math.random() < 0.15) ? 'golden' : 'fish');
       };
       const onKey = (e: KeyboardEvent) => {
