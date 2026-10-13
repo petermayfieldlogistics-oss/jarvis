@@ -121,13 +121,14 @@ export function grantDye(w: Wardrobe, id: string): boolean {
   return true;
 }
 
-/** Buys a garment or a colour from Quill. Returns why not, or null when bought. */
-export function buyLook(c: { gold: number; wardrobe: Wardrobe }, kind: 'garment' | 'dye', id: string): string | null {
+/** Buys a garment or a colour from Quill (at `price`, after any markup). Returns why not, or null when bought. */
+export function buyLook(c: { gold: number; wardrobe: Wardrobe }, kind: 'garment' | 'dye', id: string, price?: number): string | null {
   const def = kind === 'garment' ? garment(id) : dyeOf(id);
   if (!def?.price) return 'Quill doesn’t sell that.';
   if (kind === 'garment' ? ownsGarment(c.wardrobe, id) : knowsDye(c.wardrobe, id)) return 'You have it already.';
-  if (c.gold < def.price) return `You need ${def.price} embers.`;
-  c.gold -= def.price;
+  const cost = price ?? def.price;
+  if (c.gold < cost) return `You need ${cost} embers.`;
+  c.gold -= cost;
   if (kind === 'garment') grantGarment(c.wardrobe, id);
   else grantDye(c.wardrobe, id);
   return null;

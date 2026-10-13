@@ -33,6 +33,7 @@ import { Story } from './story';
 import { Hud } from '../ui/hud';
 import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
+import { Wardrobe } from '../ui/wardrobe';
 
 export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand';
 
@@ -124,6 +125,7 @@ export class Game {
   hud: Hud;
   dialog: Dialog;
   menu: Menu;
+  wardrobe: Wardrobe;
   story: Story;
   player!: Player;
   enemies: Enemy[] = [];
@@ -207,6 +209,7 @@ export class Game {
     this.hud = new Hud(ui, this);
     this.dialog = new Dialog(ui);
     this.menu = new Menu(ui, this);
+    this.wardrobe = new Wardrobe(ui, this);
     this.input = new Input(this.renderer.domElement);
     this.input.sensitivity = settings.sensitivity;
     this.input.invertY = settings.invertY;
@@ -1190,6 +1193,12 @@ export class Game {
     for (let t = 0; t < seconds; t += step) this.update(step);
   }
 
+  /** The wardrobe (from the loom, a shrine or the Hero tab). */
+  openWardrobe() {
+    if (this.menu.isOpen) this.menu.close();
+    this.wardrobe.open();
+  }
+
   setMode(m: Mode) {
     this.mode = m;
     this.input.enabled = m === 'play';
@@ -1287,6 +1296,7 @@ export class Game {
     }
 
     this.coop.update(dt);
+    this.wardrobe.update(dt);
     this.cam.update(dt, this);
     this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer', this.fog);
     this.fx.update(gdt);

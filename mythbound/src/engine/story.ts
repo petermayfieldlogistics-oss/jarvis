@@ -12,7 +12,8 @@ import * as THREE from 'three';
 import type { Interactable } from './world';
 import { CROP_IDS, CROPS, SEED_PACK, seedItem, type CropId } from '../data/goods';
 import { FARM, buySeeds, digUp, feed, harvest, isWet, plant, progress, rentPlot, rentPrice, ripeIn, sellCrop, stageOf, water, waterAll } from '../rules/farming';
-import { MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type StationId } from '../data/goods';
+import { DYES, GARMENTS, MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type StationId } from '../data/goods';
+import { buyLook, knowsDye, ownsGarment } from '../rules/outfit';
 import { batches, craft, fishingPerks, hasMade, hasTool, lacking, makesName, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
 import { hours } from './farm';
 
@@ -356,7 +357,7 @@ export class Story {
               ? `Embers for goods, goods for embers. And please, don't lean on the shelves. You have ${c.gold} embers.`
               : `Embers for goods, goods for embers. You have ${c.gold} embers.`,
           options: opts([
-            { label: 'Any curios? (wands, runes, instruments)', action: () => this.shop('quill') },
+            { label: 'Any curios? (wands, instruments, clothes, dyes)', action: () => this.curios() },
             this.buy('20 arrows', 30, () => (c.arrows.wood += 20)),
             this.buy('2 fish', 25, () => (c.items.fish = (c.items.fish ?? 0) + 2)),
             this.sellable().length ? { label: 'Sell… (ore, hides, bones, silk)', action: () => this.sellGoods() } : null,
@@ -838,6 +839,7 @@ export class Story {
       options: [
         { label: night ? 'Pass time until morning' : 'Pass time until nightfall', action: () => (g.passTime(night ? 7 * 60 : 20 * 60), g.hud.toast(night ? 'Dawn breaks.' : 'Night falls.')) },
         { label: 'Cook by the flame', action: () => this.craftAt('cookfire', true) },
+        { label: 'Change outfit', action: () => g.openWardrobe() },
         { label: 'Skills', action: () => g.menu.open('skills') },
         { label: 'Travel to another shrine', action: () => g.menu.open('map') },
         { label: 'Leave' },
@@ -967,6 +969,58 @@ export class Story {
   }
 
   /** Brann's steel (and runes) or Quill's curios. */
+  /** Quill's curios: wands, runes and instruments, or clothes and dye colours. */
+  private curios() {
+    const c = this.c;
+    const clothes = GARMENTS.filter((x) => x.price && !ownsGarment(c.wardrobe, x.id)).length;
+    const dyes = DYES.filter((x) => x.price && !knowsDye(c.wardrobe, x.id)).length;
+    this.open({
+      title: 'Quill',
+      subtitle: 'Curios',
+      text: `What catches your eye? You have ${c.gold} embers.`,
+      options: [
+        { label: 'Wands, runes and instruments', action: () => this.shop('quill') },
+        { label: `Clothes${clothes ? ` (${clothes} to buy)` : ' (you have them all)'}`, action: () => this.lookShop('garment') },
+        { label: `Dyes${dyes ? ` (${dyes} to buy)` : ' (you have them all)'}`, action: () => this.lookShop('dye') },
+        { label: 'Back', action: () => this.talk('quill') },
+      ],
+    });
+  }
+
+  /** Quill's clothes or dye colours (each colour, once bought, is yours for good). */
+  private lookShop(kind: 'garment' | 'dye') {
+    const c = this.c;
+    const g = this.g;
+    const stock = (kind === 'garment' ? GARMENTS : DYES).filter((x) => x.price);
+    this.open({
+      title: 'Quill',
+      subtitle: kind === 'garment' ? 'Clothes' : 'Dyes',
+      text: `${kind === 'garment' ? 'Plain, well made. Try them on at any shrine, or at the loom by Wren’s field.' : 'Buy a colour once and it’s yours to dye anything with, as often as you like. Wren grows the plants, if you’d rather make your own.'} You have ${c.gold} embers.`,
+      options: [
+        ...stock.map((x): DialogOption => {
+          const owned = kind === 'garment' ? ownsGarment(c.wardrobe, x.id) : knowsDye(c.wardrobe, x.id);
+          const cost = shopPrice(c, x.price!);
+          return {
+            label: owned ? `${x.name} (yours)` : `${x.name} (${cost}) · ${x.blurb}`,
+            disabled: owned || c.gold < cost,
+            action: () => {
+              const err = buyLook(c, kind, x.id, cost);
+              if (err) g.hud.toast(err, 'warn');
+              else {
+                g.audio.play('pickup');
+                g.hud.toast(kind === 'garment' ? `New garment: ${x.name}` : `New colour: ${x.name}`, 'quest');
+                g.save();
+              }
+              this.lookShop(kind);
+            },
+          };
+        }),
+        { label: 'Change outfit', action: () => g.openWardrobe() },
+        { label: 'Back', action: () => this.curios() },
+      ],
+    });
+  }
+
   private shop(id: ShopId) {
     const c = this.c;
     const g = this.g;
