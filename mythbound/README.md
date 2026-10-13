@@ -69,6 +69,13 @@ code; friends type it and press **Join**. Co-op needs the online version
   extra hero. Everyone inside wins the legendary weapon (once each). If the heroes inside all fall, the trial is lost.
 - With friends, the world never pauses: menus don't stop it, and resting at a shrine doesn't bring monsters back. The
   host should keep the game tab open and in view.
+- **Team combos**: strike the same foe as a friend within 4 seconds, each with a different element (a spell, a rune, an
+  elemental weapon or a power strike), and the two combine. Every pair of the seven elements (fire, water, wind,
+  earth, lightning, light, dark) makes its own combo, 21 in all: Scalding Steam blinds, Conduction stuns every soaked
+  foe, Blizzard freezes, Wildfire spreads flames, Holy Tide mends you both, Eclipse ignores resistances, and so on (the
+  full list is under Menu → Co-op → Team combos). It adds 50–150% of both blows to the foe, half that to foes around
+  it, and its effect; a foe can be caught again after 3 seconds. The host's game decides; everyone sees the combo's
+  name and the two heroes who made it.
 - The free server naps after 15 minutes without players, so the first connection can take up to a minute.
 
 ## The world

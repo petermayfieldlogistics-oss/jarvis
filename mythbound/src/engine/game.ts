@@ -626,7 +626,6 @@ export class Game {
     this.fx.flash(at, c1, 45, 20);
     this.fx.emit(at, { color: c1, count: 30, speed: 6, life: 0.7, size: 0.6, up: 1.5 });
     this.fx.emit(at, { color: c2, count: 30, speed: 6, life: 0.7, size: 0.6, up: 1.5 });
-    this.fx.damageNumber(v.set(at.x, at.y + 2.2, at.z), def.name.toUpperCase(), 'crit');
     if (near) {
       this.audio.play('zap');
       this.audio.play('slam');

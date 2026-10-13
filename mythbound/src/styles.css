@@ -700,7 +700,7 @@ form.acct .link { align-self: center; }
 .hud .tcombo { position: absolute; left: 50%; top: 21%; transform: translateX(-50%); text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.5s; white-space: nowrap; --c1: #ff7a1a; --c2: #3ee0ff; }
 .hud .tcombo.show { opacity: 1; animation: comboIn 0.5s cubic-bezier(0.2, 1.6, 0.4, 1); }
 .hud .tcombo .tcname { font-family: var(--display); font-size: clamp(22px, 4.2vw, 42px); letter-spacing: 0.1em; text-transform: uppercase; background: linear-gradient(90deg, var(--c1), #fff 50%, var(--c2)); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.9)) drop-shadow(0 2px 1px #000); }
-.hud .tcombo .tcwho { font-family: var(--serif); font-size: 17px; font-style: italic; color: var(--ink); text-shadow: 0 1px 4px #000; }
+.hud .tcombo .tcwho { display: inline-block; margin-top: 2px; padding: 1px 12px; border-radius: 12px; background: rgba(12, 9, 6, 0.6); font-family: var(--serif); font-size: 17px; font-style: italic; color: #f4e8cc; text-shadow: 0 1px 3px #000; }
 .hud .tcombo .tcwho::before, .hud .tcombo .tcwho::after { content: '◆'; font-style: normal; font-size: 10px; margin: 0 8px; vertical-align: 2px; }
 .hud .tcombo .tcwho::before { color: var(--c1); }
 .hud .tcombo .tcwho::after { color: var(--c2); }
@@ -1018,6 +1018,7 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 /* Between the joystick and the action pad. */
 .is-touch .hud .prompt { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 14px); left: calc(50% - 65px); font-size: 13px; padding: 4px 14px 5px; max-width: 330px; overflow: hidden; text-overflow: ellipsis; }
 .is-touch .banner.zone { padding-top: 42vh; }
+.is-touch .hud .tcombo { top: 31%; }
 .is-touch .spells .slot { pointer-events: auto; }
 .is-touch .hud .bl { bottom: auto; top: max(100px, calc(var(--tlb, 0px) + 6px)); font-size: 13px; }
 .is-touch .txp { display: block; }
