@@ -43,6 +43,11 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 over the shoulder and shows a crosshair, so you can strafe, back-pedal and aim spells and arrows precisely. Tap again to
 release it. Holding Shift still sprints.
 
+**On a phone** the stick appears wherever your left thumb lands on the lower-left of the screen, ignores a resting
+thumb, and slides along if your thumb wanders past the ring. As you run, the camera swings in behind you, so one thumb
+can steer (never round to face you when you run back toward it, and not for a moment after you turn it yourself; turn
+it off under Settings, "Camera follows you"). Drag anywhere else, including the top of the screen, to look around.
+
 ## Accounts and hero slots
 
 The front screen offers **Log in**, **Create account** and **Play offline**. An account is a username and a password

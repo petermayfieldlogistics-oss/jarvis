@@ -279,6 +279,7 @@ export class Menu {
       <label>Invert look Y <input type="checkbox" ${s.invertY ? 'checked' : ''} data-set="invertY"></label>
       <label>Volume <input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-set="volume"></label>
       <label>Touch controls <select data-set="touch">${['auto', 'on', 'off'].map((q) => `<option ${s.touch === q ? 'selected' : ''}>${q}</option>`).join('')}</select></label>
+      <label>Camera follows you (touch) <input type="checkbox" ${s.camFollow !== false ? 'checked' : ''} data-set="camFollow"></label>
       <div class="btnrow"><button data-act="reload">Save &amp; reload</button><button data-act="quit">Save &amp; quit to title</button></div>
     </div>`;
   }

@@ -163,6 +163,8 @@ export interface Settings {
   invertY: boolean;
   volume: number;
   touch: 'auto' | 'on' | 'off';
+  /** On touch screens, the camera swings in behind a running hero. */
+  camFollow: boolean;
   /** Co-op: the name friends see, and the relay server's address. */
   coopName: string;
   coopServer: string;
@@ -176,7 +178,7 @@ export function defaultQuality(): Settings['quality'] {
 }
 
 export function loadSettings(): Settings {
-  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', coopName: '', coopServer: '', questsCollapsed: null };
+  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', camFollow: true, coopName: '', coopServer: '', questsCollapsed: null };
   try {
     return { ...d, ...JSON.parse(storage()?.getItem(SETTINGS_KEY) ?? '{}') };
   } catch {
