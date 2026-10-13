@@ -1,4 +1,5 @@
 import { MAX_KNIVES, classWields } from './weapons';
+import { newSteed, normalizeSteed, type Steed } from './horse';
 import {
   CLASSES,
   MAGE_STARTING_SPELLS,
@@ -73,6 +74,8 @@ export interface Character extends CharacterChoice {
   milestone: number;
   /** Skill resets so far (the first is free). */
   respecs: number;
+  /** The hero's horse (called with B or 🐎). */
+  steed: Steed;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -191,6 +194,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     items: {},
     milestone: 0,
     respecs: 0,
+    steed: newSteed(rng),
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -311,6 +315,7 @@ export function normalizeCharacter(c: Character): Character {
     c.milestone = reached * 5;
   }
   if (typeof c.respecs !== 'number') c.respecs = 0;
+  c.steed = normalizeSteed(c.steed);
   return c;
 }
 
