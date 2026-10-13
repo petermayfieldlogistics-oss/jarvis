@@ -175,6 +175,26 @@ export function lockedSlot(raceId: RaceId, slot: Slot): string | null {
   return null;
 }
 
+/** What keeps a hero from changing clothes now (null: nothing). */
+export function wardrobeBlock(s: {
+  alive: boolean;
+  riding: boolean;
+  inTrial: boolean;
+  threatened: boolean;
+  sinceHurt: number;
+  swimming: boolean;
+  flying: boolean;
+  sailing: boolean;
+  busy: boolean;
+}): string | null {
+  if (!s.alive) return 'Not now.';
+  if (s.riding) return 'Get down from your horse first.';
+  if (s.swimming || s.sailing || s.flying) return 'Change clothes on dry land.';
+  if (s.inTrial || s.threatened || s.sinceHurt < 4) return 'Change clothes somewhere safe.';
+  if (s.busy) return 'Finish what you are doing first.';
+  return null;
+}
+
 /** The outfit without what this race can't wear. */
 export function wearable(d: Dressed, raceId: RaceId): Dressed {
   if (!SLOTS.some((s) => d[s] && lockedSlot(raceId, s))) return d;

@@ -13,7 +13,7 @@ import type { Interactable } from './world';
 import { CROP_IDS, CROPS, SEED_PACK, seedItem, type CropId } from '../data/goods';
 import { FARM, buySeeds, digUp, feed, harvest, isWet, plant, progress, rentPlot, rentPrice, ripeIn, sellCrop, stageOf, water, waterAll } from '../rules/farming';
 import { MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type StationId } from '../data/goods';
-import { batches, craft, fishingPerks, hasTool, lacking, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
+import { batches, craft, fishingPerks, hasMade, hasTool, lacking, makesName, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
 import { hours } from './farm';
 
 /** What the chronicler mutters on meeting the newer races. */
@@ -674,6 +674,7 @@ export class Story {
             const ready = list.filter((r) => r.group === gname && batches(c, r) > 0).length;
             return { label: `${gname}${ready ? ` (${ready} ready)` : ''}`, action: () => this.craftAt(station, camp, gname) };
           }),
+          ...(station === 'loom' ? [{ label: 'Change outfit', action: () => this.g.openWardrobe() }] : []),
           { label: 'Done' },
         ],
       });
@@ -685,10 +686,10 @@ export class Story {
       options: [
         ...shown.map((r): DialogOption => {
           const n = batches(c, r);
-          const owned = r.once && r.makes.kind === 'item' && hasTool(c, r.makes.id);
+          const owned = hasMade(c, r);
           const miss = lacking(c, r)[0];
           const label = owned
-            ? `${r.name} (yours)`
+            ? `${r.name} (${r.makes.kind === 'dye' ? 'known' : 'yours'})`
             : n > 0
               ? `✔ ${r.name} (${n})`
               : `${r.name} · need ${miss ? `${miss.need - miss.have} ${miss.id === 'arrows' ? 'wood arrows' : (ITEMS[miss.id]?.name ?? miss.id)}` : `${recipeGold(c, r)} embers`}`;
@@ -707,12 +708,12 @@ export class Story {
     if (r.arrows) needs.push(`Wood arrows ${c.arrows.wood}/${r.arrows}`);
     const gold = recipeGold(c, r);
     if (gold) needs.push(`Embers ${c.gold}/${gold}${gold < (r.gold ?? 0) ? ' (blacksmith: half)' : ''}`);
-    const makes = r.makes.kind === 'arrows' ? `${r.makes.n} ${r.makes.type} arrows` : `${r.makes.n} ${ITEMS[r.makes.id]?.name ?? r.makes.id}`;
+    const makes = makesName(r.makes);
+    const look = r.makes.kind === 'garment' || r.makes.kind === 'dye';
     const make = (times: number) => () => {
       const made = craft(c, r, times);
       if (made > 0) {
-        const total = r.makes.kind === 'arrows' ? `+${r.makes.n * made} ${r.makes.type} arrows` : `+${r.makes.n * made} ${ITEMS[r.makes.id]?.name ?? r.makes.id}`;
-        g.hud.toast(total, 'quest');
+        g.hud.toast(r.makes.kind === 'garment' ? `New garment: ${makes}` : r.makes.kind === 'dye' ? `New colour: ${makes}` : `+${makesName(r.makes, made)}`, 'quest');
         g.audio.play(station === 'anvil' ? 'slam' : 'pickup');
         g.fx.emit(g.player.center(), { color: station === 'cookfire' ? 0xffa040 : station === 'anvil' ? 0xffc070 : 0xc8a070, count: 16, speed: 3, life: 0.5, size: 0.3, up: 1.5 });
         if (r.needs['ember-ore']) g.questProgress('ore', 0);
@@ -731,7 +732,9 @@ export class Story {
       subtitle: `Makes ${makes}`,
       text: `${r.blurb}\n\nNeeds: ${needs.join(' · ')}`,
       options: [
-        { label: 'Make 1', disabled: n < 1, action: make(1) },
+        hasMade(c, r)
+          ? { label: look ? 'Change outfit' : 'Made', disabled: !look, action: look ? () => this.g.openWardrobe() : undefined }
+          : { label: r.makes.kind === 'dye' ? 'Mix the dye' : r.once ? 'Make it' : 'Make 1', disabled: n < 1, action: make(1) },
         ...(n >= 5 && !r.once ? [{ label: 'Make 5', action: make(5) }] : []),
         ...(n > 1 && !r.once ? [{ label: `Make all (${n})`, action: make(n) }] : []),
         { label: 'Back', action: () => this.craftAt(station, camp, group) },

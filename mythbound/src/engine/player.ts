@@ -27,7 +27,7 @@ import {
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { gallopDrain, HORSE, rideBlock, rideSpeed, rideStep } from '../rules/horse';
 import { hasTool } from '../rules/crafting';
-import { baseLook } from '../rules/outfit';
+import { applyOutfit, baseLook, dressedOf, isPlain, PLAIN, wardrobeBlock, wearable, type Dressed } from '../rules/outfit';
 import { EAT_GAP, eatItem, foodCount, pickFood } from '../rules/food';
 import { ITEMS } from '../data/world';
 import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
@@ -331,7 +331,7 @@ export class Player {
     this.hp = maxHp(c);
     this.mana = maxMana(c);
     this.stamina = maxStamina(c);
-    this.rig = buildPlayerRig(c);
+    this.rig = buildPlayerRig(c, heroDressed(c));
     compact(this.rig.root);
     this.rig.root.traverse((o) => (o.castShadow = true));
     this.equip();
@@ -393,6 +393,44 @@ export class Player {
   /** Hidden from sight (Moonveil, Vanish, Ghost): the model flickers, friends see it too. */
   get unseen() {
     return this.moonveil > 0 || this.vanish > 0 || this.ghost > 0;
+  }
+
+  /** What keeps the hero from changing clothes now (null: nothing). */
+  wardrobeBlock(g: Game): string | null {
+    return wardrobeBlock({
+      alive: this.alive,
+      riding: this.riding,
+      inTrial: g.inTrial,
+      threatened: this.threatened(g),
+      sinceHurt: this.now - this.hurtAt,
+      swimming: this.swimming,
+      flying: this.flying,
+      sailing: this.sailing,
+      busy: !!this.attack || !!this.charge || this.rollT >= 0 || this.stagger > 0 || this.blackout > 0,
+    });
+  }
+
+  /** Dresses the hero in an outfit: a new model in place of the old (the wardrobe's preview, and Keep). */
+  restyle(dressed: Dressed) {
+    const old = this.rig;
+    const parent = old.root.parent;
+    // Auras hang off the old model; they come back on the new one next frame.
+    this.stopAuras();
+    const rig = buildPlayerRig(this.c, dressed);
+    compact(rig.root);
+    rig.root.traverse((o) => (o.castShadow = true));
+    this.rig = rig;
+    this.equip();
+    old.root.removeFromParent();
+    disposeObject(old.root);
+    parent?.add(rig.root);
+    // Posed at once, so a paused game never shows it standing stiff.
+    this.syncModel();
+  }
+
+  private stopAuras() {
+    for (const a of [this.rageAura, this.songAura, this.shotAura, this.chargeAura, this.ironAura, this.surgeAura, this.wardAura]) a?.stop();
+    this.rageAura = this.songAura = this.shotAura = this.chargeAura = this.ironAura = this.surgeAura = this.wardAura = null;
   }
 
   /** Re-attaches the main weapon (and a warrior's shield) to the model. */
@@ -3266,17 +3304,26 @@ const GRAVE_DUST = new THREE.Color(0x5e5a4a);
 /** A colour faded with grave dust. */
 const faded = (hex: number) => new THREE.Color(hex).lerp(GRAVE_DUST, 0.45).getHex();
 
-export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'> & { subclassId?: SubclassId | null }): Rig {
+/** What the hero wears, from the wardrobe. */
+export const heroDressed = (c: Pick<Character, 'wardrobe'>): Dressed => (c.wardrobe ? dressedOf(c.wardrobe.outfit) : PLAIN);
+
+/**
+ * A hero's model: their class's clothes, their role's colours, the outfit
+ * from the wardrobe, then their race (grave dust dulls every dye; wings leave
+ * no room for a cloak; an ancient keeps its hood).
+ */
+export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId' | 'hunched'> & { subclassId?: SubclassId | null }, dressed: Dressed = PLAIN): Rig {
   const skin = SKIN[c.raceId];
-  const look = baseLook(c.classId, c.subclassId, c.roleId);
+  const worn = wearable(dressed, c.raceId);
+  const look = applyOutfit(baseLook(c.classId, c.subclassId, c.roleId), worn);
   if (c.raceId === 'zombie') {
     look.cloth = faded(look.cloth);
     look.armor = faded(look.armor);
     if (look.cape !== undefined) look.cape = faded(look.cape);
   }
   if (c.raceId === 'angelic') {
-    // Gold trim, and the wings take the place of a cape.
-    look.accent = 0xffd36a;
+    // Gold trim (unless dyed), and the wings take the place of a cape.
+    if (worn.trim === null) look.accent = 0xffd36a;
     look.cape = undefined;
   }
   const orc = c.raceId === 'orc';
@@ -3298,5 +3345,6 @@ export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId
     featherWings: c.raceId === 'angelic' ? 0xfaf6ee : undefined,
     stitches: c.raceId === 'zombie' || undefined,
     hunch: c.raceId === 'zombie' && c.hunched !== false ? 0.36 : undefined,
-  });
+    // A hero in their own clothes shares the cached model; a custom outfit is built (and freed) on its own.
+  }, isPlain(worn));
 }

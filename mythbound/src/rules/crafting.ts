@@ -3,7 +3,8 @@
 // made or used is an ordinary item in the pack (or arrows). Pure rules: the
 // engine (story.ts) plays them out.
 
-import { MATERIALS, MATERIAL_DROPS, RECIPES, SUPPLIES, type Output, type RecipeDef, type StationId } from '../data/goods';
+import { MATERIALS, MATERIAL_DROPS, RECIPES, SUPPLIES, dyeOf, garment, type Output, type RecipeDef, type StationId } from '../data/goods';
+import { ITEMS } from '../data/world';
 import type { Character } from './character';
 import { grantDye, grantGarment, knowsDye, ownsGarment } from './outfit';
 
@@ -56,6 +57,14 @@ export function batches(c: Pack, r: RecipeDef): number {
   if (gold > 0) n = Math.min(n, Math.floor(c.gold / gold));
   if (r.once) n = Math.min(n, 1);
   return n === Infinity ? 0 : Math.max(0, n);
+}
+
+/** What a recipe makes, in words ("20 wood arrows", "2 Hearth Bread", "Woad Blue dye"), for `times` batches. */
+export function makesName(out: Output, times = 1): string {
+  if (out.kind === 'arrows') return `${out.n * times} ${out.type} arrows`;
+  if (out.kind === 'garment') return garment(out.id)?.name ?? out.id;
+  if (out.kind === 'dye') return `${dyeOf(out.id)?.name ?? out.id} dye`;
+  return `${out.n * times} ${ITEMS[out.id]?.name ?? out.id}`;
 }
 
 /** Puts what a recipe makes into the pack (or the wardrobe). */
