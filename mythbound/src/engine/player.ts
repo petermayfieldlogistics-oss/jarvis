@@ -21,6 +21,9 @@ import {
 import { buildShield, buildWeapon, buildWraps, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { FLURRY_AT, newAnim, type AnimState, type AttackStyle } from './anim';
+import {
+  BURST, BURST_COLOR, BURST_ELEMENT, burstEffects, burstFor, burstScale, chargeKind, chargeLevel, empowerPower, POWER, spellBurst, strikePower, type Burst,
+} from '../rules/power';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { Ally, Boss, Enemy, type Actor } from './entities';
 import type { Game } from './game';
@@ -63,6 +66,8 @@ interface Attack {
   shots: number;
   /** Extra damage multiplier for this move (a riposte). */
   mult: number;
+  /** A power strike: the burst it lands with and how charged it was. */
+  power?: { burst: Burst; charge: number };
 }
 
 /**
@@ -251,11 +256,30 @@ export class Player {
   /** Foes a Wind Blades dash has already cut. */
   private dashHit = new Set<Enemy>();
   /** A held beam (Life Drain, Radiant Beam): the foe it holds and the next tick. */
-  private channel: { spell: SpellId; target: Enemy | null; tick: number; share: number } | null = null;
+  /** A beam spell flowing (`flow`: seconds an empowered beam keeps flowing without the cast button held). */
+  private channel: { spell: SpellId; target: Enemy | null; tick: number; share: number; flow: number } | null = null;
   /** Poison stacks this hero keeps ticking on foes (Poison Blades). */
   private toxins: { e: Enemy; stacks: number; left: number; tick: number }[] = [];
   /** Things that happen a moment after a move starts (a palm's shockwave, a smoke bomb landing). */
   private later: { at: number; run: () => void }[] = [];
+  // ---- Power strikes (hold heavy).
+  /** Seconds heavy has been held (-1: not held). */
+  private heavyHeld = -1;
+  /** Shown "not ready" for this hold already. */
+  private heavyWarned = false;
+  /** This hold may become a charge (decided once it is held long enough, or let go). */
+  private heavyPending = false;
+  /** An empowered spell's burst, for the spell about to be cast. */
+  private empowerBurst: { kind: Burst; charge: number } | null = null;
+  /** A power strike being charged: how it is aimed, what it bursts with, and how charged it is. */
+  charge: { kind: 'melee' | 'bow' | 'spell' | 'thrown'; burst: Burst; t: number; level: number; full: boolean; style: AttackStyle } | null = null;
+  /** When the next power strike can be charged. */
+  powerReadyAt = 0;
+  /** The move about to start is a power strike (a released charge). */
+  private powerNext: { burst: Burst; charge: number } | null = null;
+  /** An empowered spell's multiplier while it is cast (and while its beam flows). */
+  private empower = 1;
+  private chargeAura: { stop(): void } | null = null;
   private ironAura: { stop(): void } | null = null;
   private surgeAura: { stop(): void } | null = null;
   private wardAura: { stop(): void } | null = null;
@@ -268,7 +292,8 @@ export class Player {
   private boltOutT = 0;
   private boltV = new THREE.Vector3();
   private shieldMesh: THREE.Object3D | null = null;
-  private now = 0;
+  /** Seconds this hero has been in play (cooldowns count against it). */
+  now = 0;
   private rollTime = 0;
   private backstep = false;
   private queued: 'light' | 'heavy' | null = null;
@@ -476,7 +501,7 @@ export class Player {
     const wantLen = Math.hypot(wantX, wantZ);
     const sprint = input.held.has('sprint') && wantLen > 0.1 && !this.exhausted && this.stamina > 0 && !this.swimming && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack;
     let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1) * (this.song ? SONGS[this.song].speed : 1) * (this.tailwind > 0 ? 1.3 : 1);
-    if (this.blocking || this.drawing > 0) speed *= 0.45;
+    if (this.blocking || this.drawing > 0 || this.charge) speed *= 0.45;
     const atk = this.attack;
     // Moving (or rolling) stands a meditating monk up.
     if (atk?.kind === 'meditate' && (wantLen > 0.3 || input.pressed.has('roll') || input.pressed.has('jump'))) this.endMeditation();
@@ -548,7 +573,7 @@ export class Player {
       if (a.t < a.from) this.yaw = rotateTowards(this.yaw, target ? Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z) : a.aim, dt, 24);
     } else if (target) {
       this.faceTowards(target.pos.x, target.pos.z, dt, 12);
-    } else if ((shiftLock && !this.sailing) || this.drawing > 0 || a) {
+    } else if ((shiftLock && !this.sailing) || this.drawing > 0 || a || this.charge) {
       this.yaw = rotateTowards(this.yaw, camYaw, dt, shiftLock ? 22 : 14);
     } else if (wantLen > 0.1) {
       this.faceTowards(this.pos.x + wantX, this.pos.z + wantZ, dt, 10);
@@ -679,6 +704,7 @@ export class Player {
       this.queued = input.pressed.has('heavy') ? 'heavy' : 'light';
       this.queuedAt = this.now;
     }
+    this.updateCharge(dt, g, canAct && !this.swimming && !this.sailing && !this.flying);
     if (this.attack) this.updateAttack(dt, g);
 
     // Casting: tap for the main form, hold for the alternate. A channelled
@@ -688,7 +714,7 @@ export class Player {
       if (sp && SPELLS[sp].channel && !this.combineMode) this.startChannel(g, sp);
       else this.castHeld = 0;
     }
-    if (this.channel) this.updateChannel(dt, g, input.held.has('cast') && canAct);
+    if (this.channel) this.updateChannel(dt, g, input.held.has('cast'), canAct);
     if (this.castHeld >= 0) {
       this.castHeld += dt;
       if (input.released.has('cast') || this.castHeld > 0.6) {
@@ -723,7 +749,9 @@ export class Player {
     this.spend(R.cost);
     if (this.attack) this.finishAttack();
     this.stopChannel();
+    this.cancelCharge();
     this.queued = null;
+    this.powerNext = null;
     this.drawing = 0;
     this.crouching = false;
     this.blocking = false;
@@ -822,23 +850,28 @@ export class Player {
         // The follow-through of the loose.
         this.startAttack('bow', 'bow', 0.32);
       }
-      if (input.pressed.has('heavy') && this.c.classId !== 'mage') {
-        // Melee bash with a dagger, if carried.
-        const dagger = this.c.weapons.findIndex((w) => WEAPONS[w.id].kind === 'dagger');
-        if (dagger >= 0) {
-          this.c.mainHand = dagger;
-          this.equip();
-          g.hud.toast('Dagger drawn.');
-        }
+      // Heavy: held, a charged elemental arrow; tapped, the dagger comes out.
+      if (input.pressed.has('heavy') && !this.attack) {
+        this.heavyHeld = 0;
+        this.heavyWarned = false;
+        this.heavyPending = this.canCharge();
+        if (!this.heavyPending) this.drawDagger(g);
       }
       return;
     }
 
     if (input.pressed.has('attack')) (this.queued = 'light'), (this.queuedAt = this.now);
-    if (input.pressed.has('heavy')) (this.queued = 'heavy'), (this.queuedAt = this.now);
+    // Heavy: a tap is a heavy blow; held, it charges a power strike (decided as it is held or let go).
+    if (input.pressed.has('heavy')) {
+      this.heavyHeld = 0;
+      this.heavyWarned = false;
+      this.heavyPending = this.canCharge();
+      if (!this.heavyPending) (this.queued = 'heavy'), (this.queuedAt = this.now);
+    }
     if (!this.queued) return;
     if (this.now - this.queuedAt > BUFFER) {
       this.queued = null;
+      this.powerNext = null;
       return;
     }
     const cur = this.attack;
@@ -853,10 +886,14 @@ export class Player {
 
     if (kind === 'bolt') {
       this.spend(8);
-      this.startAttack('throw', 'throw', 0.5);
+      this.startAttack('throw', 'throw', 0.5, { power: heavy ? this.takePower() : undefined });
     } else if (kind === 'knives' && this.c.knives > 0) {
-      // Quick throws; a heavy looses a fan of three in quick succession.
-      if (heavy && this.c.knives > 1) {
+      // Quick throws; a heavy looses a fan of three in quick succession (a charged one, one blazing knife).
+      const power = heavy ? this.takePower() : undefined;
+      if (power) {
+        this.spend(10);
+        this.startAttack('throw', 'throw', 0.55, { step: 0, power });
+      } else if (heavy && this.c.knives > 1) {
         this.spend(16);
         this.startAttack('throw', 'volley', 0.95, { step: 0 });
       } else {
@@ -899,20 +936,22 @@ export class Player {
       } else {
         this.spend(25 * thrift);
         this.comboStep = 0;
+        // A released charge makes this heavy a power strike.
+        const power = this.takePower();
         if (this.c.subclassId === 'swordsman') {
-          this.startAttack('spin', 'spin', dur * 1.5, rank(this.c, 'lunge') ? { step: 2.2 } : {});
+          this.startAttack('spin', 'spin', dur * 1.5, { power, ...(rank(this.c, 'lunge') ? { step: 2.2 } : {}) });
           g.hud.toast('Spinner Flourish!', 'skill');
         } else if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) {
-          this.startAttack('throw', 'throw', 0.7);
+          this.startAttack('throw', 'throw', 0.7, { power });
         } else if (kind === 'battleaxe' || kind === 'quarterstaff') {
           // The battle axe (and a quarterstaff) whirls all the way round.
-          this.startAttack('spin', 'spin', dur * (kind === 'quarterstaff' ? 1.25 : 1.35));
+          this.startAttack('spin', 'spin', dur * (kind === 'quarterstaff' ? 1.25 : 1.35), { power });
         } else if (kind === 'wraps') {
           // A palm strike: a step in and both palms driven into the foe.
-          this.startAttack('heavy', 'palm', Math.max(0.6, dur * 1.9), { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
+          this.startAttack('heavy', 'palm', Math.max(0.6, dur * 1.9), { power, step: 0.9 + 2.2 * rank(this.c, 'lunge') });
         } else {
           // A lunge carries the heavy blow several steps forward.
-          this.startAttack('heavy', heavyStyle(kind), dur * 1.6, { step: 0.9 + 2.2 * rank(this.c, 'lunge') });
+          this.startAttack('heavy', heavyStyle(kind), dur * 1.6, { power, step: 0.9 + 2.2 * rank(this.c, 'lunge') });
         }
       }
     }
@@ -942,7 +981,7 @@ export class Player {
     return best;
   }
 
-  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number; big?: boolean; mult?: number } = {}) {
+  private startAttack(kind: AttackKind, style: AttackStyle, duration: number, o: { finisher?: boolean; step?: number; big?: boolean; mult?: number; power?: { burst: Burst; charge: number } } = {}) {
     const tm = TIMING[style] ?? TIMING.slash!;
     if (this.attack) this.finishAttack();
     if (kind !== 'channel') this.stopChannel();
@@ -952,7 +991,8 @@ export class Player {
     this.attack = {
       kind,
       style,
-      t: 0,
+      // A power strike was wound up while charging: it goes straight into the blow.
+      t: o.power ? Math.max(0, tm.from - 0.14) * duration : 0,
       duration,
       hitAt: tm.hit * duration,
       from: tm.from * duration,
@@ -970,6 +1010,7 @@ export class Player {
       big: !!o.big,
       shots: 0,
       mult: o.mult ?? 1,
+      power: o.power,
     };
     this.crouching = this.crouching && this.c.roleId === 'assassin';
   }
@@ -1065,6 +1106,9 @@ export class Player {
     const arc = swingArc(def.kind, a.kind === 'spin' ? 'spin' : a.kind === 'heavy' ? 'heavy' : 'light', rank(c, 'cleave') > 0);
     let base = weaponDamage(w) * (a.kind === 'heavy' ? (palm ? 1 : 1.8) : a.kind === 'spin' ? 1.3 * (1 + 0.2 * rank(c, 'wide-flourish')) * (1 + 0.15 * whirl) : 1) * a.mult;
     if (finisher) base *= 1.35;
+    // A power strike hits far harder, then bursts.
+    const pw = a.power;
+    if (pw) base *= strikePower(pw.charge);
     let landed = false;
     const fwdYaw = this.yaw;
     const ambush = this.vanish > 0;
@@ -1084,7 +1128,7 @@ export class Player {
         landed = true;
         continue;
       }
-      const hitBase = palm ? weaponDamage(w) * palmPower(c, e.status.stun > 0) * a.mult : base;
+      const hitBase = palm ? weaponDamage(w) * palmPower(c, e.status.stun > 0) * a.mult * (pw ? strikePower(pw.charge) : 1) : base;
       g.hitEnemyWithWeapon(e, hitBase, 'melee', def.element, { fromBehind, fury: this.fury, finisher, ambush });
       landed = true;
       if (e.bleeds && Math.random() < bleedChance(c)) e.status.bleed = 4;
@@ -1105,6 +1149,13 @@ export class Player {
       this.gainChi(chiOnHit(c));
       if (ambush) g.hud.toast('Ambush!', 'skill');
       if (palm) g.sfx.shockwave(this.tv.set(this.pos.x + Math.sin(this.yaw) * 1.2, this.pos.y + 1.1, this.pos.z + Math.cos(this.yaw) * 1.2), 1.6, this.chiColor(), 0.25);
+    }
+    if (pw) {
+      // The burst lands where the blow did: in front, or all round for a whirl.
+      const d = a.kind === 'spin' ? 0 : Math.min(reach, 2.2);
+      const at = new THREE.Vector3(this.pos.x + Math.sin(fwdYaw) * d, this.pos.y, this.pos.z + Math.cos(fwdYaw) * d);
+      at.y = Math.max(heightAt(at.x, at.z), WATER_LEVEL);
+      this.burst(g, pw.burst, at, pw.charge, weaponDamage(w), null);
     }
     return landed;
   }
@@ -1257,6 +1308,7 @@ export class Player {
   }
 
   private trailColor(): number {
+    if (this.attack?.power) return BURST_COLOR[this.attack.power.burst];
     if (this.fury.bloodrageActive) return RAGE_RED;
     const w = mainWeapon(this.c);
     if (w.rune) return RUNES[w.rune].color;
@@ -1289,7 +1341,7 @@ export class Player {
     return this.c.arrows.steel + this.c.arrows.wood;
   }
 
-  private fireArrow(g: Game, draw: number) {
+  private fireArrow(g: Game, draw: number, burst?: { kind: Burst; charge: number }) {
     const steel = this.c.arrows.steel > 0;
     const keep = rank(this.c, 'reclaim') && Math.random() < 0.4;
     if (!keep) {
@@ -1305,9 +1357,14 @@ export class Player {
     this.powerShotArmed = false;
     const artemis = def.legendary === 'bow-of-artemis';
     const pierce = (rank(this.c, 'piercing-shot') ? 1 : 0) + (artemis ? 2 : 0);
-    const shoot = (dest: THREE.Vector3) =>
-      g.spawnProjectile({ from, to: dest, speed: 50 + 30 * draw, kind: 'arrow', owner: 'player', damage: base, element: def.element, gravity: 9 * (1.2 - draw), draw, pierce, powerShot: ps ?? undefined, source: null, rune: w.rune });
-    shoot(to);
+    // A charged arrow flies true and hard, glowing with its burst.
+    const pb = burst ? { kind: burst.kind, charge: burst.charge, base } : undefined;
+    const shoot = (dest: THREE.Vector3, b?: typeof pb) =>
+      g.spawnProjectile({
+        from, to: dest, speed: 50 + 30 * draw + (b ? 15 : 0), kind: 'arrow', owner: 'player', damage: base * (b ? strikePower(b.charge) : 1), element: def.element, gravity: b ? 2 : 9 * (1.2 - draw), draw, pierce,
+        powerShot: ps ?? undefined, source: null, rune: w.rune, burst: b, color: b ? BURST_COLOR[b.kind] : undefined,
+      });
+    shoot(to, pb);
     if (draw >= 1 && rank(this.c, 'volley')) {
       for (const s of [-0.08, 0.08]) shoot(to.clone().sub(from).applyAxisAngle(UP, s).add(from));
     }
@@ -1323,7 +1380,11 @@ export class Player {
     if (def.kind === 'bolt') {
       const check = canWield(this.c, w.id);
       // It strikes, then flies back to the hand (hitting again on the way).
-      g.spawnProjectile({ from, to, speed: 70, kind: 'bolt', owner: 'player', damage: weaponDamage(w), element: 'lightning', gravity: 0, source: null, explode: 3, boomerang: true, home: () => this.boltHome() });
+      const pw = this.attack?.power;
+      g.spawnProjectile({
+        from, to, speed: 70, kind: 'bolt', owner: 'player', damage: weaponDamage(w) * (pw ? strikePower(pw.charge) : 1), element: 'lightning', gravity: 0, source: null, explode: 3, boomerang: true, home: () => this.boltHome(),
+        burst: pw ? { kind: pw.burst, charge: pw.charge, base: weaponDamage(w) } : undefined,
+      });
       this.boltOut = true;
       this.boltOutT = 0;
       if (this.weaponMesh) this.weaponMesh.visible = false;
@@ -1332,7 +1393,11 @@ export class Player {
         g.hud.toast('The Master Bolt bites your hand.', 'warn');
       }
     } else {
-      g.spawnProjectile({ from, to, speed: 30, kind: 'axe', owner: 'player', damage: weaponDamage(w) * 1.4, element: 'physical', gravity: 4, source: null, rune: w.rune });
+      const pw = this.attack?.power;
+      g.spawnProjectile({
+        from, to, speed: 30, kind: 'axe', owner: 'player', damage: weaponDamage(w) * 1.4 * (pw ? strikePower(pw.charge) : 1), element: 'physical', gravity: 4, source: null, rune: w.rune,
+        burst: pw ? { kind: pw.burst, charge: pw.charge, base: weaponDamage(w) * 1.4 } : undefined, color: pw ? BURST_COLOR[pw.burst] : undefined,
+      });
     }
     g.audio.play('throw');
   }
@@ -1362,7 +1427,11 @@ export class Player {
     const from = this.center().add(this.tv.set(Math.sin(this.yaw) * 0.4, 0.45, Math.cos(this.yaw) * 0.4));
     const to = g.aimPoint(WEAPONS[w.id].range);
     if (turn) to.sub(from).applyAxisAngle(UP, turn).add(from);
-    g.spawnProjectile({ from, to, speed: 46, kind: 'knife', owner: 'player', damage: weaponDamage(w), element: 'physical', gravity: 5, source: null, rune: w.rune, poison: this.poisonBlades > 0, ambush: this.vanish > 0 });
+    const pw = turn === 0 ? this.attack?.power : undefined;
+    g.spawnProjectile({
+      from, to, speed: 46 + (pw ? 14 : 0), kind: 'knife', owner: 'player', damage: weaponDamage(w) * (pw ? strikePower(pw.charge) : 1), element: 'physical', gravity: pw ? 2 : 5, source: null, rune: w.rune,
+      poison: this.poisonBlades > 0, ambush: this.vanish > 0, burst: pw ? { kind: pw.burst, charge: pw.charge, base: weaponDamage(w) } : undefined, color: pw ? BURST_COLOR[pw.burst] : undefined,
+    });
     g.audio.play('throw');
     if (c.knives === 0) g.hud.toast('Out of knives! Pick them up, or rest at a shrine.', 'warn');
   }
@@ -1893,6 +1962,246 @@ export class Player {
     }
   }
 
+  // ------------------------------------------------------- power strikes --
+
+  /** Whether holding heavy can charge a power strike now (if not, a press is a plain heavy). */
+  private canCharge(): boolean {
+    const kind = chargeKind(this.c, this.weaponKind, this.spell);
+    if (!kind || this.swimming || this.sailing || this.flying || this.now < this.powerReadyAt) return false;
+    if (kind === 'bow' && this.arrows() <= 0) return false;
+    if (kind === 'thrown' && (this.weaponKind === 'knives' ? this.c.knives <= 0 : this.boltOut)) return false;
+    if (kind === 'spell') {
+      const s = this.spell!;
+      const cost = spellCost(this.c, s) * POWER.spellMana;
+      return this.ready(s) && (this.mana >= cost || this.surge > 0 || this.soulOrPower);
+    }
+    return this.stamina >= 10 && !this.exhausted;
+  }
+
+  /** The heavy move this weapon makes (its wind-up is the charging pose). */
+  private heavyMoveStyle(): AttackStyle {
+    const kind = this.weaponKind;
+    if (this.c.subclassId === 'swordsman' || kind === 'battleaxe' || kind === 'quarterstaff') return 'spin';
+    if (this.c.subclassId === 'axeman' && rank(this.c, 'throwing-axe')) return 'throw';
+    return heavyStyle(kind);
+  }
+
+  /** Holding heavy: a tap is a plain heavy; held, it charges until let go. */
+  private updateCharge(dt: number, g: Game, able: boolean) {
+    if (this.heavyHeld < 0) return;
+    this.heavyHeld += dt;
+    const held = g.input.held.has('heavy');
+    if (!this.heavyPending) {
+      // It could not charge (cooldown, or nothing to pay with): say so if held on.
+      if (held && this.heavyHeld > 0.45 && !this.heavyWarned) {
+        this.heavyWarned = true;
+        if (this.now < this.powerReadyAt) g.hud.toast(`Power strike ready in ${Math.ceil(this.powerReadyAt - this.now)}s.`);
+      }
+      if (!held) this.heavyHeld = -1;
+      return;
+    }
+    if (!able) return this.cancelCharge();
+    const ch = this.charge;
+    if (!ch) {
+      if (!held) {
+        // A tap: the heavy blow (with a bow, the dagger).
+        this.heavyHeld = -1;
+        this.heavyPending = false;
+        if (this.weaponKind === 'bow') this.drawDagger(g);
+        else (this.queued = 'heavy'), (this.queuedAt = this.now);
+        return;
+      }
+      const busy = !!this.attack && this.attack.t < this.attack.chainAt;
+      if (this.heavyHeld >= POWER.start && !busy) this.beginCharge(g);
+      return;
+    }
+    ch.t += dt;
+    ch.level = chargeLevel(ch.t);
+    this.spend(POWER.drain * dt, 0.4);
+    if (ch.kind === 'bow') this.drawing = Math.max(0.15, ch.level);
+    const color = BURST_COLOR[ch.burst];
+    chargeSparks(g, this.center(this.tv), color, ch.level);
+    if (ch.level >= 1 && !ch.full) {
+      ch.full = true;
+      g.fx.ring(this.tv.set(this.pos.x, this.pos.y + 0.2, this.pos.z), 1.6, color, 0.45);
+      g.fx.flash(this.center(this.tv), color, 12, 8);
+      g.audio.play('zap');
+    }
+    if (!held || this.stamina <= 0) this.releaseCharge(g);
+  }
+
+  private beginCharge(g: Game) {
+    const kind = chargeKind(this.c, this.weaponKind, this.spell)!;
+    const w = mainWeapon(this.c);
+    const burst = kind === 'spell' ? spellBurst(this.c, this.spell!) : burstFor(this.c, w.id, w.rune);
+    const style: AttackStyle = kind === 'spell' ? 'cast' : kind === 'bow' ? 'bow' : kind === 'thrown' ? 'throw' : this.heavyMoveStyle();
+    if (this.attack) this.finishAttack();
+    this.queued = null;
+    this.charge = { kind, burst, t: POWER.start, level: 0, full: false, style };
+    this.chargeAura?.stop();
+    this.chargeAura = g.fx.aura(this.rig.root, BURST_COLOR[burst], Infinity);
+    g.sfx.sound('windup', this.pos);
+  }
+
+  /** Let go: the power strike (or charged arrow, or empowered spell) comes out. */
+  private releaseCharge(g: Game) {
+    const ch = this.charge!;
+    this.cancelCharge();
+    const charge = ch.level;
+    this.powerReadyAt = this.now + POWER.cooldown;
+    const color = BURST_COLOR[ch.burst];
+    g.sfx.emit(this.center(this.tv), { color, count: 16 + Math.round(16 * charge), speed: 4, life: 0.4, size: 0.45 });
+    if (ch.kind === 'bow') {
+      if (this.arrows() <= 0) return;
+      this.spend(POWER.arrowStamina);
+      this.drawing = 0;
+      this.fireArrow(g, 1, { kind: ch.burst, charge });
+      this.startAttack('bow', 'bow', 0.32);
+      return;
+    }
+    if (ch.kind === 'spell') {
+      this.empower = empowerPower(charge);
+      this.empowerBurst = { kind: ch.burst, charge };
+      this.cast(g, false);
+      this.empowerBurst = null;
+      // A beam stays empowered while it flows.
+      if (!this.channel) this.empower = 1;
+      return;
+    }
+    // A blow or a throw: the heavy move, as a power strike.
+    this.powerNext = { burst: ch.burst, charge };
+    this.queued = 'heavy';
+    this.queuedAt = this.now;
+  }
+
+  /** Charging stops without striking (a roll, a stagger, the water). */
+  private cancelCharge() {
+    this.heavyHeld = -1;
+    this.heavyPending = false;
+    if (this.charge?.kind === 'bow') this.drawing = 0;
+    this.charge = null;
+    this.chargeAura?.stop();
+    this.chargeAura = null;
+  }
+
+  /** The power strike a heavy move is about to make (paid for now). */
+  private takePower() {
+    const p = this.powerNext;
+    this.powerNext = null;
+    if (p) this.spend(POWER.stamina, 0.6);
+    return p ?? undefined;
+  }
+
+  /** A bow's quick heavy: the dagger comes out. */
+  private drawDagger(g: Game) {
+    if (this.c.classId === 'mage') return;
+    const dagger = this.c.weapons.findIndex((w) => WEAPONS[w.id].kind === 'dagger');
+    if (dagger < 0) return;
+    this.c.mainHand = dagger;
+    this.equip();
+    g.hud.toast('Dagger drawn.');
+  }
+
+  /**
+   * A power strike bursts where it lands: its element's effect on every foe
+   * in reach. Damage, statuses and shoves reach the host's monsters in
+   * co-op; the effects are shared so friends see them.
+   */
+  burst(g: Game, b: Burst, at: THREE.Vector3, charge: number, base: number, primary: Enemy | null) {
+    const spec = BURST[b];
+    const fx = burstEffects(b, charge);
+    const dmg = base * spec.share * burstScale(charge);
+    const el = BURST_ELEMENT[b];
+    const color = BURST_COLOR[b];
+    let dealt = 0;
+    const strike = (e: Enemy, k = 1) => {
+      g.damageEnemy(e, dmg * k, el, { source: 'player' });
+      dealt += dmg * k;
+    };
+    const fwdX = Math.sin(this.yaw), fwdZ = Math.cos(this.yaw);
+    const up = this.tv.set(at.x, at.y + 1, at.z);
+    if (b === 'lightning') {
+      // It leaps from foe to foe, stunning each.
+      const byDist = (o: THREE.Vector3) => (x: Enemy, y: Enemy) => x.pos.distanceTo(o) - y.pos.distanceTo(o);
+      let cur: Enemy | null = primary?.alive ? primary : (g.enemies.filter((e) => e.alive && e.pos.distanceTo(at) < 5 + e.radius).sort(byDist(at))[0] ?? null);
+      const done = new Set<Enemy>();
+      const from = up.clone();
+      g.sfx.lightning(this.tv2.set(at.x, at.y + 24, at.z), at.clone(), color);
+      for (let i = 0; i <= fx.chains && cur; i++) {
+        done.add(cur);
+        const to = cur.center();
+        g.sfx.lightning(from, to, color);
+        strike(cur, i === 0 ? 1 : 0.8);
+        cur.status.stun = Math.max(cur.status.stun, fx.stun * (cur instanceof Boss ? 0.4 : 1));
+        from.copy(to);
+        const c0: Enemy = cur;
+        cur = g.enemies.filter((e) => e.alive && !done.has(e) && e.pos.distanceTo(c0.pos) < 7 + e.radius).sort(byDist(c0.pos))[0] ?? null;
+      }
+    } else {
+      for (const e of g.enemies) {
+        if (!e.alive || Math.abs(e.pos.y - at.y) > 4 || Math.hypot(e.pos.x - at.x, e.pos.z - at.z) > spec.radius + e.radius) continue;
+        const boss = e instanceof Boss;
+        strike(e, b === 'light' && e.dark ? 2 : 1);
+        let dx = e.pos.x - at.x, dz = e.pos.z - at.z;
+        if (Math.hypot(dx, dz) < 0.3) (dx = fwdX), (dz = fwdZ);
+        if (fx.freeze) {
+          e.status.root = Math.max(e.status.root, fx.freeze * (boss ? 0.5 : 1));
+          e.status.slow = Math.max(e.status.slow, fx.slow);
+          e.status.wet = Math.max(e.status.wet, 3);
+        }
+        if (fx.stun) e.status.stun = Math.max(e.status.stun, fx.stun * (boss ? 0.5 : 1));
+        if (b === 'fire') e.status.burn = Math.max(e.status.burn, 3);
+        if (fx.lift || fx.shove) g.shoveEnemy(e, dx, dz, fx.shove, fx.lift);
+      }
+    }
+    if (fx.groundSeconds) g.armory.addZone(g, at.x, at.z, fx.groundRadius, fx.groundSeconds, base * 0.3);
+    if (fx.mend && this.alive) {
+      const got = Math.min(this.maxHp - this.hp, this.maxHp * fx.mend * lightHealMultiplier(this.c));
+      this.heal(got);
+      if (got >= 1) g.fx.damageNumber(this.center(this.tv2).setY(this.pos.y + 2), `+${Math.round(got)}`, 'heal');
+    }
+    if (fx.drain && dealt > 0 && this.alive) {
+      const got = Math.min(this.maxHp - this.hp, dealt * fx.drain);
+      this.heal(got);
+      if (got >= 1) g.fx.damageNumber(this.center(this.tv2).setY(this.pos.y + 2), `+${Math.round(got)}`, 'heal');
+      g.sfx.beam(up, this.center(this.tv2), color, 0.35);
+    }
+    // What it looks like.
+    const ground = this.tv2.set(at.x, at.y + 0.15, at.z);
+    g.sfx.shockwave(ground, spec.radius * (b === 'lightning' ? 0.4 : 1), color, 0.45);
+    g.sfx.flash(up, color, 30 + 20 * charge, 16);
+    switch (b) {
+      case 'fire':
+        g.sfx.ring(ground, spec.radius, 0xff5010, 0.6);
+        g.sfx.emit(up, { color: 0xff7a1a, count: 40, speed: 5, life: 0.7, size: 0.7, up: 3 });
+        break;
+      case 'frost':
+        g.sfx.spikes(at.x, at.z, 0xbfefff, 9, spec.radius * 0.8);
+        g.sfx.emit(up, { color: 0xd8f6ff, count: 40, speed: 5, life: 0.8, size: 0.5, up: 1 });
+        break;
+      case 'earth':
+        g.sfx.spikes(at.x, at.z, 0x9a7a52, 8, spec.radius * 0.75);
+        g.sfx.dust(ground, 24, 0x9a8060);
+        break;
+      case 'wind':
+        g.sfx.emit(up, { color: 0xd8fff0, count: 50, speed: 12, life: 0.5, size: 0.6, drag: 2 });
+        break;
+      case 'light':
+        g.sfx.pillar(at.clone(), 0xfff0b0, spec.radius * 0.8);
+        break;
+      case 'dark':
+        g.sfx.emit(up, { color: 0x9a4dff, count: 40, speed: 3.5, life: 0.9, size: 0.6, up: 1.5 });
+        break;
+      case 'force':
+        g.sfx.dust(ground, 20);
+        g.sfx.shockwave(ground, spec.radius * 0.6, 0xffffff, 0.3);
+        break;
+    }
+    g.sfx.sound(b === 'lightning' ? 'zap' : b === 'light' ? 'holy' : 'slam', at);
+    g.shake(0.25 + 0.2 * charge);
+    g.hitStop(0.06);
+  }
+
   private drinkFlask(g: Game) {
     if (this.c.flasks <= 0) return g.hud.toast('Your flasks are empty. Rest at a shrine.');
     if (this.hp >= this.maxHp) return;
@@ -1920,7 +2229,7 @@ export class Player {
   }
 
   private spellDamage(power: number, element: DamageElement) {
-    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1);
+    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1) * this.empower;
   }
 
   // -------------------------------------------------------------- beams --
@@ -1932,16 +2241,24 @@ export class Player {
     if (!check.ok) return g.hud.toast(check.reason!, 'warn');
     if (!this.ready(spell)) return g.hud.toast(`${SPELLS[spell].name} is not ready (${this.cooldownLeft(spell).toFixed(0)}s).`);
     this.startAttack('channel', 'channel', 3600);
-    this.channel = { spell, target: null, tick: 0, share: 0 };
+    this.channel = { spell, target: null, tick: 0, share: 0, flow: 0 };
+    // An empowered beam opens with a burst on its foe, then flows on its own a while.
+    const eb = this.empowerBurst;
+    if (eb) {
+      this.channel.flow = 1.5 + 1.5 * eb.charge;
+      const t = this.lockTarget ?? g.findTarget(beamRange(this.c), 0.8, false);
+      if (t) this.burst(g, eb.kind, t.pos.clone(), eb.charge, this.spellDamage(SPELLS[spell].power * 6, SPELLS[spell].element), t);
+    }
     g.sfx.magicCircle(this.pos, this.pathColor(), 1.5, 0.8);
     g.audio.play(SPELLS[spell].school === 'light' ? 'holy' : 'spell');
   }
 
-  private updateChannel(dt: number, g: Game, held: boolean) {
+  private updateChannel(dt: number, g: Game, held: boolean, able: boolean) {
     const ch = this.channel!;
     const a = this.attack;
     const c = this.c;
-    if (!held || !a || a.kind !== 'channel' || !this.alive || this.swimming || this.sailing) return this.stopChannel();
+    ch.flow -= dt;
+    if (!able || !(held || ch.flow > 0) || !a || a.kind !== 'channel' || !this.alive || this.swimming || this.sailing) return this.stopChannel();
     const def = SPELLS[ch.spell];
     const range = beamRange(c);
     // Hold on to the foe while it stays in reach; otherwise find the one ahead.
@@ -1987,6 +2304,7 @@ export class Player {
     const ch = this.channel;
     if (!ch) return;
     this.channel = null;
+    this.empower = 1;
     this.castCooldown(ch.spell, SPELLS[ch.spell].cooldown);
     if (this.attack?.kind === 'channel') this.finishAttack();
   }
@@ -2045,12 +2363,20 @@ export class Player {
     const check = canCast(c, spell, free ? { ...ctx, mana: Infinity } : ctx);
     if (!check.ok) return g.hud.toast(check.reason!, 'warn');
     if (free) check.cost = 0;
+    // An empowered spell costs half as much again.
+    else if (this.empower > 1 && !this.soulOrPower) {
+      check.cost = Math.round(check.cost * POWER.spellMana);
+      if (this.mana < check.cost) return g.hud.toast('Not enough mana.');
+    }
     if (!this.ready(spell)) return g.hud.toast(`${SPELLS[spell].name} is not ready (${this.cooldownLeft(spell).toFixed(0)}s).`);
     const def = SPELLS[spell];
     if (def.channel) return this.startChannel(g, spell);
     const target = this.lockTarget ?? g.findTarget(30, 0.75, false);
     const aim = target ? target.center() : g.aimPoint(30);
     const power = this.spellDamage(def.power, def.element);
+    // An empowered attack spell bursts where it lands: with the first thing it looses, or right on its target.
+    const eb = this.empowerBurst && def.power > 0 && !SELF_SPELLS.has(spell) ? this.empowerBurst : null;
+    if (eb) g.projectileBurst = { kind: eb.kind, charge: eb.charge, base: power };
     // The move that plays (null: the spell starts its own), and whether a rune circle marks it.
     let pose: AttackStyle | null = 'cast';
     let circle = def.school !== 'chi' && def.school !== 'trick';
@@ -2321,6 +2647,13 @@ export class Player {
     }
     if (spell !== 'soul-or-power') this.mana -= check.cost;
     this.castCooldown(spell, def.cooldown);
+    if (eb && g.projectileBurst) {
+      // Nothing was loosed (a strike from the sky, spikes from the ground): it bursts on the target now.
+      g.projectileBurst = null;
+      const at = target ? target.pos.clone() : aim.clone().setY(heightAt(aim.x, aim.z));
+      this.burst(g, eb.kind, at, eb.charge, power, target);
+    }
+    if (eb) g.hud.toast(`Empowered ${def.name}!`, 'skill');
     if (spell === 'deal-with-the-devil') circle = false;
     else if (pose) this.startAttack('cast', pose, 0.55);
     if (circle) {
@@ -2484,6 +2817,12 @@ export class Player {
       }
       a.attackStyle = at.style;
     } else a.attack = -1;
+    // Charging a power strike: held in the move's wind-up (a bow just draws).
+    const ch = this.charge;
+    if (ch && !at && ch.kind !== 'bow') {
+      a.attackStyle = ch.style;
+      a.windup = Math.min(1, 0.4 + 0.6 * ch.level);
+    }
     if (this.rig.wings) {
       const w = this.rig.wings.userData;
       w.enabled = wingsGrown(this.c);
@@ -2567,6 +2906,22 @@ export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: 
   }
   weapon.traverse((o) => (o.castShadow = true));
   return { weapon, shield };
+}
+
+/** Spells that mend, shield or summon: empowered, they grow stronger but don't burst. */
+const SELF_SPELLS = new Set<SpellId>(['radiant-heal', 'mending-light', 'ward-of-dawn', 'imp-familiar', 'summon-shade', 'power-of-the-light']);
+
+const SPARK = new THREE.Vector3();
+const SPARK_DRIFT = new THREE.Vector3();
+/** Sparks drawn in toward a hero charging a power strike (more, and bigger, the more it is charged). */
+export function chargeSparks(g: Game, at: THREE.Vector3, color: number, level: number) {
+  const n = level >= 1 ? 3 : Math.random() < 0.4 + 0.6 * level ? 2 : 1;
+  for (let i = 0; i < n; i++) {
+    const th = Math.random() * Math.PI * 2, ph = (Math.random() - 0.3) * 1.4, r = 1.3 + Math.random() * 0.5;
+    SPARK.set(at.x + Math.cos(th) * Math.cos(ph) * r, at.y + Math.sin(ph) * r, at.z + Math.sin(th) * Math.cos(ph) * r);
+    SPARK_DRIFT.subVectors(at, SPARK).multiplyScalar(1 / 0.35);
+    g.fx.emit(SPARK, { color, count: 1, speed: 0, life: 0.35, size: 0.25 + 0.35 * level, drift: SPARK_DRIFT });
+  }
 }
 
 const BEAM_AHEAD = new THREE.Vector3();

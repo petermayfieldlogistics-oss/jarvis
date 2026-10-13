@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RUNES, SPELLS, WEAPONS, type SpellId, type WeaponKind } from '../data/defs';
 import { SONGS } from '../rules/weapons';
+import { BURST_COLOR, type Burst } from '../rules/power';
 import { EYES_RUINS, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
@@ -17,6 +18,9 @@ const shortName = (name: string) => {
 };
 
 const esc = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]!);
+
+/** What a charging power strike will burst with, as the meter names it. */
+const BURST_NAME: Record<Burst, string> = { fire: 'Fire', frost: 'Frost', lightning: 'Lightning', earth: 'Earth', wind: 'Wind', light: 'Light', dark: 'Dark', force: 'Force' };
 
 const SPELL_ICON: Record<string, string> = {
   devil: '😈', fire: '🔥', sky: '⚡', water: '💧', light: '✨', arcane: '🜂', earth: '🪨', chi: '☯', shadow: '🌑', trick: '🃏',
@@ -111,6 +115,9 @@ export class Hud {
   private bars3d: HTMLElement[] = [];
   private barLayer: HTMLElement;
   private crosshair: HTMLElement;
+  private chargeEl: HTMLElement;
+  private chargeFill: SVGCircleElement;
+  private chargeLabel: HTMLElement;
   private slots: SlotView[] = [];
   private slotKey = '';
   private cdTotal = new Map<string, number>();
@@ -134,6 +141,7 @@ export class Hud {
       <div class="barlayer"></div>
       <div class="numbers"></div>
       <div class="crosshair"></div>
+      <div class="charge"><svg viewBox="0 0 40 40"><circle class="ct" cx="20" cy="20" r="16"/><circle class="cf" cx="20" cy="20" r="16"/></svg><span></span></div>
       <div class="reticle"></div>
       <div class="tl">
         <div class="bar hp"><div class="track"><div class="ghost"></div><div class="fill"></div></div><span class="val"></span></div>
@@ -197,6 +205,9 @@ export class Hud {
     this.questEl = q('.qbar');
     this.barLayer = q('.barlayer');
     this.crosshair = q('.crosshair');
+    this.chargeEl = q('.charge');
+    this.chargeFill = root.querySelector('.charge .cf') as SVGCircleElement;
+    this.chargeLabel = q('.charge span');
     // Tap a spell slot to select it; tap the ability slot to use it.
     this.spells.addEventListener('pointerdown', (e) => {
       const slot = (e.target as HTMLElement).closest<HTMLElement>('.slot');
@@ -397,6 +408,16 @@ export class Hud {
     if (p.aegis > 0) chips.push('<b class="skill">Aegis</b>');
     if (p.moonveil > 0) chips.push('<b>Moonveil</b>');
     if (p.crouching) chips.push('<b>Sneaking</b>');
+    // The newer classes' states, and the power strike's cooldown.
+    if (p.ironSkin > 0) chips.push(`<b class="skill">Iron Skin ${Math.ceil(p.ironSkin)}s</b>`);
+    if (p.vanish > 0) chips.push(`<b class="skill">Vanished ${Math.ceil(p.vanish)}s</b>`);
+    if (p.surge > 0) chips.push(`<b class="skill">Arcane Surge ${Math.ceil(p.surge)}s</b>`);
+    if (p.ward > 0) chips.push(`<b class="skill">Ward ${Math.ceil(p.ward)}</b>`);
+    if (p.poisonBlades > 0) chips.push(`<b style="color:#8cff5a">Poison Blades ${Math.ceil(p.poisonBlades)}s</b>`);
+    if (p.tailwind > 0) chips.push('<b>Tailwind</b>');
+    if (p.inSmoke) chips.push('<b>Hidden in smoke</b>');
+    const powerLeft = p.powerReadyAt - p.now;
+    if (powerLeft > 0) chips.push(`<b>Power strike ${Math.ceil(powerLeft)}s</b>`);
     if (dracoFlightHours(c) > 0) chips.push(`<b>Wings ${Math.floor(p.flightLeft / 60)}h ${Math.floor(p.flightLeft % 60)}m</b>`);
     if (c.raceId === 'zombie' && !c.riseSpent) chips.push('<b class="skill">Not Dead Yet</b>');
     if (p.warCry > 0) chips.push(`<b class="rage">War Cry ${Math.ceil(p.warCry)}s</b>`);
@@ -472,6 +493,17 @@ export class Hud {
     }
 
     this.updateEnemyBars();
+
+    // A power strike charging: a ring that fills, in its burst's colour.
+    const ch = p.charge;
+    put(this.chargeEl, 'display', ch ? 'block' : 'none');
+    if (ch) {
+      put(this.chargeEl, 'class', ch.full ? 'charge full' : 'charge');
+      put(this.chargeEl, '--c', hex(BURST_COLOR[ch.burst]));
+      const off = String(Math.round(100.5 * (1 - ch.level) * 10) / 10);
+      if (this.chargeFill.style.strokeDashoffset !== off) this.chargeFill.style.strokeDashoffset = off;
+      put(this.chargeLabel, 'text', ch.full ? `${BURST_NAME[ch.burst]}!` : BURST_NAME[ch.burst]);
+    }
   }
 
   /** The quest bar: active quests with progress, the tracked one with where to go. Rebuilt only when something shown changes. */

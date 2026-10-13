@@ -328,7 +328,7 @@ export class Menu {
       <li>${k('Shift')} tap: <b>shift lock</b> (face where the camera looks, over-the-shoulder view, crosshair) · hold: sprint</li>
       <li>${k('C')} roll / dodge · ${k('Space')} jump · ${k('Z')} sneak</li>
       <li>Left click: attack · hold with a bow to draw, release to shoot</li>
-      <li>${k('E')} heavy attack (Swordsman: Spinner Flourish)</li>
+      <li>${k('E')} heavy attack (Swordsman: Spinner Flourish) · hold to charge a <b>power strike</b></li>
       <li>Right click: block / raise shield</li>
       <li>${k('Tab')} or middle click: lock on</li>
       <li>${k('Q')} cast (hold for alternate form) · ${k('1')}–${k('4')} / wheel: choose spell</li>
@@ -340,7 +340,7 @@ export class Menu {
       <div><h4>Touch</h4><ul>
       <li>Left side: virtual joystick (push past the ring to sprint; it glows)</li>
       <li>Right side: drag to look</li>
-      <li>⚔ attack (hold with a bow) · 💥 heavy · ⤿ roll · ⤒ jump</li>
+      <li>⚔ attack (hold with a bow) · 💥 heavy (hold to charge a power strike) · ⤿ roll · ⤒ jump</li>
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
       <li>Tap a spell slot to choose it; tap ❂ there to use your ability</li>
       <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>

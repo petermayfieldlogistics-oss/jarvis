@@ -697,6 +697,14 @@ form.acct .link { align-self: center; }
     linear-gradient(#fff3d6, #fff3d6) right center / 8px 2px no-repeat;
   filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 2px rgba(0, 0, 0, 0.7));
 }
+.hud .charge { display: none; position: absolute; left: 50%; top: 58%; width: 64px; height: 64px; margin: -32px 0 0 -32px; pointer-events: none; --c: #fff0d0; }
+.hud .charge svg { width: 100%; height: 100%; transform: rotate(-90deg); filter: drop-shadow(0 0 6px var(--c)); }
+.hud .charge circle { fill: none; stroke-width: 3.5; }
+.hud .charge .ct { stroke: rgba(0, 0, 0, 0.45); }
+.hud .charge .cf { stroke: var(--c); stroke-dasharray: 100.5; stroke-linecap: round; }
+.hud .charge span { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); font-family: var(--display); font-size: 13px; letter-spacing: 0.08em; color: var(--c); text-shadow: 0 0 6px #000, 0 0 2px #000; white-space: nowrap; }
+.hud .charge.full svg { animation: charge-full 0.5s ease-in-out infinite alternate; }
+@keyframes charge-full { from { transform: rotate(-90deg) scale(1); } to { transform: rotate(-90deg) scale(1.12); } }
 .crosshair::before { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff3d6; }
 .crosshair.sl::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; border: 1px solid rgba(255, 226, 160, 0.6); }
 
