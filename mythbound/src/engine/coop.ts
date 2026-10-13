@@ -5,7 +5,7 @@
 // own game, and characters, items and progress stay on each player's device.
 
 import * as THREE from 'three';
-import { RUNES, WEAPONS, type ClassId, type DamageElement, type RaceId, type RoleId, type RuneId, type SubclassId } from '../data/defs';
+import { COMBO_ELEMENTS, RUNES, TEAM_COMBOS, WEAPONS, type ClassId, type ComboElement, type DamageElement, type TeamComboDef, type RaceId, type RoleId, type RuneId, type SubclassId } from '../data/defs';
 import { SONG, SONGS, type SongId } from '../rules/weapons';
 import { BURST_COLOR, BURSTS, type Burst } from '../rules/power';
 import { BOSSES, ENEMIES, TRIALS, type BossId, type EnemyId } from '../data/world';
@@ -503,7 +503,8 @@ export class Coop {
   /** Guest: the host's clock (game minutes) and when we heard it, to run the day in step. */
   private hostMinutes = 0;
   private hostMinutesAt = 0;
-  private myName = 'Hero';
+  /** The name friends know this player by. */
+  myName = 'Hero';
 
   constructor(private g: Game) {
     this.net.onMessage = (m) => this.onServer(m);
@@ -839,6 +840,16 @@ export class Coop {
     this.queue('host', { k: 'hit', id: e.nid, a: r2(amount), e: element, s: o.source ?? '', dt: o.dot ? 1 : 0, q: o.quiet ? 1 : 0, tg: o.tags ?? [] });
   }
 
+  /** Guest: a runed blow brought an element to the host's monster (for team combos). */
+  noteElement(e: Enemy, el: ComboElement, amount: number) {
+    this.queue('host', { k: 'te', id: e.nid, el, a: r2(amount) });
+  }
+
+  /** Host: a team combo went off; every friend sees it (and its heroes mend or drain). */
+  teamCombo(def: TeamComboDef, at: THREE.Vector3, heroes: [number, ComboElement][], bonus: number) {
+    this.queue('all', { k: 'tc', c: def.id, p: vec(at), h: heroes.map(([id]) => id), el: heroes.map(([, el]) => el), b: r1(bonus) });
+  }
+
   tamed(e: Enemy) {
     if (this.isGuest && e.net) this.queue('host', { k: 'tame', id: e.nid });
   }
@@ -952,6 +963,12 @@ export class Coop {
           g.damageEnemy(e, amount, el, { source: source || 'player', dot: num(m.dt) === 1, quiet: num(m.q) === 1, tags: arr(m.tg).filter((x): x is string => typeof x === 'string'), by: from });
           return;
         }
+        case 'te': {
+          const e = this.find(num(m.id));
+          const el = str(m.el) as ComboElement;
+          if (e && COMBO_ELEMENTS.includes(el)) g.teamHit(e, from, el, Math.min(5000, num(m.a)));
+          return;
+        }
         case 'sts': {
           const e = this.find(num(m.id));
           const key = str(m.s) as (typeof STATUS_KEYS)[number];
@@ -1026,6 +1043,17 @@ export class Coop {
         case 'note':
           g.hud.toast(str(m.text).slice(0, 80));
           return;
+        case 'tc': {
+          const def = TEAM_COMBOS.find((k) => k.id === str(m.c));
+          const p = arr(m.p), h = arr(m.h), el = arr(m.el);
+          const heroes: [number, ComboElement][] = [];
+          for (let i = 0; i < 2; i++) {
+            const e = str(el[i]) as ComboElement;
+            if (COMBO_ELEMENTS.includes(e)) heroes.push([num(h[i]), e]);
+          }
+          if (def && heroes.length === 2) g.showTeamCombo(def, new THREE.Vector3(num(p[0]), num(p[1]), num(p[2])), heroes, Math.min(5000, num(m.b)));
+          return;
+        }
       }
     }
   }

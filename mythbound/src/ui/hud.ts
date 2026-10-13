@@ -88,6 +88,9 @@ export class Hud {
   private promptEl: HTMLElement;
   private toasts: HTMLElement;
   private bannerEl: HTMLElement;
+  /** A team combo's banner (co-op), and how long it stays. */
+  private comboEl: HTMLElement;
+  private comboTimer = 0;
   private zoneEl: HTMLElement;
   private mini: HTMLCanvasElement;
   private miniCtx: CanvasRenderingContext2D;
@@ -167,6 +170,7 @@ export class Hud {
         <div class="bbar"><div class="track"><div class="ghost"></div><div class="fill"></div></div><div class="cracks"></div></div>
       </div>
       <div class="toasts"></div>
+      <div class="tcombo"><div class="tcname"></div><div class="tcwho"></div></div>
       <div class="banner"></div>`;
     parent.appendChild(root);
     this.root = root;
@@ -187,6 +191,7 @@ export class Hud {
     this.promptEl = q('.prompt');
     this.toasts = q('.toasts');
     this.bannerEl = q('.banner');
+    this.comboEl = q('.tcombo');
     this.zoneEl = q('.zlabel');
     this.mini = q('.mini');
     this.miniScale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -266,6 +271,20 @@ export class Hud {
     this.bannerEl.className = `banner show ${kind}`;
     this.bannerEl.innerHTML = `<div class="btext">${esc(text)}</div><div class="bline"></div>${sub ? `<div class="bsub">${esc(sub)}</div>` : ''}`;
     this.bannerTimer = kind === 'death' ? 99 : kind === 'zone' ? 3 : 4;
+  }
+
+  /** Two heroes' elements joined: the combo's name in both colours, and who made it. */
+  teamCombo(name: string, who: string, c1: number, c2: number) {
+    const el = this.comboEl;
+    el.style.setProperty('--c1', hex(c1));
+    el.style.setProperty('--c2', hex(c2));
+    (el.firstElementChild as HTMLElement).textContent = name;
+    (el.lastElementChild as HTMLElement).textContent = who;
+    // Restart the animation for a second combo while one shows.
+    el.className = 'tcombo';
+    void el.offsetWidth;
+    el.className = 'tcombo show';
+    this.comboTimer = 2.4;
   }
 
   clearBanner() {
@@ -464,6 +483,10 @@ export class Hud {
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0) this.bannerEl.className = 'banner';
+    }
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) this.comboEl.className = 'tcombo';
     }
 
     // Boss damage ghost.

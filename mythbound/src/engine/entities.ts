@@ -6,6 +6,7 @@ import { animateHumanoid, buildBossHumanoid, buildHumanoid, type Rig } from './h
 import { animateCreature, buildCrab, buildDragon, buildFloater, buildImp, buildInsect, buildQuad, buildReaper, buildSerpent, buildSiren, buildSpider, type CreatureRig } from './creatures';
 import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, WATER_LEVEL } from './terrain';
+import { newTeamMemory } from '../rules/teamcombo';
 import type { Game } from './game';
 import type { Hero } from './hero';
 
@@ -335,6 +336,8 @@ export class Enemy extends Actor {
   nid = nextNid++;
   /** Co-op: the players (by id) who have hurt it, for kill rewards. */
   hitBy = new Set<number>();
+  /** Co-op (host): the heroes' recent elemental blows, for team combos. */
+  team = newTeamMemory();
   /** Co-op: set on a guest's copy, which follows the host's monster. */
   net: MirrorState | null = null;
   /** The move being performed (windup/strike/recover). */
