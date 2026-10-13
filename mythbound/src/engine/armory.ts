@@ -249,6 +249,11 @@ export class Armory {
     for (const e of g.enemies) {
       if (!e.alive) continue;
       const s = e.status;
+      // Frozen (a frost burst roots and soaks): ice glints all over it.
+      if (s.root > 0 && s.wet > 0) {
+        if (Math.random() < chance * 2) g.fx.emit(e.center(this.v), { color: 0xe4f8ff, count: 2, speed: 0.2, spread: e.radius * 1.2, up: -0.4, life: 0.5, size: 0.35 });
+        continue;
+      }
       if (s.burn <= 0 && s.poison <= 0 && s.slow <= 0) continue;
       if (Math.random() > chance) continue;
       const color = s.burn > 0 ? 0xff7a1a : s.poison > 0 ? 0x7cff3a : 0xa8e8ff;

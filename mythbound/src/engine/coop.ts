@@ -376,7 +376,6 @@ export class RemoteHero implements Hero {
     a.swimming = (f & 4) !== 0;
     a.flying = (f & 8) !== 0;
     a.airborne = (f & 16) !== 0;
-    a.windup = 0;
     if (this.alive) a.dead = -1;
     else a.dead += dt;
     if (rig.wings) {

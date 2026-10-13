@@ -256,7 +256,8 @@ export class Player {
   /** Foes a Wind Blades dash has already cut. */
   private dashHit = new Set<Enemy>();
   /** A held beam (Life Drain, Radiant Beam): the foe it holds and the next tick. */
-  private channel: { spell: SpellId; target: Enemy | null; tick: number; share: number } | null = null;
+  /** A beam spell flowing (`flow`: seconds an empowered beam keeps flowing without the cast button held). */
+  private channel: { spell: SpellId; target: Enemy | null; tick: number; share: number; flow: number } | null = null;
   /** Poison stacks this hero keeps ticking on foes (Poison Blades). */
   private toxins: { e: Enemy; stacks: number; left: number; tick: number }[] = [];
   /** Things that happen a moment after a move starts (a palm's shockwave, a smoke bomb landing). */
@@ -713,7 +714,7 @@ export class Player {
       if (sp && SPELLS[sp].channel && !this.combineMode) this.startChannel(g, sp);
       else this.castHeld = 0;
     }
-    if (this.channel) this.updateChannel(dt, g, input.held.has('cast') && canAct);
+    if (this.channel) this.updateChannel(dt, g, input.held.has('cast'), canAct);
     if (this.castHeld >= 0) {
       this.castHeld += dt;
       if (input.released.has('cast') || this.castHeld > 0.6) {
@@ -990,7 +991,8 @@ export class Player {
     this.attack = {
       kind,
       style,
-      t: 0,
+      // A power strike was wound up while charging: it goes straight into the blow.
+      t: o.power ? Math.max(0, tm.from - 0.14) * duration : 0,
       duration,
       hitAt: tm.hit * duration,
       from: tm.from * duration,
@@ -1964,7 +1966,7 @@ export class Player {
 
   /** Whether holding heavy can charge a power strike now (if not, a press is a plain heavy). */
   private canCharge(): boolean {
-    const kind = chargeKind(this.c, this.weaponKind, !!this.spell);
+    const kind = chargeKind(this.c, this.weaponKind, this.spell);
     if (!kind || this.swimming || this.sailing || this.flying || this.now < this.powerReadyAt) return false;
     if (kind === 'bow' && this.arrows() <= 0) return false;
     if (kind === 'thrown' && (this.weaponKind === 'knives' ? this.c.knives <= 0 : this.boltOut)) return false;
@@ -2029,7 +2031,7 @@ export class Player {
   }
 
   private beginCharge(g: Game) {
-    const kind = chargeKind(this.c, this.weaponKind, !!this.spell)!;
+    const kind = chargeKind(this.c, this.weaponKind, this.spell)!;
     const w = mainWeapon(this.c);
     const burst = kind === 'spell' ? spellBurst(this.c, this.spell!) : burstFor(this.c, w.id, w.rune);
     const style: AttackStyle = kind === 'spell' ? 'cast' : kind === 'bow' ? 'bow' : kind === 'thrown' ? 'throw' : this.heavyMoveStyle();
@@ -2239,10 +2241,11 @@ export class Player {
     if (!check.ok) return g.hud.toast(check.reason!, 'warn');
     if (!this.ready(spell)) return g.hud.toast(`${SPELLS[spell].name} is not ready (${this.cooldownLeft(spell).toFixed(0)}s).`);
     this.startAttack('channel', 'channel', 3600);
-    this.channel = { spell, target: null, tick: 0, share: 0 };
-    // An empowered beam opens with a burst on its foe.
+    this.channel = { spell, target: null, tick: 0, share: 0, flow: 0 };
+    // An empowered beam opens with a burst on its foe, then flows on its own a while.
     const eb = this.empowerBurst;
     if (eb) {
+      this.channel.flow = 1.5 + 1.5 * eb.charge;
       const t = this.lockTarget ?? g.findTarget(beamRange(this.c), 0.8, false);
       if (t) this.burst(g, eb.kind, t.pos.clone(), eb.charge, this.spellDamage(SPELLS[spell].power * 6, SPELLS[spell].element), t);
     }
@@ -2250,11 +2253,12 @@ export class Player {
     g.audio.play(SPELLS[spell].school === 'light' ? 'holy' : 'spell');
   }
 
-  private updateChannel(dt: number, g: Game, held: boolean) {
+  private updateChannel(dt: number, g: Game, held: boolean, able: boolean) {
     const ch = this.channel!;
     const a = this.attack;
     const c = this.c;
-    if (!held || !a || a.kind !== 'channel' || !this.alive || this.swimming || this.sailing) return this.stopChannel();
+    ch.flow -= dt;
+    if (!able || !(held || ch.flow > 0) || !a || a.kind !== 'channel' || !this.alive || this.swimming || this.sailing) return this.stopChannel();
     const def = SPELLS[ch.spell];
     const range = beamRange(c);
     // Hold on to the foe while it stays in reach; otherwise find the one ahead.

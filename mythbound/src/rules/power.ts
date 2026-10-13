@@ -36,14 +36,25 @@ export const strikePower = (charge: number) => 1.5 + charge;
 /** An empowered spell's power multiplier. */
 export const empowerPower = (charge: number) => 1.3 + 0.7 * charge;
 
-/** How a hero charges with this weapon: a blow, an arrow, a spell, or not at all (instruments). */
-export function chargeKind(c: Pick<Character, 'classId'>, kind: WeaponKind, hasSpell: boolean): 'melee' | 'bow' | 'spell' | 'thrown' | null {
+/**
+ * Whether a spell can be empowered: one that deals damage or mends. Pacts,
+ * wards and tricks (Deal with the Devil, Soul or Power, Power of the Light…)
+ * stay as they are.
+ */
+export const canEmpower = (spell: SpellId | null | undefined): spell is SpellId => !!spell && SPELLS[spell].power > 0;
+
+/**
+ * How a hero charges with this weapon: a blow, an arrow, a spell, or not at
+ * all (instruments, or a wand with no spell it can empower).
+ */
+export function chargeKind(c: Pick<Character, 'classId'>, kind: WeaponKind, spell: SpellId | null | undefined): 'melee' | 'bow' | 'spell' | 'thrown' | null {
   if (kind === 'lyre' || kind === 'horn') return null;
   if (kind === 'bow') return 'bow';
+  const empowered = canEmpower(spell);
   // Mages and sorcerers pour it into their selected spell.
-  if ((c.classId === 'mage' || c.classId === 'sorcerer') && hasSpell) return 'spell';
+  if ((c.classId === 'mage' || c.classId === 'sorcerer') && empowered) return 'spell';
   if (kind === 'knives' || kind === 'bolt') return 'thrown';
-  if (kind === 'wand' || kind === 'runecircle') return hasSpell ? 'spell' : null;
+  if (kind === 'wand' || kind === 'runecircle') return empowered ? 'spell' : null;
   return 'melee';
 }
 

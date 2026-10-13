@@ -25,7 +25,7 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | Shift hold | push stick far | sprint |
 | C | ⤿ | roll / dodge (rolls through attacks; a Monk dashes, or backflips standing still) |
 | Left click (hold with a bow) | ⚔ | attack / draw and shoot |
-| E | 💥 | heavy attack (Swordsman: Spinner Flourish) |
+| E | 💥 | heavy attack (Swordsman: Spinner Flourish); hold to charge a power strike |
 | Right click | 🛡 | block / raise shield |
 | Space | ⤒ | jump (Draco: fly up) |
 | Z | ▼ | sneak |
@@ -108,6 +108,17 @@ is what was chosen; each is easy to change:
   evasive rolls. Tricks: Smoke Bomb (foes inside are blinded, you hide), Poison Blades (poison stacks three times),
   Shadowstep (blink behind a foe) or Parry (turn a blow aside and riposte for triple). **Vanish** (R): every foe loses
   you; the next strike is an ambush.
+- **Power strikes**: hold heavy (E or 💥) to charge; a quick tap is still a plain heavy. The hero winds up, glows in
+  the strike's colour and a ring on screen fills (full after about a second). Let go for the weapon's heavy move at
+  1.5x to 2.5x, bursting with the weapon's rune, else its element, else the hero's own (a Draconian's fire, a monk's
+  wind, a Knight's or Light Mage's light, a Dark Mage's dark, an elf's or Elemental Wizard's element; plain steel
+  makes a staggering shockwave). Fire leaves burning ground, frost freezes then slows, lightning leaps to up to five
+  foes and stuns, earth throws foes up, wind hurls them back, light smites (double on dark creatures) and mends you,
+  dark drains life back. Costs 22 stamina plus a little while held, then 6 s before the next. A bow charges an
+  elemental arrow; Mages and Sorcerers pour it into their selected attack or healing spell (half again the mana, up to
+  twice as strong, and it bursts where it lands; an empowered beam flows on its own for a few seconds). Pacts and
+  wards (Deal with the Devil, Soul or Power, Power of the Light) can't be empowered; instruments don't charge. Co-op
+  friends see the charge-up, glowing projectiles and burning ground.
 - **Deal with the Devil**: lock on to one-shot a single foe (bosses too, as written), otherwise it takes every level
   1–5 foe nearby. You black out, and light magic is sealed for 1, 2, then 3 game hours; the 4th deal seals it forever.
 - **Expansion** (toggle in the creator): Bowman (level 2 copper bow, 50 steel arrows, Power Shot: 6x damage plus 0.5 NDP
