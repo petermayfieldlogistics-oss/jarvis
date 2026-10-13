@@ -144,6 +144,20 @@ is what was chosen; each is easy to change:
   time at a shrine. The field shows a green dot on the minimap and says when crops ripen. Carrots and pumpkins heal,
   bluecaps restore mana; Wren buys any crop, and wheat is for bread later. Wren's quest: bring in four harvests. In
   co-op each hero tends their own crops in the same field.
+- **Crafting**: three stations, touch-friendly (tap ✋ at one; recipes you can make are ticked with how many; the rest
+  say what's missing; then Make 1, Make 5 or Make all). The first time you make something you learn it (+10 XP).
+  - **Cookfire** (by Wren's field): Grilled Fish (+60), Hearth Bread (+40), Root Stew (+75), Fisher's Pie (+160),
+    Bluecap Broth (+90 mana), Pumpkin Soup, Golden Feast (+300 HP, +100 mana). Any shrine's flame cooks the simple
+    ones (fish and bread).
+  - **Workbench** (between the field and the forge): bone arrows, steel-tipped arrows, compost (feed it to a bed: +1
+    crop), fishing lures (a wider catch and a better chance of gold; one per cast), a Watering Can (waters every bed
+    at once, wet for 6 h) and a Silk Fishing Line (a wider catch on every cast).
+  - **Anvil** ("Smith something"): the four runes from ore and monster parts for far less than Brann asks, and
+    Horseshoes (your horse gallops a third longer). A Blacksmith pays half the embers.
+  - **Materials** drop from monsters (each hero rolls their own in co-op): hide (wolves, boars), silk (spiderlings; three
+    from Broodmother), chitin (scorpions), kelp (the drowned, or a missed catch), bone (skeletons), wisps (wraiths),
+    cinder hearts (imps, magma hounds). Quill buys them. The Gear tab groups the pack (food, tools, materials) and has a
+    recipe book.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
   button by each food.
