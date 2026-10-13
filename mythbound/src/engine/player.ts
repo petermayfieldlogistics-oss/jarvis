@@ -25,7 +25,8 @@ import {
   BURST, BURST_COLOR, BURST_ELEMENT, burstEffects, burstFor, burstScale, chargeKind, chargeLevel, empowerPower, POWER, spellBurst, strikePower, type Burst,
 } from '../rules/power';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
-import { HORSE, rideBlock, rideSpeed, rideStep } from '../rules/horse';
+import { gallopDrain, HORSE, rideBlock, rideSpeed, rideStep } from '../rules/horse';
+import { hasTool } from '../rules/crafting';
 import { EAT_GAP, eatItem, foodCount, pickFood } from '../rules/food';
 import { ITEMS } from '../data/world';
 import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
@@ -540,7 +541,7 @@ export class Player {
     if (busy) speed = 0;
     // On horseback: a trot, or a gallop (sprint) on the horse's wind.
     if (this.riding) {
-      const step = rideStep(this.steedStamina, input.held.has('sprint') && wantLen > 0.1, this.galloping, dt, RIDE_STEP);
+      const step = rideStep(this.steedStamina, input.held.has('sprint') && wantLen > 0.1, this.galloping, dt, RIDE_STEP, gallopDrain(hasTool(c, 'horseshoes')));
       if (this.galloping && !step.galloping && step.stamina <= 0) g.hud.toast(`${this.c.steed.name} is winded.`);
       this.steedStamina = step.stamina;
       this.galloping = step.galloping;

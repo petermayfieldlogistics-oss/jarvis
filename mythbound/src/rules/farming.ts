@@ -18,8 +18,10 @@ export const FARM = {
   dryRate: 0.5,
   /** Growth (share of the crop's time) where it sprouts, grows tall, and is ripe. */
   stageAt: [0.15, 0.5, 1] as const,
-  /** Feeding a bed a fish (before it is half grown) brings in more. */
-  feed: { fish: 1, 'golden-fish': 2 } as Record<string, number>,
+  /** Feeding a bed a fish or compost (before it is half grown) brings in more. */
+  feed: { fish: 1, 'golden-fish': 2, compost: 1 } as Record<string, number>,
+  /** With a watering can, the soil stays wet this long. */
+  canLasts: 360,
   feedBefore: 0.5,
 };
 
@@ -121,7 +123,20 @@ export function water(farm: FarmState, i: number): boolean {
   return true;
 }
 
-/** Feeds a bed a fish (or a golden fish): more at harvest. Once a crop, before it is half grown. */
+/** Waters every growing bed you have (a watering can), wet for `lasts`. Returns how many. */
+export function waterAll(farm: FarmState, lasts: number): number {
+  let n = 0;
+  for (let i = 0; i < farm.owned; i++) {
+    const p = farm.plots[i];
+    if (!p || stageOf(p, farm.clock) === 4) continue;
+    bank(p, farm.clock);
+    p.wetUntil = Math.max(p.wetUntil, farm.clock + lasts);
+    n++;
+  }
+  return n;
+}
+
+/** Feeds a bed a fish, a golden fish or compost: more at harvest. Once a crop, before it is half grown. */
 export function feed(c: Pick<Character, 'items'>, farm: FarmState, i: number, item: string): string | null {
   const p = farm.plots[i];
   const bonus = FARM.feed[item];
