@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RUNES, SPELLS, WEAPONS, type ClassId, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type SubclassId, type WeaponKind } from '../data/defs';
+import { RUNES, SPELLS, WEAPONS, type ClassId, type ComboElement, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type SubclassId, type WeaponKind } from '../data/defs';
 import {
   airFlaps, ANGELIC, dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, drowns, lightHealMultiplier, manaRegen, maxHp, maxMana,
   maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, swimsTireless, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
@@ -1554,6 +1554,8 @@ export class Player {
     const fx = RUNE_EFFECT[rune];
     const color = RUNES[rune].color;
     if (fx.status) e.status[fx.status] = Math.max(e.status[fx.status], fx.seconds);
+    // The rune's element joins a friend's in a team combo.
+    g.noteElement(e, RUNE_ELEMENT[rune], base);
     if (fx.chain) {
       const from = e.center();
       let n = 0;
@@ -2907,6 +2909,9 @@ export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: 
   weapon.traverse((o) => (o.castShadow = true));
   return { weapon, shield };
 }
+
+/** The element each rune brings to a team combo. */
+const RUNE_ELEMENT: Record<RuneId, ComboElement> = { fire: 'fire', frost: 'water', storm: 'lightning', venom: 'earth' };
 
 /** Spells that mend, shield or summon: empowered, they grow stronger but don't burst. */
 const SELF_SPELLS = new Set<SpellId>(['radiant-heal', 'mending-light', 'ward-of-dawn', 'imp-familiar', 'summon-shade', 'power-of-the-light']);

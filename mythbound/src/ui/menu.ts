@@ -1,4 +1,4 @@
-import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
+import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
 import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
 import { rewardName } from '../engine/bosses';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treesFor, xpToNext } from '../rules/character';
@@ -306,6 +306,7 @@ export class Menu {
         <p class="hint">${co.isHost
           ? 'Your world is shared: keep this tab open and in view, or it pauses for everyone. Resting at a shrine no longer brings monsters back while friends are here.'
           : 'Monsters, bosses and the time of day come from the host. Your hero, items and progress are yours and save on this device.'}</p>
+        ${this.teamCombos()}
       </div>`;
     }
     const pages = !/github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
@@ -318,7 +319,17 @@ export class Menu {
       ${pages ? `<p class="hint">Co-op needs the online version of the game: <a href="${PAGES_URL}" target="_blank" rel="noopener">${PAGES_URL}</a></p>` : ''}
       <p class="hint">The free server naps when nobody is playing, so the first connection can take up to a minute.</p>
       <details><summary class="hint">Server address</summary><label>Address <input type="text" data-coop="server" value="${esc(s.coopServer || DEFAULT_SERVER)}"></label></details>
+      ${this.teamCombos()}
     </div>`;
+  }
+
+  /** The team combos two heroes' elements make together. */
+  private teamCombos(): string {
+    const cap = (x: string) => x[0].toUpperCase() + x.slice(1);
+    return `<details class="tcombos"><summary class="hint">Team combos</summary>
+      <p class="hint">Strike the same foe as a friend within 4 seconds, each with a different element (a spell, a rune, an elemental weapon or a power strike), and the two combine.</p>
+      ${TEAM_COMBOS.map((k) => `<div class="row"><div><b>${esc(k.name)}</b> <small>${cap(k.elements[0])} + ${cap(k.elements[1])}</small><div class="desc">${esc(k.description)}</div></div></div>`).join('')}
+    </details>`;
   }
 
   private controls(): string {

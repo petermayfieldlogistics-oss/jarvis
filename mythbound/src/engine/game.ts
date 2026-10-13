@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type DamageElement, type RuneId } from '../data/defs';
+import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
 import { BURST_COLOR, type Burst } from '../rules/power';
+import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
 import { runeDrop } from '../rules/weapons';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -22,7 +23,7 @@ import { buildThrowingKnife, buildWeapon, compact, disposeObject, glowSprite, ma
 import { Armory } from './armory';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim } from './anim';
-import { Player } from './player';
+import { ELEMENT_COLOR, Player } from './player';
 import { loadUnlocks, saveUnlocks, writeSave, type SaveData, type Settings, type WorldState } from './state';
 import { heightAt, zoneAt, WATER_LEVEL } from './terrain';
 import { World, type Interactable } from './world';
@@ -149,6 +150,8 @@ export class Game {
   private freeze = 0;
   private last = 0;
   private elapsed = 0;
+  /** Seconds of play (team combos time the heroes' blows by it). */
+  clock = 0;
   private running = false;
   private lastZone: ZoneId | null = null;
   private corpses: { e: Enemy; t: number }[] = [];
@@ -546,7 +549,103 @@ export class Game {
     }
     if (guest) return;
     if (!e.aware && !o.quiet && o.source !== 'devil') e.becomeAware(this);
-    if (e.hp <= 0) this.killEnemy(e);
+    // With friends, the host's game watches for two heroes' elements meeting on this foe.
+    if (this.coop.isHost && !o.dot && (o.source === 'player' || o.source === 'spell')) this.teamHit(e, o.by ?? this.coop.myId, element, dmg);
+    if (e.alive && e.hp <= 0) this.killEnemy(e);
+  }
+
+  // ------------------------------------------------------- team combos --
+
+  /** A blow brought an element without dealing it (a runed weapon): it still counts toward a team combo. */
+  noteElement(e: Enemy, el: ComboElement, dmg: number) {
+    if (!e.alive) return;
+    if (e.net) this.coop.noteElement(e, el, dmg);
+    else if (this.coop.isHost) this.teamHit(e, this.coop.myId, el, dmg);
+  }
+
+  /** Host: a hero's blow lands; with another hero's element on the same foe a moment ago, they combine. */
+  teamHit(e: Enemy, hero: number, element: DamageElement, dmg: number) {
+    const el = comboElement(element);
+    if (!el) return;
+    const hit: TeamMark = { hero, el, at: this.clock, dmg };
+    const r = noteTeamHit(e.team, hit);
+    if (r) this.teamCombo(e, r.def, r.partner, hit);
+  }
+
+  /** Host: a team combo bursts on the foe and those around it; everyone sees it. */
+  private teamCombo(e: Enemy, def: TeamComboDef, a: TeamMark, b: TeamMark) {
+    const bonus = teamBonus(def, a.dmg, b.dmg);
+    const fx = def.effect;
+    const at = e.pos.clone();
+    const center = e.center();
+    for (const f of [...this.enemies]) {
+      if (!f.alive) continue;
+      const dx = f.pos.x - at.x, dz = f.pos.z - at.z;
+      const d = Math.hypot(dx, dz);
+      if (f !== e && (d > def.radius + f.radius || Math.abs(f.pos.y - at.y) > 4)) continue;
+      // Bosses shrug off half of what holds them.
+      const k = f instanceof Boss ? 0.5 : 1;
+      const s = f.status;
+      if (fx.burn) s.burn = Math.max(s.burn, fx.burn);
+      if (fx.wet) s.wet = Math.max(s.wet, fx.wet);
+      if (fx.slow) s.slow = Math.max(s.slow, fx.slow);
+      if (fx.hex) s.hex = Math.max(s.hex, fx.hex);
+      if (fx.blind) s.blind = Math.max(s.blind, fx.blind * k);
+      if (fx.root) s.root = Math.max(s.root, fx.root * k);
+      if (fx.stun) s.stun = Math.max(s.stun, fx.stun * k);
+      if (fx.fear) s.fear = Math.max(s.fear, fx.fear * k);
+      if (fx.shove || fx.lift) f.shove(d > 0.3 ? dx : 1, d > 0.3 ? dz : 0, fx.shove ?? 3, fx.lift ?? 0);
+      // A void pulls them in (no further than the middle).
+      if (fx.pull && d > 1) f.shove(-dx, -dz, fx.pull * Math.min(1, d / def.radius), 0);
+      f.hitBy.add(a.hero);
+      const dark = fx.vsDark && f.dark ? fx.vsDark : 1;
+      this.damageEnemy(f, bonus * (f === e ? 1 : TEAM.splash) * dark, def.element, { source: 'combo', by: b.hero, tags: ['combo'] });
+    }
+    const heroes: [number, ComboElement][] = [[a.hero, a.el], [b.hero, b.el]];
+    this.coop.teamCombo(def, center, heroes, bonus);
+    this.showTeamCombo(def, center, heroes, bonus);
+  }
+
+  /** Everyone: a team combo went off at `at` (its heroes mend or drain). */
+  showTeamCombo(def: TeamComboDef, at: THREE.Vector3, heroes: [number, ComboElement][], bonus: number) {
+    const [c1, c2] = heroes.map(([, el]) => ELEMENT_COLOR[el]);
+    const who = heroes.map(([id]) => this.heroName(id)).join(' + ');
+    const mine = heroes.some(([id]) => id === this.coop.myId);
+    const near = mine || this.player.pos.distanceTo(at) < 40;
+    if (near) this.hud.teamCombo(def.name, who, c1, c2);
+    // Each hero's element streaks to the foe, and the two burst together.
+    const v = new THREE.Vector3();
+    for (const [id, el] of heroes) {
+      const h = id === this.coop.myId ? this.player : this.coop.remotes.get(id);
+      if (h) this.fx.beam(h.center(v), at, ELEMENT_COLOR[el], 0.16, 0.35);
+    }
+    const ground = v.set(at.x, heightAt(at.x, at.z) + 0.15, at.z);
+    this.fx.shockwave(ground, def.radius, c1, 0.5);
+    this.fx.shockwave(ground, def.radius * 0.65, c2, 0.4);
+    this.fx.ring(ground, def.radius, c2, 0.8);
+    this.fx.flash(at, c1, 45, 20);
+    this.fx.emit(at, { color: c1, count: 30, speed: 6, life: 0.7, size: 0.6, up: 1.5 });
+    this.fx.emit(at, { color: c2, count: 30, speed: 6, life: 0.7, size: 0.6, up: 1.5 });
+    if (near) {
+      this.audio.play('zap');
+      this.audio.play('slam');
+      this.shake(mine ? 0.35 : 0.15);
+    }
+    // Light mends, dark drains: the two heroes share it.
+    if (mine && this.player.alive && (def.effect.mend || def.effect.drain)) {
+      const p = this.player;
+      const got = Math.min(p.maxHp - p.hp, (def.effect.mend ?? 0) * p.maxHp + (def.effect.drain ?? 0) * bonus);
+      if (got >= 1) {
+        p.heal(got);
+        this.fx.damageNumber(p.center(v).setY(p.pos.y + 2), `+${Math.round(got)}`, 'heal');
+      }
+    }
+  }
+
+  /** A hero's name as friends know it (yours, as you gave it when you joined). */
+  heroName(id: number): string {
+    if (id === this.coop.myId) return this.coop.myName;
+    return this.coop.remotes.get(id)?.name ?? 'A friend';
   }
 
   private killEnemy(e: Enemy) {
@@ -1084,6 +1183,7 @@ export class Game {
     // Hit-stop slows the action (not the camera or HUD) for a moment.
     const gdt = this.freeze > 0 ? dt * 0.06 : dt;
     this.freeze = Math.max(0, this.freeze - dt);
+    this.clock += dt;
 
     if (this.mode === 'play') {
       if (input.pressed.has('menu')) this.menu.open();

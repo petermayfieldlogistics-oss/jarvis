@@ -749,6 +749,56 @@ export const COMBOS: ComboDef[] = [
   { id: 'frost-gale', name: 'Frost Gale', spells: ['waterspike', 'way-of-the-wind'], element: 'water', description: 'Freezing wind that roots enemies in place.' },
 ];
 
+/** The elements heroes can join in a team combo (physical and true damage never combine). */
+export type ComboElement = 'fire' | 'water' | 'wind' | 'earth' | 'lightning' | 'light' | 'dark';
+export const COMBO_ELEMENTS: ComboElement[] = ['fire', 'water', 'wind', 'earth', 'lightning', 'light', 'dark'];
+
+/**
+ * A team combo: two heroes strike the same foe with two different elements
+ * in quick succession (co-op). `power` is the bonus as a share of both
+ * blows; it bursts on every foe within `radius` (half to those around).
+ * The effects are seconds of each status, or for lift/shove a force,
+ * mend a share of max health and drain a share of the bonus, for both heroes.
+ */
+export interface TeamComboDef {
+  id: string;
+  name: string;
+  elements: [ComboElement, ComboElement];
+  element: DamageElement;
+  power: number;
+  radius: number;
+  effect: {
+    burn?: number; blind?: number; root?: number; slow?: number; stun?: number; fear?: number; hex?: number; wet?: number;
+    lift?: number; shove?: number; pull?: number; mend?: number; drain?: number; vsDark?: number;
+  };
+  description: string;
+}
+
+/** What two heroes' elements make together on the same foe. Every pair of the seven has one. */
+export const TEAM_COMBOS: TeamComboDef[] = [
+  { id: 'scalding-steam', name: 'Scalding Steam', elements: ['fire', 'water'], element: 'fire', power: 0.6, radius: 4, effect: { blind: 3, burn: 2 }, description: 'Steam scalds and blinds every foe nearby.' },
+  { id: 'wildfire', name: 'Wildfire', elements: ['fire', 'wind'], element: 'fire', power: 0.6, radius: 6, effect: { burn: 5 }, description: 'The wind carries the flames to every foe around.' },
+  { id: 'magma-burst', name: 'Magma Burst', elements: ['fire', 'earth'], element: 'fire', power: 0.8, radius: 3.5, effect: { burn: 3, lift: 7 }, description: 'Molten rock bursts up under them.' },
+  { id: 'plasma-blast', name: 'Plasma Blast', elements: ['fire', 'lightning'], element: 'lightning', power: 1, radius: 4, effect: { stun: 0.8, burn: 2 }, description: 'A searing blast that stuns and burns.' },
+  { id: 'solar-flare', name: 'Solar Flare', elements: ['fire', 'light'], element: 'light', power: 0.7, radius: 4.5, effect: { blind: 3, burn: 3 }, description: 'A flare like the sun: blinding and burning.' },
+  { id: 'hellfire', name: 'Hellfire', elements: ['fire', 'dark'], element: 'fire', power: 0.8, radius: 4, effect: { burn: 4, fear: 2.5 }, description: 'Black flames that burn and terrify.' },
+  { id: 'blizzard', name: 'Blizzard', elements: ['water', 'wind'], element: 'water', power: 0.6, radius: 5, effect: { root: 2.5, slow: 5, wet: 4 }, description: 'A freezing gale: foes freeze where they stand.' },
+  { id: 'quagmire', name: 'Quagmire', elements: ['water', 'earth'], element: 'earth', power: 0.5, radius: 5, effect: { root: 3, slow: 6 }, description: 'The ground turns to sucking mud.' },
+  { id: 'conduction', name: 'Conduction', elements: ['water', 'lightning'], element: 'lightning', power: 0.9, radius: 6, effect: { stun: 1.5, wet: 3 }, description: 'Lightning races through the water: every soaked foe is stunned.' },
+  { id: 'holy-tide', name: 'Holy Tide', elements: ['water', 'light'], element: 'light', power: 0.5, radius: 4, effect: { slow: 3, mend: 0.12 }, description: 'A shining wave that slows foes and mends you both.' },
+  { id: 'black-tide', name: 'Black Tide', elements: ['water', 'dark'], element: 'dark', power: 0.6, radius: 4, effect: { slow: 4, drain: 0.3 }, description: 'Dark water drags at foes and feeds you both their life.' },
+  { id: 'sandstorm', name: 'Sandstorm', elements: ['wind', 'earth'], element: 'earth', power: 0.5, radius: 5.5, effect: { blind: 4, slow: 3 }, description: 'Whirling sand blinds and slows everything in it.' },
+  { id: 'tempest', name: 'Tempest', elements: ['wind', 'lightning'], element: 'lightning', power: 0.8, radius: 7, effect: { stun: 1 }, description: 'A storm that strikes every foe far around.' },
+  { id: 'radiant-gale', name: 'Radiant Gale', elements: ['wind', 'light'], element: 'light', power: 0.5, radius: 5, effect: { shove: 14, mend: 0.08 }, description: 'A blast of light hurls foes away and mends you both.' },
+  { id: 'howling-void', name: 'Howling Void', elements: ['wind', 'dark'], element: 'dark', power: 0.6, radius: 5, effect: { pull: 9, fear: 3 }, description: 'A shrieking void drags foes together, terrified.' },
+  { id: 'thunderquake', name: 'Thunderquake', elements: ['earth', 'lightning'], element: 'lightning', power: 0.8, radius: 4.5, effect: { stun: 1.5, lift: 5 }, description: 'The ground thunders and throws foes up, stunned.' },
+  { id: 'hallowed-ground', name: 'Hallowed Ground', elements: ['earth', 'light'], element: 'light', power: 0.6, radius: 4, effect: { root: 2, mend: 0.1 }, description: 'Holy stone holds foes fast and mends you both.' },
+  { id: 'grave-grip', name: 'Grave Grip', elements: ['earth', 'dark'], element: 'dark', power: 0.7, radius: 4, effect: { root: 3, drain: 0.25 }, description: 'Hands from the grave hold foes and drain them for you both.' },
+  { id: 'judgement', name: 'Judgement', elements: ['lightning', 'light'], element: 'light', power: 1.2, radius: 3, effect: { stun: 1, vsDark: 2 }, description: 'Holy lightning: twice as hard on creatures of the dark.' },
+  { id: 'black-lightning', name: 'Black Lightning', elements: ['lightning', 'dark'], element: 'lightning', power: 0.9, radius: 5, effect: { hex: 6, stun: 0.8 }, description: 'Cursed lightning hexes foes: they take more from everyone.' },
+  { id: 'eclipse', name: 'Eclipse', elements: ['light', 'dark'], element: 'true', power: 1.5, radius: 5, effect: {}, description: 'Light and dark collide: it harms everything, whatever it resists.' },
+];
+
 // --------------------------------------------------------- upgrade trees --
 
 export interface SkillNode {
