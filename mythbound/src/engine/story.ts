@@ -739,7 +739,6 @@ export class Story {
     });
   }
 
-  /** Quill buys the materials: hides, bones, silk and the rest. */
   /** What Quill will buy from the pack: ember ore (one at a time, not while Brann wants it) and materials. */
   private sellable(): string[] {
     const c = this.c;
