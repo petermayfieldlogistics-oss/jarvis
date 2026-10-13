@@ -3,6 +3,7 @@
 import { RUNES } from '../data/defs';
 import { QUESTS, type QuestId } from '../data/world';
 import { normalizeCharacter, type Character } from '../rules/character';
+import { newFarm, normalizeFarm, type FarmState } from '../rules/farming';
 
 export type QuestState = 'none' | 'active' | 'done';
 
@@ -26,6 +27,8 @@ export interface WorldState {
   unclaimed: string[];
   pos: [number, number, number] | null;
   playTime: number;
+  /** The hero's seed beds in Wren's field. */
+  farm: FarmState;
 }
 
 export interface SaveData {
@@ -52,6 +55,7 @@ export function newWorldState(): WorldState {
     unclaimed: [],
     pos: null,
     playTime: 0,
+    farm: newFarm(),
   };
 }
 
@@ -72,6 +76,8 @@ export function normalizeSave(data: SaveData): SaveData {
   // Fill in anything added since the save was written.
   const fresh = newWorldState();
   data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
+  // Wren's field came later (and a damaged one is mended).
+  data.world.farm = normalizeFarm(data.world.farm);
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
   normalizeCharacter(data.character);
