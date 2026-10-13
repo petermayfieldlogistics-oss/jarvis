@@ -7,7 +7,7 @@ import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCo
 import { questLines, trackedId } from '../engine/questlog';
 import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
 import { isFood } from '../rules/food';
-import { recipesAt, TOOLS } from '../rules/crafting';
+import { recipeGold, recipesAt, TOOLS } from '../rules/crafting';
 import { MATERIALS, STATION_NAME } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
@@ -152,14 +152,14 @@ export class Menu {
     const other = held.filter(([id]) => !isFood(id) && !tools.some(([t]) => t === id) && !mats.some(([m]) => m === id));
     const items = [group('Food', food), group('Tools and supplies', tools), group('Materials', mats), group('Other', other)];
     // The recipe book: what each station makes, ticked once made.
-    const book = (['cookfire', 'bench', 'anvil'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${r.gold} embers` : ''})</small>`).join('<br>')}</div>`).join('');
+    const book = (['cookfire', 'bench', 'anvil'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
     return `<h3>Weapons</h3>${weapons.join('')}
       <h3>Supplies</h3>
       <div class="row"><div><b>Flasks</b> ${c.flasks}/${c.flasksMax} <div class="desc">Restore half your health. Refilled at shrines.</div></div></div>
       ${ownsKnives(c) ? `<div class="row"><div><b>Throwing knives</b> ${c.knives}/${MAX_KNIVES} <div class="desc">Pick them up where they land. Refilled at shrines.</div></div></div>` : ''}
       ${c.arrows.wood + c.arrows.steel ? `<div class="row"><div><b>Arrows</b> ${c.arrows.wood} wood, ${c.arrows.steel} steel <div class="desc">Steel arrows hit 30% harder and are used first.</div></div></div>` : ''}
       ${items.join('') || ''}
-      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (or simply at any shrine), craft at the workbench by the forge, smith at an anvil.</p>${book}</details>`;
+      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (fish and bread at any shrine too), craft at the workbench by the forge, smith at an anvil.</p>${book}</details>`;
   }
 
   /** The class's skill tree: tiers as rows, prerequisites as lines, the picked node's ranks beside it. */
