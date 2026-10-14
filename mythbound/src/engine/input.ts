@@ -1,5 +1,7 @@
 // Keyboard + mouse and touch controls, mapped onto the same actions.
 
+import { STICK, stickMove } from '../rules/touch';
+
 export type Action =
   | 'attack' | 'heavy' | 'block' | 'roll' | 'jump' | 'sprint' | 'interact' | 'cast' | 'ability' | 'lock'
   | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock' | 'quests' | 'horse'
@@ -34,6 +36,9 @@ const KEYS: Record<string, Action> = {
   Digit4: 'slot4',
 };
 
+/** Radians the camera turns per pixel a finger drags. */
+const TOUCH_LOOK = 0.0085;
+
 export class Input {
   move = { x: 0, y: 0 };
   look = { dx: 0, dy: 0 };
@@ -51,6 +56,8 @@ export class Input {
   private shiftChorded = false;
   private stick = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   private lookTouch = { id: -1, x: 0, y: 0 };
+  /** When a finger last turned the camera (performance.now ms): the camera doesn't follow the hero for a moment after. */
+  lookedAt = -1e9;
   private touchRoot: HTMLElement | null = null;
   /** Mirrors the camera's shift lock (set by the player). */
   shiftLock = false;
@@ -224,12 +231,17 @@ export class Input {
     const stick = root.querySelector<HTMLElement>('.stick')!;
     const knob = root.querySelector<HTMLElement>('.knob')!;
     const zone = this.canvas;
+    const place = () => {
+      stick.style.left = `${this.stick.ox - 60}px`;
+      stick.style.top = `${this.stick.oy - 60}px`;
+    };
     zone.addEventListener('touchstart', (e) => {
       for (const t of Array.from(e.changedTouches)) {
-        if (t.clientX < window.innerWidth * 0.42 && this.stick.id < 0) {
+        // The stick: anywhere on the lower left (the top of the screen turns the camera, even on the left).
+        const w = window.innerWidth, h = window.innerHeight;
+        if (t.clientX < w * (w < h ? 0.5 : 0.45) && t.clientY > h * 0.3 && this.stick.id < 0) {
           this.stick = { id: t.identifier, ox: t.clientX, oy: t.clientY, x: t.clientX, y: t.clientY };
-          stick.style.left = `${t.clientX - 60}px`;
-          stick.style.top = `${t.clientY - 60}px`;
+          place();
           stick.classList.add('active');
         } else if (this.lookTouch.id < 0) {
           this.lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
@@ -242,22 +254,30 @@ export class Input {
         if (t.identifier === this.stick.id) {
           let dx = t.clientX - this.stick.ox;
           let dy = t.clientY - this.stick.oy;
-          const l = Math.hypot(dx, dy);
-          if (l > 50) (dx *= 50 / l), (dy *= 50 / l);
-          knob.style.transform = `translate(${dx}px, ${dy}px)`;
-          // Full running speed well inside the ring; sprinting only when the
-          // thumb is pushed past it (with a gap so it doesn't flicker).
-          const k = Math.min(1, l / 40) / Math.max(1e-6, Math.min(l, 50));
-          this.move.x = dx * k;
-          this.move.y = -dy * k;
-          if (l > 62) this.held.add('sprint');
-          else if (l < 46) this.held.delete('sprint');
+          let l = Math.hypot(dx, dy);
+          // A thumb that wanders far off drags the stick along, so it never runs out of reach.
+          if (l > STICK.drag) {
+            this.stick.ox = t.clientX - (dx * STICK.drag) / l;
+            this.stick.oy = t.clientY - (dy * STICK.drag) / l;
+            place();
+            (dx = t.clientX - this.stick.ox), (dy = t.clientY - this.stick.oy), (l = STICK.drag);
+          }
+          const kl = Math.min(l, 50);
+          knob.style.transform = `translate(${(dx * kl) / Math.max(l, 1e-6)}px, ${(dy * kl) / Math.max(l, 1e-6)}px)`;
+          // A small dead zone (a resting thumb doesn't creep), full running speed well
+          // inside the ring; sprinting only when the thumb is pushed past it.
+          const m = stickMove(dx, dy);
+          this.move.x = m.x;
+          this.move.y = m.y;
+          if (l > STICK.sprint) this.held.add('sprint');
+          else if (l < STICK.walk) this.held.delete('sprint');
           stick.classList.toggle('sprint', this.held.has('sprint'));
         } else if (t.identifier === this.lookTouch.id) {
-          this.look.dx += (t.clientX - this.lookTouch.x) * 0.006 * this.sensitivity;
-          this.look.dy += (t.clientY - this.lookTouch.y) * 0.006 * this.sensitivity * (this.invertY ? -1 : 1);
+          this.look.dx += (t.clientX - this.lookTouch.x) * TOUCH_LOOK * this.sensitivity;
+          this.look.dy += (t.clientY - this.lookTouch.y) * TOUCH_LOOK * this.sensitivity * (this.invertY ? -1 : 1);
           this.lookTouch.x = t.clientX;
           this.lookTouch.y = t.clientY;
+          this.lookedAt = performance.now();
         }
       }
       e.preventDefault();
@@ -270,11 +290,19 @@ export class Input {
           this.held.delete('sprint');
           knob.style.transform = '';
           stick.classList.remove('active', 'sprint');
-        } else if (t.identifier === this.lookTouch.id) this.lookTouch.id = -1;
+        } else if (t.identifier === this.lookTouch.id) {
+          this.lookTouch.id = -1;
+          this.lookedAt = performance.now();
+        }
       }
     };
     zone.addEventListener('touchend', endTouch);
     zone.addEventListener('touchcancel', endTouch);
+  }
+
+  /** A finger is turning the camera now. */
+  get looking() {
+    return this.lookTouch.id >= 0;
   }
 
   /** Lights the touch shift-lock button while shift lock is on. */

@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { heightAt, WATER_LEVEL } from './terrain';
+import { followTurn } from '../rules/touch';
 import type { Game } from './game';
 
 const damp = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
@@ -39,6 +40,15 @@ export class CameraRig {
     this.shakeAmt = Math.max(this.shakeAmt, a);
   }
 
+  /** Whether the camera follows the hero round: touch only, while steering, not just after a finger turned it, not mid-swing. */
+  private follows(g: Game): boolean {
+    const input = g.input;
+    const p = g.player;
+    if (!input.touch || g.settings.camFollow === false || g.mode !== 'play' || this.shiftLock || input.looking) return false;
+    if (performance.now() - input.lookedAt < 1200 || p.attack) return false;
+    return input.move.x !== 0 || input.move.y !== 0 || p.riding || p.sailing;
+  }
+
   /** Applies look input; called once per frame while playing. */
   look(g: Game) {
     const input = g.input;
@@ -65,6 +75,10 @@ export class CameraRig {
       // Look down on small foes, more level at big ones; higher when close.
       const want = 0.24 - 0.12 * big + Math.max(0, 4 - d) * 0.04;
       this.pitch += (want - this.pitch) * damp(3, dt);
+    } else if (this.follows(g)) {
+      // On a touch screen the camera swings in behind a running hero, so one
+      // thumb can steer. Never round to face a hero running back at it.
+      this.yaw += followTurn(wrap(p.yaw - this.yaw), Math.hypot(p.vel.x, p.vel.z), dt);
     }
     this.lockK += ((target ? 1 : 0) - this.lockK) * damp(5, dt);
     this.over += ((this.shiftLock || p.drawing > 0 ? 1 : 0) - this.over) * (snap ? 1 : damp(7, dt));
