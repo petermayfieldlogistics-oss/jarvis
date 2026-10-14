@@ -11,6 +11,7 @@ import { recipeGold, recipesAt, TOOLS } from '../rules/crafting';
 import { MATERIALS, STATION_NAME } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
+import { inviteLink } from '../rules/invite';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
 import { mapImage, toMap } from './mapimage';
@@ -299,6 +300,12 @@ export class Menu {
     </div>`;
   }
 
+  /** The link that brings a friend straight into this room (always the online game's address, which co-op needs). */
+  private inviteLink(): string {
+    const here = /github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+    return inviteLink(here ? location.origin + location.pathname : PAGES_URL, this.g.coop.room);
+  }
+
   private coopName(): string {
     const c = this.g.player.c;
     return this.g.settings.coopName || this.g.accountName || c.classId[0].toUpperCase() + c.classId.slice(1);
@@ -314,7 +321,10 @@ export class Menu {
       const host = party.find((m) => m.host);
       return `<div class="coop form">
         ${co.isHost
-          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div><p class="hint">Friends open Mythbound, go to Menu → Co-op, type this code and press Join.</p>`
+          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div>
+            <div class="btnrow"><button class="primary" data-act="coop-invite">Share invite link</button></div>
+            <input type="text" class="invitelink" readonly value="${esc(this.inviteLink())}">
+            <p class="hint">Send friends the link: they sign in, pick a hero and land in your world. Or they can open Mythbound, go to Menu → Co-op, type the code and press Join.</p>`
           : `<p>You are in <b>${esc(host?.name ?? 'the host')}</b>’s world (room <b>${esc(co.room)}</b>).</p>`}
         <ul class="who"><li>${co.isHost ? '♛ ' : ''}${esc(name)} <small>(you)</small></li>${party.map((m) => `<li>${m.host ? '♛ ' : ''}${esc(m.name)} <small>level ${m.level}${m.alive ? '' : ' · fallen'}</small></li>`).join('')}</ul>
         ${status}
@@ -493,6 +503,27 @@ export class Menu {
       void g.coop.join(g.settings.coopServer || DEFAULT_SERVER, this.coopCode, this.coopName());
     });
     this.el.querySelector('[data-act="coop-leave"]')?.addEventListener('click', () => g.coop.leave());
+    const link = this.el.querySelector<HTMLInputElement>('.invitelink');
+    link?.addEventListener('focus', () => link.select());
+    this.el.querySelector('[data-act="coop-invite"]')?.addEventListener('click', async () => {
+      const url = this.inviteLink();
+      // Phones get the share sheet (Messages, Discord…); elsewhere the link goes on the clipboard.
+      if (navigator.share && g.input.touch) {
+        try {
+          await navigator.share({ title: 'Mythbound', text: `Join my Mythbound world (room ${g.coop.room})`, url });
+          return;
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') return;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        g.hud.toast('Invite link copied. Paste it to your friends.', 'skill');
+      } catch {
+        link?.focus();
+        g.hud.toast('Copy the link under the button and send it to your friends.');
+      }
+    });
     this.el.querySelector('[data-act="reload"]')?.addEventListener('click', () => {
       g.save();
       location.reload();

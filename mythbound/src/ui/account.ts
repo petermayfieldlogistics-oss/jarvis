@@ -29,7 +29,12 @@ export interface FrontActions {
   play: (slot: number, save: SaveData, version: number) => void;
   /** Make a new hero for an empty slot. */
   create: (slot: number) => void;
+  /** The co-op room an invite link asked to join, once a hero is picked. */
+  invite?: string | null;
 }
+
+/** The room an invite link is waiting to join (shown on every front screen until a hero is picked). */
+let invited: string | null = null;
 
 function screen(root: HTMLElement, inner: string): HTMLElement {
   root.querySelector('.title')?.remove();
@@ -38,6 +43,7 @@ function screen(root: HTMLElement, inner: string): HTMLElement {
   el.innerHTML = `<div class="tinner">
     <div class="logo">MYTHBOUND</div>
     <div class="orn-rule"></div>
+    ${invited ? `<p class="invite">A friend invited you to co-op room <b>${esc(invited)}</b>. Pick your hero and you'll join their world.</p>` : ''}
     ${inner}
   </div>`;
   root.appendChild(el);
@@ -71,6 +77,7 @@ function statusLine(el: HTMLElement) {
 }
 
 export function showFront(root: HTMLElement, a: FrontActions) {
+  invited = a.invite ?? null;
   const signed = a.cloud.session;
   // Start waking the server now, while the player reads and types.
   void a.cloud.warm();
