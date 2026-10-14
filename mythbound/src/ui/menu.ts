@@ -1,5 +1,10 @@
 import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
+import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
+
+/** Where the world map names the outer lands. */
+const REGION_LABELS: [number, number, ZoneId][] = [
+  [-300, -720, 'peaks'], [640, -680, 'cinder'], [700, -200, 'dunes'], [-700, -150, 'elderwood'], [-620, 680, 'jungle'], [300, 760, 'ocean'],
+];
 import { rewardName } from '../engine/bosses';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treesFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
@@ -12,9 +17,10 @@ import { wardrobeCounts } from '../rules/outfit';
 import { MATERIALS, STATION_NAME } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
+import { inviteLink } from '../rules/invite';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
-import { mapImage, toMap } from './mapimage';
+import { mapImage, paintMap, toMap } from './mapimage';
 
 type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
 
@@ -302,6 +308,12 @@ export class Menu {
     </div>`;
   }
 
+  /** The link that brings a friend straight into this room (always the online game's address, which co-op needs). */
+  private inviteLink(): string {
+    const here = /github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+    return inviteLink(here ? location.origin + location.pathname : PAGES_URL, this.g.coop.room);
+  }
+
   private coopName(): string {
     const c = this.g.player.c;
     return this.g.settings.coopName || this.g.accountName || c.classId[0].toUpperCase() + c.classId.slice(1);
@@ -317,7 +329,10 @@ export class Menu {
       const host = party.find((m) => m.host);
       return `<div class="coop form">
         ${co.isHost
-          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div><p class="hint">Friends open Mythbound, go to Menu → Co-op, type this code and press Join.</p>`
+          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div>
+            <div class="btnrow"><button class="primary" data-act="coop-invite">Share invite link</button></div>
+            <input type="text" class="invitelink" readonly value="${esc(this.inviteLink())}">
+            <p class="hint">Send friends the link: they sign in, pick a hero and land in your world. Or they can open Mythbound, go to Menu → Co-op, type the code and press Join.</p>`
           : `<p>You are in <b>${esc(host?.name ?? 'the host')}</b>’s world (room <b>${esc(co.room)}</b>).</p>`}
         <ul class="who"><li>${co.isHost ? '♛ ' : ''}${esc(name)} <small>(you)</small></li>${party.map((m) => `<li>${m.host ? '♛ ' : ''}${esc(m.name)} <small>level ${m.level}${m.alive ? '' : ' · fallen'}</small></li>`).join('')}</ul>
         ${status}
@@ -497,6 +512,27 @@ export class Menu {
       void g.coop.join(g.settings.coopServer || DEFAULT_SERVER, this.coopCode, this.coopName());
     });
     this.el.querySelector('[data-act="coop-leave"]')?.addEventListener('click', () => g.coop.leave());
+    const link = this.el.querySelector<HTMLInputElement>('.invitelink');
+    link?.addEventListener('focus', () => link.select());
+    this.el.querySelector('[data-act="coop-invite"]')?.addEventListener('click', async () => {
+      const url = this.inviteLink();
+      // Phones get the share sheet (Messages, Discord…); elsewhere the link goes on the clipboard.
+      if (navigator.share && g.input.touch) {
+        try {
+          await navigator.share({ title: 'Mythbound', text: `Join my Mythbound world (room ${g.coop.room})`, url });
+          return;
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') return;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        g.hud.toast('Invite link copied. Paste it to your friends.', 'skill');
+      } catch {
+        link?.focus();
+        g.hud.toast('Copy the link under the button and send it to your friends.');
+      }
+    });
     this.el.querySelector('[data-act="reload"]')?.addEventListener('click', () => {
       g.save();
       location.reload();
@@ -514,9 +550,20 @@ export class Menu {
     const ctx = canvas.getContext('2d')!;
     const S = canvas.width;
     ctx.imageSmoothingEnabled = true;
+    // Opening the map paints in a good deal more of it at once.
+    paintMap(80, g.player.pos.x, g.player.pos.z);
     ctx.drawImage(mapImage(), 0, 0, S, S);
     ctx.fillStyle = 'rgba(10,8,6,0.15)';
     ctx.fillRect(0, 0, S, S);
+    // The outer lands' names, faint, over their regions.
+    ctx.font = 'italic 13px Cinzel, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(240,226,192,0.55)';
+    for (const [x, z, id] of REGION_LABELS) {
+      const [rx, ry] = toMap(x, z, S);
+      ctx.fillText(ZONES[id].name, rx, ry);
+    }
+    ctx.textAlign = 'start';
     const label = (x: number, z: number, text: string, color: string, r: number) => {
       const [px, py] = toMap(x, z, S);
       ctx.fillStyle = color;
