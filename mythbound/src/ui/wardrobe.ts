@@ -34,6 +34,7 @@ export class Wardrobe {
   isOpen = false;
   private el: HTMLElement;
   private tab: Tab = 'head';
+  private drawnTab: Tab | null = null;
   private channel: DyeChannel = 'cloth';
   private draft: Outfit | null = null;
   private saved: Outfit | null = null;
@@ -42,7 +43,7 @@ export class Wardrobe {
   private builtAt = -9;
   private timer = 0;
   private check = 0;
-  private cam = { yaw: 0, dist: 0, pitch: 0 };
+  private cam = { yaw: 0, dist: 0, pitch: 0, heroYaw: 0 };
 
   constructor(parent: HTMLElement, private g: Game) {
     this.el = document.createElement('div');
@@ -70,12 +71,16 @@ export class Wardrobe {
     this.shown = outfitKey(dressedOf(this.saved));
     this.isOpen = true;
     g.setMode('event');
-    // Swing round to face the hero, close in, and frame them clear of the sheet.
+    g.hud.prompt(null);
+    // The hero turns to face the camera (which stays on the open side they came from,
+    // not behind a loom or a shrine), the camera closes in, and frames them clear of the sheet.
     const cam = g.cam;
-    this.cam = { yaw: cam.yaw, dist: cam.dist, pitch: cam.pitch };
-    cam.yaw = g.player.yaw + Math.PI;
-    cam.dist = 4;
-    cam.pitch = 0.1;
+    const p = g.player;
+    this.cam = { yaw: cam.yaw, dist: cam.dist, pitch: cam.pitch, heroYaw: p.yaw };
+    p.yaw = cam.yaw - Math.PI;
+    p.syncModel();
+    cam.dist = 3.2;
+    cam.pitch = 0.12;
     this.frame(true);
     this.render();
   }
@@ -93,6 +98,8 @@ export class Wardrobe {
     cam.yaw = this.cam.yaw;
     cam.dist = this.cam.dist;
     cam.pitch = this.cam.pitch;
+    g.player.yaw = this.cam.heroYaw;
+    g.player.syncModel();
     this.frame(false);
     if (g.mode === 'event') g.setMode('play');
   }
@@ -207,12 +214,20 @@ export class Wardrobe {
           .join('')}</div>`;
       }
     }
+    // The sheet stays put (its slide-in plays once); only what is on it changes, and the list keeps its scroll on the same tab.
     this.el.className = 'wardrobe';
-    this.el.innerHTML = `<div class="wsheet">
+    let sheet = this.el.querySelector<HTMLElement>('.wsheet');
+    if (!sheet) {
+      this.el.innerHTML = '<div class="wsheet"></div>';
+      sheet = this.el.firstElementChild as HTMLElement;
+    }
+    const scroll = this.drawnTab === this.tab ? (sheet.querySelector('.wbody')?.scrollTop ?? 0) : 0;
+    this.drawnTab = this.tab;
+    sheet.innerHTML = `
       <div class="whead"><div class="dtitle">Wardrobe</div><small>Clothes ${n.garments}/${n.ofGarments} · Colours ${n.dyes}/${n.ofDyes}</small></div>
       <div class="wtabs">${TABS.map((t) => `<button data-tab="${t}" class="${t === this.tab ? 'on' : ''}">${TAB_NAME[t]}</button>`).join('')}</div>
       <div class="wbody">${body}</div>
-      <div class="wfoot"><button data-act="close">Close</button><button data-act="undo" ${changed ? '' : 'disabled'}>Undo</button><button data-act="keep" class="primary">Keep</button></div>
-    </div>`;
+      <div class="wfoot"><button data-act="close">Close</button><button data-act="undo" ${changed ? '' : 'disabled'}>Undo</button><button data-act="keep" class="primary">Keep</button></div>`;
+    sheet.querySelector('.wbody')!.scrollTop = scroll;
   }
 }

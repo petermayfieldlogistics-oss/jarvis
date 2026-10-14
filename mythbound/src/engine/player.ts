@@ -3140,7 +3140,7 @@ export class Player {
     }
   }
 
-  private syncModel() {
+  syncModel() {
     const r = this.rig.root;
     r.position.copy(this.pos);
     r.rotation.y = this.yaw;
