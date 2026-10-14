@@ -2,6 +2,7 @@ import { CLASSES, SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId,
 import { ANGELIC, hasRelic, ORC, ZOMBIE, rank, type Character } from './character';
 import { ambushPower, backstabMultiplier, finisherPower, IRON_SKIN, opportunistPower, pathPower, RAW_POWER, rogueBladePower } from './classes';
 import { KIND_NAME, WAND, classWields, family, isMartial } from './weapons';
+import { fedTaken } from './fed';
 
 // -------------------------------------------------------- warrior fury --
 
@@ -252,6 +253,8 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   if (c.subclassId === 'elemental' && c.wizardElement === element) dmg *= rank(c, 'elemental-ward') ? 0 : 0.5;
   if (ctx.stoneSkin) dmg *= 0.5;
   if (ctx.ironSkin) dmg *= IRON_SKIN.taken;
+  // A fruit's ward (emberfig, tideberry, duskcherry).
+  dmg *= fedTaken(c, element);
   dmg *= (1 - 0.08 * rank(c, 'stalwart')) * (1 - 0.07 * rank(c, 'arcane-ward'));
   dmg *= (1 - 0.07 * rank(c, 'diamond-soul')) * (1 - 0.08 * (rank(c, 'mountain-stance') + rank(c, 'dancer'))) * (1 - 0.06 * (rank(c, 'shadow-shroud') + rank(c, 'sanctified')));
   return Math.round(dmg);

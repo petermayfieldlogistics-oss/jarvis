@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CROP_IDS, CROPS, SEED_PACK, STATIONS, seedItem } from '../data/goods';
+import { CROP_IDS, CROPS, PIP_CHANCE, SEED_PACK, STATIONS, isPip, seedItem } from '../data/goods';
 import { ITEMS } from '../data/world';
 import { FIELD, NPCS, QUESTS, plotCentre } from '../data/world';
 import { createCharacter } from './character';
@@ -161,12 +161,24 @@ describe('harvest, feeding and selling', () => {
   });
 
   it('never pays more to grow than a crop sells for, so seeds always feed you first', () => {
-    for (const crop of Object.values(CROPS)) {
+    for (const crop of Object.values(CROPS).filter((c) => c.seedPrice > 0)) {
       const perSeed = crop.seedPrice / SEED_PACK;
       const avg = (crop.yield[0] + crop.yield[1]) / 2;
       // Selling a harvest earns a little over the seed, never a fortune.
       expect(avg * crop.sell).toBeGreaterThan(perSeed * 0.5);
       expect(avg * crop.sell).toBeLessThan(perSeed * 4);
+    }
+  });
+
+  it('grows fruit from pips (Wren sells none), slower than fighting pays', () => {
+    for (const crop of Object.values(CROPS).filter((c) => c.seedPrice <= 0)) {
+      expect(crop.buyer).toBe('nell');
+      const avg = (crop.yield[0] + crop.yield[1]) / 2;
+      // Unfed, a harvest can't even give back its own pip (berries eaten for pips are not sold).
+      expect(avg).toBeLessThan(1 / PIP_CHANCE);
+      // Fed, nine beds that pay their own pips earn under 5 embers a minute (a game minute is a second).
+      const perBed = (avg + 1 - 1 / PIP_CHANCE) * crop.sell;
+      expect(((9 * perBed) / crop.grow) * 60).toBeLessThan(5);
     }
   });
 
@@ -231,9 +243,13 @@ describe('saves', () => {
 describe('fibre and dye crops', () => {
   it('grows flax, madder, woad and weld for the loom, as Wren sells them', () => {
     const fibre = CROP_IDS.filter((id) => CROPS[id].fibre);
-    const food = CROP_IDS.filter((id) => !CROPS[id].fibre);
+    // Wren's food seeds: pips (sunberry, heartapple) come from eating Nell's fruit, not from her.
+    const food = CROP_IDS.filter((id) => !CROPS[id].fibre && !isPip(id));
     expect(fibre).toEqual(['flax', 'madder', 'woad', 'weld']);
     expect(food).toEqual(['carrot', 'wheat', 'bluecap', 'pumpkin']);
+    expect(CROP_IDS.filter(isPip)).toEqual(['sunberry', 'heartapple']);
+    // A seed bed's food list (with pips) still fits.
+    expect(CROP_IDS.filter((id) => !CROPS[id].fibre).length).toBeLessThanOrEqual(7);
     // Each of Wren's seed lists (and a bed's crop list) fits on the big buttons with a Back.
     expect(fibre.length).toBeLessThanOrEqual(7);
     expect(food.length).toBeLessThanOrEqual(7);

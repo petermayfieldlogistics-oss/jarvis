@@ -1140,9 +1140,9 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
   .is-touch .hud .tr { right: max(8px, env(safe-area-inset-right)); }
   .is-touch .zlabel { font-size: 10px; margin-top: 4px; }
   .is-touch .tbar { top: calc(max(8px, env(safe-area-inset-top)) + 146px); gap: 4px; }
-  /* One row even with every button showing (ten), on the narrowest phones. */
+  /* One row even with every button showing (eleven), on the narrowest phones. */
   .is-touch .tbar { gap: 3px; }
-  .is-touch .tbar button { width: min(34px, calc((100vw - 43px) / 10)); height: min(34px, calc((100vw - 43px) / 10)); font-size: 14px; }
+  .is-touch .tbar button { width: min(34px, calc((100vw - 46px) / 11)); height: min(34px, calc((100vw - 46px) / 11)); font-size: 14px; }
   .is-touch .hud .bc { top: calc(max(8px, env(safe-area-inset-top)) + 190px); }
   .is-touch .slot { width: 44px; height: 44px; }
   .is-touch .slot.ability { width: 40px; height: 40px; margin-left: 8px; }

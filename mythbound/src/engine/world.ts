@@ -5,7 +5,7 @@ import {
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
-import { STATIONS } from '../data/goods';
+import { FRUITS, NELL_STALL, STATIONS } from '../data/goods';
 import { mulberry32, noise2, smoothstep } from './noise';
 import { detailTexture, groundTile, heightAt, inLava, LAVA_LEVEL, normalAt, POOL_LAVA, TILE, TILES, zoneAt, WATER_LEVEL } from './terrain';
 
@@ -972,6 +972,7 @@ export class World {
     this.buildLoreAndLoot();
     this.buildField();
     this.buildStations();
+    this.buildNellStall();
     this.batch.build(this.root, quality !== 'low');
     this.buildMotes();
     this.buildSmoke();
@@ -1764,6 +1765,47 @@ export class World {
       }
       this.interactables.push({ id: `station-${s.id}`, kind: 'station', x, y: y + 1, z, radius: 2.8, label: s.label });
     }
+  }
+
+  /**
+   * Nell's stall by the shrine, behind her and turned the way she faces: a
+   * counter with fish on ice and heaps of fruit in each fruit's colour, a
+   * sea-blue striped awning, a crate and a barrel. All batched; draws no
+   * random numbers (the rest of the world stays as it was).
+   */
+  private buildNellStall() {
+    const b = this.batch;
+    const { x, z, facing: ry } = NELL_STALL;
+    const y = this.groundY(x, z);
+    // Local to world: +x along the counter, +z out toward the square.
+    const fx = Math.sin(ry), fz = Math.cos(ry), rx = Math.cos(ry), rz = -Math.sin(ry);
+    const at = (lx: number, lz: number) => [x + rx * lx + fx * lz, z + rz * lx + fz * lz] as const;
+    const put = (geo: THREE.BufferGeometry, color: number, lx: number, ly: number, lz: number, sx: number, sy: number, sz: number, turn = 0, tilt = 0) => {
+      const [px, pz] = at(lx, lz);
+      b.paint(geo, color, px, y + ly, pz, ry + turn, sx, sy, sz, tilt);
+    };
+    put(BOX, 0x4a3420, 0, 0.5, 0, 4, 1, 1.4);
+    put(BOX, 0x3a2a1c, 0, 0.98, 0.72, 4.05, 0.08, 0.06);
+    // Ice on the left half, with fish laid across it (one golden).
+    put(BOX, 0xd8eef2, -1, 1.04, 0.05, 1.8, 0.08, 1.1);
+    const fish = [0x9aa8b0, 0x8a9aa4, 0xd8a830];
+    for (let i = 0; i < 3; i++) put(ICO, fish[i], -1.55 + i * 0.55, 1.13, 0.05 + (i % 2 ? 0.18 : -0.18), 0.12, 0.07, 0.34, 0.3 * (i - 1));
+    // Heaps of fruit in baskets on the right half.
+    const fruit = [FRUITS.sunberry, FRUITS.heartapple, FRUITS.moonplum, FRUITS.windpear, FRUITS.emberfig, FRUITS.bloodorange];
+    for (let i = 0; i < 6; i++) {
+      const lx = 0.4 + (i % 3) * 0.55, lz = i < 3 ? -0.25 : 0.3;
+      put(BOX, 0x6a4a2a, lx, 1.05, lz, 0.46, 0.1, 0.44);
+      put(ICO, fruit[i].color, lx, 1.16, lz, 0.2, 0.13, 0.19, i);
+    }
+    // Posts and a sea-blue awning, white stripes along its front edge.
+    for (const [lx, lz] of [[-1.9, -0.6], [1.9, -0.6], [-1.9, 0.62], [1.9, 0.62]]) put(BOX, 0x3a2a1c, lx, 1.35, lz, 0.14, 2.7, 0.14);
+    put(BOX, 0x2a6a8a, 0, 2.72, 0, 4.6, 0.1, 2.2, 0, -0.12);
+    for (let i = 0; i < 4; i++) put(BOX, 0xd8e8ea, -1.65 + i * 1.1, 2.6, 1.08, 0.55, 0.1, 0.12, 0, -0.12);
+    const [cx, cz] = at(2.75, -0.2);
+    this.crate(cx, cz, ry + 0.3, 0.7);
+    const [bx, bz] = at(-2.7, -0.1);
+    this.barrel(bx, bz);
+    this.addCollider(x, z, 2.2);
   }
 
   /**

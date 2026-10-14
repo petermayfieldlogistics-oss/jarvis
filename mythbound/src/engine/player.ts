@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RUNES, SPELLS, WEAPONS, type ClassId, type ComboElement, type DamageElement, type RaceId, type RuneId, type SpellId, type SpellSchool, type SubclassId, type WeaponKind } from '../data/defs';
 import {
   airFlaps, ANGELIC, dracoFireRegen, dracoFlightHours, dracoWaterDamagePerSecond, drawTimeMultiplier, drowns, lightHealMultiplier, manaRegen, maxHp, maxMana,
-  maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, swimsTireless, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, type Character,
+  maxStamina, maxTamed, moveSpeed, ORC, rank, staminaRegen, swimsTireless, tameableKinds, weaponDamage, wingsGrown, ZOMBIE, GAME_MINUTES_PER_SECOND, type Character,
 } from '../rules/character';
 import {
   BLOODRAGE, bleedChance, bloodrageDuration, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
@@ -29,6 +29,8 @@ import { gallopDrain, HORSE, rideBlock, rideSpeed, rideStep } from '../rules/hor
 import { hasTool } from '../rules/crafting';
 import { applyOutfit, baseLook, dressedOf, isPlain, PLAIN, wardrobeBlock, wearable, type Dressed } from '../rules/outfit';
 import { EAT_GAP, eatItem, foodCount, pickFood } from '../rules/food';
+import { fedMul, fedRegen, tickFed } from '../rules/fed';
+import { FRUITS, spanText } from '../data/goods';
 import { ITEMS } from '../data/world';
 import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
 import { Ally, Boss, Enemy, type Actor } from './entities';
@@ -503,6 +505,13 @@ export class Player {
     this.moonveil = Math.max(0, this.moonveil - dt);
     this.flapT = Math.max(0, this.flapT - dt);
     this.tickClassTimers(dt, g);
+    // The Fed slot: counts down by play time (a game minute a second), a heartapple mends.
+    if (c.fed) {
+      const regen = fedRegen(c);
+      if (regen > 0) this.heal(this.maxHp * regen * dt);
+      const gone = tickFed(c, dt * GAME_MINUTES_PER_SECOND);
+      if (gone) g.hud.toast(`Your ${FRUITS[gone].name} wears off.`);
+    }
     if (this.warCry > 0 && (this.warCry -= dt) <= 0) g.hud.toast('The War Cry fades.');
     if (this.song) {
       this.songLeft -= dt;
@@ -549,6 +558,7 @@ export class Player {
     if (input.pressed.has('swap') && canAct) this.swapWeapon(g);
     if (input.pressed.has('heal') && canAct) this.drinkFlask(g);
     if (input.pressed.has('eat') && canAct) this.eat(g);
+    if (input.pressed.has('satchel') && g.mode === 'play') g.story.satchel();
     if (input.pressed.has('ability') && canAct) this.useAbility(g);
     // The horse: call it, climb on, get down. Reaching for a weapon hops down first.
     if (input.pressed.has('horse')) this.horseButton(g);
@@ -1638,9 +1648,9 @@ export class Player {
     if (from) g.hud.toast(`${from} plays the ${sd.name}! You strike harder${sd.speed > 1 ? ' and run faster' : ''}.`, 'skill');
   }
 
-  /** Damage multiplier from a song. */
+  /** Damage multiplier from a song (and a blood orange): used by every weapon hit. */
   songDamage() {
-    return this.song ? SONGS[this.song].damage : 1;
+    return (this.song ? SONGS[this.song].damage : 1) * fedMul(this.c, 'damage');
   }
 
   /** A runed weapon's hit: burn, frost, poison, or lightning leaping to foes nearby. */
@@ -2317,26 +2327,63 @@ export class Player {
     this.eatItem(g, id);
   }
 
+  /** A fruit asked to replace the current buff (a second tap within a few seconds eats it). */
+  private replaceAsk: { id: string; at: number } | null = null;
+
   /**
-   * Eats one of something (X, or the Gear menu): a bite a second at most,
-   * not mid-roll, staggered or in the saddle, and it heals over a moment like
-   * a flask (so pausing the game to eat is no quicker than eating in play).
+   * Eats one of something (X, the satchel or the Gear menu): a bite a second
+   * at most, not mid-roll, staggered or in the saddle, and it heals over a
+   * moment like a flask (so pausing the game to eat is no quicker than
+   * eating in play). Fruit and sweets fill the Fed slot; one that would
+   * replace a different fruit's buff needs a second tap (or `sure`).
    */
-  eatItem(g: Game, id: string) {
-    if (!this.alive) return;
-    if (this.blackout > 0 || this.stagger > 0 || this.rollT >= 0) return g.hud.toast('Not now!');
-    if (this.riding || this.sailing) return g.hud.toast('Get down first.');
+  eatItem(g: Game, id: string, sure = false): boolean {
+    if (!this.alive) return false;
+    if (this.blackout > 0 || this.stagger > 0 || this.rollT >= 0) return g.hud.toast('Not now!'), false;
+    if (this.riding || this.sailing) return g.hud.toast('Get down first.'), false;
     // The game's clock runs on while the menu is open (the hero's own pauses with it).
-    if (g.clock - this.lastBite < EAT_GAP) return g.hud.toast('Still chewing…');
-    const got = eatItem(this.c.items, id);
-    if (!got) return g.hud.toast('You have none.');
+    if (g.clock - this.lastBite < EAT_GAP) return g.hud.toast('Still chewing…'), false;
+    const fruit = ITEMS[id]?.fed;
+    const cur = this.c.fed;
+    if (fruit && cur && cur.id !== fruit && (this.c.items[id] ?? 0) > 0 && !sure) {
+      const ask = this.replaceAsk;
+      if (!ask || ask.id !== id || g.clock - ask.at > 4) {
+        this.replaceAsk = { id, at: g.clock };
+        g.hud.toast(`Tap again to eat it: ${FRUITS[fruit].name} would replace ${FRUITS[cur.id].name}.`, 'warn');
+        return false;
+      }
+    }
+    this.replaceAsk = null;
+    const got = eatItem(this.c.items, id, this.c, Math.random());
+    if (!got) return g.hud.toast('You have none.'), false;
     this.lastBite = g.clock;
     this.healing += got.heal;
     const mana = this.soulOrPower ? 0 : Math.min(this.maxMana - this.mana, got.mana);
     this.mana += mana;
     const name = ITEMS[id].name.toLowerCase();
-    g.hud.toast(`You eat ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}.${got.heal ? ` (+${got.heal} HP)` : ''}${mana >= 1 ? ` (+${Math.round(mana)} mana)` : ''}`);
+    const gains = `${got.heal ? ` (+${got.heal} HP)` : ''}${mana >= 1 ? ` (+${Math.round(mana)} mana)` : ''}`;
+    if (got.fed) {
+      const f = FRUITS[got.fed.id];
+      const what = `${f.short} for ${spanText(this.c.fed?.left ?? got.fed.minutes)}`;
+      g.hud.toast(
+        got.fed.kind === 'replace' && got.fed.was
+          ? `${f.name} replaces ${FRUITS[got.fed.was].name}: ${what}.`
+          : got.fed.kind === 'refresh' ? `${f.name} again: ${what}.` : `Fed: ${what}.${gains}`,
+        'skill',
+      );
+      // Friends see the sparkle in the fruit's colour (the buff itself is this hero's alone).
+      g.sfx.emit(this.center(), { color: f.color, count: 22, speed: 2.2, life: 0.8, size: 0.28, up: 2.5 });
+    } else g.hud.toast(`You eat ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}.${gains}`);
+    if (got.pip) {
+      const flags = g.state.flags;
+      if (!flags['first-pip']) {
+        flags['first-pip'] = true;
+        g.hud.toast("You kept the pip. Plant it in Wren's field!", 'quest');
+      } else g.hud.toast(`+1 ${ITEMS[id].name.toLowerCase()} pip`, 'quest');
+    }
     g.audio.play('drink');
+    g.updateTouchButtons();
+    return true;
   }
 
   // ---------------------------------------------------------------- spells --
@@ -2347,7 +2394,7 @@ export class Player {
   }
 
   private spellDamage(power: number, element: DamageElement) {
-    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1) * this.empower;
+    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1) * this.empower * fedMul(this.c, 'damage');
   }
 
   // -------------------------------------------------------------- beams --

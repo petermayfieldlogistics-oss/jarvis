@@ -4,6 +4,7 @@ import { SONGS } from '../rules/weapons';
 import { BURST_COLOR, type Burst } from '../rules/power';
 import { HORSE } from '../rules/horse';
 import { foodCount } from '../rules/food';
+import { FRUITS } from '../data/goods';
 import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, WORLD_HALF, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
@@ -451,6 +452,8 @@ export class Hud {
     if (p.warCry > 0) chips.push(`<b class="rage">War Cry ${Math.ceil(p.warCry)}s</b>`);
     if (p.gliding) chips.push('<b>Gliding</b>');
     if (p.riding) chips.push(`<b>🐎 ${esc(c.steed.name)}${p.galloping ? ' · galloping' : ''}</b>`);
+    // The Fed slot, in the fruit's colour (game hours, like the Wings chip).
+    if (c.fed) chips.push(`<b style="color:${hex(FRUITS[c.fed.id].color)}">Fed: ${FRUITS[c.fed.id].name} ${Math.floor(c.fed.left / 60)}h ${Math.floor(c.fed.left % 60)}m</b>`);
     if (c.elfMystery && c.mysteryRevealed) chips.push('<b class="devil">Eye-Touched</b>');
     put(this.status, 'html', chips.join(''));
 
