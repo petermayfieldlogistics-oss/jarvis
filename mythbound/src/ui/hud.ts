@@ -3,7 +3,8 @@ import { RUNES, SPELLS, WEAPONS, type SpellId, type WeaponKind } from '../data/d
 import { SONGS } from '../rules/weapons';
 import { BURST_COLOR, type Burst } from '../rules/power';
 import { HORSE } from '../rules/horse';
-import { EYES_RUINS, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
+import { foodCount } from '../rules/food';
+import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
 import { Boss } from '../engine/entities';
@@ -335,15 +336,16 @@ export class Hud {
     put(this.bossFill, 'width', pct(this.bossK));
   }
 
-  /** Timing minigame: stop the marker inside the green zone. */
-  fishing(sailor: boolean): Promise<'none' | 'fish' | 'golden'> {
+  /** Timing minigame: stop the marker inside the green zone (`perks`: its width and the golden window's). */
+  fishing(sailor: boolean, perks: { zone: number; golden: number } = { zone: sailor ? 34 : 22, golden: 3 }): Promise<'none' | 'fish' | 'golden'> {
     return new Promise((resolve) => {
       const el = document.createElement('div');
       el.className = 'fishing';
-      const zoneW = sailor ? 34 : 22;
+      const zoneW = perks.zone;
+      const gw = perks.golden;
       const zoneX = 15 + Math.random() * (70 - zoneW);
       el.innerHTML = `<div class="panel"><div class="dtitle">Fishing</div><div class="dsub">${this.g.input.touch ? 'Tap' : 'Click or press F/Space'} when the hook is in the green.</div>
-        <div class="ftrack"><div class="fzone" style="left:${zoneX}%;width:${zoneW}%"></div><div class="fgold" style="left:${zoneX + zoneW / 2 - 3}%;width:6%"></div><div class="fhook"></div></div></div>`;
+        <div class="ftrack"><div class="fzone" style="left:${zoneX}%;width:${zoneW}%"></div><div class="fgold" style="left:${zoneX + zoneW / 2 - gw}%;width:${gw * 2}%"></div><div class="fhook"></div></div></div>`;
       this.root.appendChild(el);
       this.prompt(null);
       const hook = el.querySelector<HTMLElement>('.fhook')!;
@@ -370,7 +372,7 @@ export class Hud {
         const now = (performance.now() - start) / 1000;
         if (now < wait) return resolve('none');
         const inZone = pos >= zoneX && pos <= zoneX + zoneW;
-        const gold = Math.abs(pos - (zoneX + zoneW / 2)) < 3;
+        const gold = Math.abs(pos - (zoneX + zoneW / 2)) < gw;
         resolve(!inZone ? 'none' : gold || (sailor && Math.random() < 0.15) ? 'golden' : 'fish');
       };
       const onKey = (e: KeyboardEvent) => {
@@ -454,7 +456,7 @@ export class Hud {
     // Knives left and the weapon's rune.
     const extra = (w.kind === 'knives' ? ` <small>·</small> ${c.knives} knives` : '')
       + (mw.rune ? ` <small style="color:${hex(RUNES[mw.rune].color)}">ᚱ ${RUNES[mw.rune].name}</small>` : '');
-    const fish = (c.items.fish ?? 0) + (c.items['golden-fish'] ?? 0);
+    const fish = foodCount(c.items);
     put(this.info, 'html', `<div><span class="ico">⚗</span>${c.flasks}/${c.flasksMax}${fish ? `<span class="ico fish">🐟</span>${fish}` : ''}</div>
       <div class="embers"><span class="ico">✦</span>${c.gold}</div>
       <div><span class="ico">${WEAPON_ICON[w.kind] ?? '⚔'}</span>${esc(w.name)} <small>Lv ${mainWeapon(c).level}</small>${w.kind === 'bow' ? ` <small>·</small> ${c.arrows.steel ? `${c.arrows.steel} steel + ` : ''}${c.arrows.wood} arrows` : ''}${extra}</div>`);
@@ -793,6 +795,8 @@ export class Hud {
     if (g.state.flags.eyesRevealed) dot(EYES_RUINS.x, EYES_RUINS.z, '#60ff90', 3.5);
     for (const e of g.enemies) if (e.alive && e.aware) dot(e.pos.x, e.pos.z, '#e03020', 2);
     if (g.state.lostEmbers) dot(g.state.lostEmbers.x, g.state.lostEmbers.z, '#ffb040', 3);
+    // Something is ripe in Wren's field.
+    if (g.farm.ripeBeds > 0) dot(FIELD.x, FIELD.z, '#7cff5a', 3.5);
     for (const r of g.coop.remotes.values()) if (r.ready) dot(r.pos.x, r.pos.z, r.alive ? '#6fd6ff' : '#4a6a78', 3.5);
     ctx.restore();
     // Inner shadow so the map sinks into the bezel.

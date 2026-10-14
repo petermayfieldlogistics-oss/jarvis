@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
-import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
+import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
 import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
+import { materialDrop } from '../rules/crafting';
 import { runeDrop } from '../rules/weapons';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -19,8 +20,9 @@ import type { Hero } from './hero';
 import { SharedFx } from './sharedfx';
 import { Fx } from './fx';
 import { Input } from './input';
-import { buildThrowingKnife, buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
+import { buildHoe, buildThrowingKnife, buildWeapon, compact, disposeObject, glowSprite, mat } from './models';
 import { Armory } from './armory';
+import { FarmView } from './farm';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { newAnim } from './anim';
 import { ELEMENT_COLOR, Player } from './player';
@@ -114,6 +116,8 @@ export class Game {
   lairs: Lairs;
   fog = new THREE.FogExp2(0xb8a27a, 0.006);
   world: World;
+  /** This hero's crops in Wren's field. */
+  farm!: FarmView;
   fx: Fx;
   input: Input;
   audio = new Audio();
@@ -225,6 +229,7 @@ export class Game {
     this.coop.onChange = () => this.menu.coopChanged();
 
     this.buildNpcs();
+    this.farm = new FarmView(this.scene, this.world.interactables);
     this.setPlayer(character);
     this.spawnAll();
     this.restoreWorldObjects();
@@ -269,10 +274,13 @@ export class Game {
         quill: { armor: 0x3a5a4a, cloth: 0x2a3a30, accent: 0xc0a050, build: 'light' as const, head: 'hat' as const },
         mara: { armor: 0x2a4a6a, cloth: 0x223a50, accent: 0x8a8a6a, build: 'light' as const, head: 'bare' as const },
         chronicler: { armor: 0x1e1e22, cloth: 0x161618, accent: 0x6a6a6a, build: 'robe' as const, head: 'hood' as const },
+        wren: { armor: 0x4a3a24, cloth: 0x7a6a3a, accent: 0xc8a050, build: 'light' as const, head: 'hat' as const },
       }[n.id as 'orrin'] ?? { armor: n.color, cloth: n.color, accent: 0x888888, build: 'light' as const, head: 'bare' as const };
       const rig = buildHumanoid({ skin: 0xc89a78, ...look, cape: n.id === 'lumen' ? 0xe8e0c8 : undefined });
       if (n.id === 'brann') rig.handR.add(buildWeapon('hammer'));
       if (n.id === 'mara') rig.handR.add(buildWeapon('trident'));
+      // Wren leans on a hoe.
+      if (n.id === 'wren') rig.handR.add(buildHoe());
       compact(rig.root);
       const pos = new THREE.Vector3(n.x, heightAt(n.x, n.z), n.z);
       rig.root.position.copy(pos);
@@ -720,6 +728,12 @@ export class Game {
           if (def.drop.item === 'ember-ore') this.questProgress('ore', 0);
         }
       }
+      // Crafting materials: hides, bones, silk… (each hero rolls their own).
+      const mat = def ? materialDrop(def.id, Math.random()) : null;
+      if (mat) {
+        c.items[mat] = (c.items[mat] ?? 0) + 1;
+        this.hud.toast(`+1 ${ITEMS[mat].name}`);
+      }
       // Now and then a rune (always from a boss), matched to what the foe was made of.
       const rune = runeDrop(bossDef ? bossDef.affinity : def!.affinity, !!bossDef, Math.random(), Math.random());
       if (rune) {
@@ -767,6 +781,11 @@ export class Game {
     }, 1000);
     c.items['ember-ore'] = (c.items['ember-ore'] ?? 0) + 2;
     this.hud.toast('+2 Ember Ore');
+    // Broodmother leaves silk enough for a fishing line.
+    if (boss.id === 'giant-spider') {
+      c.items.silk = (c.items.silk ?? 0) + 3;
+      this.hud.toast('+3 Spider Silk');
+    }
     if (first) {
       this.state.flags[flag] = true;
       if (!c.weapons.some((w) => w.id === boss.reward)) {
@@ -1203,6 +1222,9 @@ export class Game {
       // 1 game minute per real second (a co-op guest follows the host's clock).
       if (!this.coop.isGuest) this.state.gameMinutes += dt;
       this.state.playTime += dt;
+      // The field keeps its own clock (a co-op guest's crops grow at home pace too).
+      this.state.farm.clock += dt;
+      this.farm.update(dt, this);
       this.isNight = this.world.isNight(this.dayMinutes);
 
       this.cam.look(this);
@@ -1457,6 +1479,11 @@ export class Game {
     for (const n of this.npcs) {
       n.anim.t += dt;
       const d = n.pos.distanceTo(p);
+      // Townsfolk far off (deep in the fog) are neither drawn nor moved, and
+      // those a little nearer are drawn but not animated (cheap on phones).
+      const near = d < 150;
+      if (n.rig.root.visible !== near) n.rig.root.visible = near;
+      if (d > 90) continue;
       const want = d < 8 ? Math.atan2(p.x - n.pos.x, p.z - n.pos.z) : n.facing;
       let diff = want - n.rig.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));

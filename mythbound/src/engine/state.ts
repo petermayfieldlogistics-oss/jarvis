@@ -3,6 +3,7 @@
 import { RUNES } from '../data/defs';
 import { QUESTS, type QuestId } from '../data/world';
 import { normalizeCharacter, type Character } from '../rules/character';
+import { newFarm, normalizeFarm, type FarmState } from '../rules/farming';
 
 export type QuestState = 'none' | 'active' | 'done';
 
@@ -26,6 +27,8 @@ export interface WorldState {
   unclaimed: string[];
   pos: [number, number, number] | null;
   playTime: number;
+  /** The hero's seed beds in Wren's field. */
+  farm: FarmState;
 }
 
 export interface SaveData {
@@ -52,6 +55,7 @@ export function newWorldState(): WorldState {
     unclaimed: [],
     pos: null,
     playTime: 0,
+    farm: newFarm(),
   };
 }
 
@@ -72,6 +76,8 @@ export function normalizeSave(data: SaveData): SaveData {
   // Fill in anything added since the save was written.
   const fresh = newWorldState();
   data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
+  // Wren's field came later (and a damaged one is mended).
+  data.world.farm = normalizeFarm(data.world.farm);
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
   normalizeCharacter(data.character);
@@ -163,6 +169,8 @@ export interface Settings {
   invertY: boolean;
   volume: number;
   touch: 'auto' | 'on' | 'off';
+  /** On touch screens, the camera swings in behind a running hero. */
+  camFollow: boolean;
   /** Co-op: the name friends see, and the relay server's address. */
   coopName: string;
   coopServer: string;
@@ -176,7 +184,7 @@ export function defaultQuality(): Settings['quality'] {
 }
 
 export function loadSettings(): Settings {
-  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', coopName: '', coopServer: '', questsCollapsed: null };
+  const d: Settings = { quality: defaultQuality(), sensitivity: 1, invertY: false, volume: 0.6, touch: 'auto', camFollow: true, coopName: '', coopServer: '', questsCollapsed: null };
   try {
     return { ...d, ...JSON.parse(storage()?.getItem(SETTINGS_KEY) ?? '{}') };
   } catch {

@@ -98,14 +98,18 @@ export function rideStep(
   wasGalloping: boolean,
   dt: number,
   out: { stamina: number; galloping: boolean } = { stamina: 0, galloping: false },
+  drain = HORSE.gallopDrain,
 ): { stamina: number; galloping: boolean } {
   const can = stamina > 0 && (wasGalloping || stamina >= HORSE.rested);
   const galloping = wantGallop && can;
-  const next = galloping ? stamina - HORSE.gallopDrain * dt : stamina + HORSE.regen * dt;
+  const next = galloping ? stamina - drain * dt : stamina + HORSE.regen * dt;
   out.stamina = Math.max(0, Math.min(HORSE.stamina, next));
   out.galloping = galloping && next > 0;
   return out;
 }
+
+/** Stamina a gallop spends a second (shod: a quarter less). */
+export const gallopDrain = (shod: boolean) => HORSE.gallopDrain * (shod ? 0.75 : 1);
 
 /** How fast the horse goes. */
 export const rideSpeed = (galloping: boolean) => (galloping ? HORSE.gallop : HORSE.trot);

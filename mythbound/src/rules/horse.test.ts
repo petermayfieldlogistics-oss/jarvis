@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCharacter, normalizeCharacter } from './character';
-import { COATS, HORSE, HORSE_NAMES, newSteed, normalizeSteed, rideBlock, rideSpeed, rideStep } from './horse';
+import { COATS, HORSE, HORSE_NAMES, gallopDrain, newSteed, normalizeSteed, rideBlock, rideSpeed, rideStep } from './horse';
 import { normalizeSave, newWorldState, type SaveData } from '../engine/state';
 
 const free = { alive: true, inTrial: false, threatened: false, sinceHurt: 99, swimming: false, flying: false, sailing: false, busy: false };
@@ -52,6 +52,15 @@ describe('horses', () => {
     // A trot rests it.
     expect(rideStep(50, false, true, 1).stamina).toBe(50 + HORSE.regen);
     expect(rideStep(HORSE.stamina, false, false, 1).stamina).toBe(HORSE.stamina);
+    // Horseshoes: a quarter less spent galloping, so it lasts longer.
+    let shod = { stamina: HORSE.stamina, galloping: false };
+    let ts = 0;
+    while (ts < 30) {
+      shod = rideStep(shod.stamina, true, shod.galloping, 0.1, undefined, gallopDrain(true));
+      ts += 0.1;
+      if (!shod.galloping) break;
+    }
+    expect(ts).toBeGreaterThan(t + 1.5);
     // Each frame's step can reuse one result object.
     const out = { stamina: 0, galloping: false };
     expect(rideStep(50, true, true, 0.5, out)).toBe(out);

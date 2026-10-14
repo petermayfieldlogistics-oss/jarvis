@@ -6,6 +6,9 @@ import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCost, type NodeView } from '../rules/skills';
 import { questLines, trackedId } from '../engine/questlog';
 import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
+import { isFood } from '../rules/food';
+import { recipeGold, recipesAt, TOOLS } from '../rules/crafting';
+import { MATERIALS, STATION_NAME } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { heightAt } from '../engine/terrain';
@@ -138,13 +141,25 @@ export class Menu {
         ${i === c.mainHand ? '<span class="tag">Equipped</span>' : `<button data-equip="${i}" ${check.ok ? '' : 'disabled'}>Equip</button>`}
       </div>`;
     });
-    const items = Object.entries(c.items).filter(([, n]) => n > 0).map(([id, n]) => `<div class="row"><div><b>${esc(ITEMS[id]?.name ?? id)}</b> ×${n}<div class="desc">${esc(ITEMS[id]?.description ?? '')}</div></div></div>`);
+    // The pack in groups: food (each with an Eat button), tools, materials, and the rest.
+    const held = Object.entries(c.items).filter(([, n]) => n > 0);
+    const row = ([id, n]: [string, number]) =>
+      `<div class="row"><div><b>${esc(ITEMS[id]?.name ?? id)}</b> ×${n}<div class="desc">${esc(ITEMS[id]?.description ?? '')}</div></div>${isFood(id) ? `<button data-eat="${esc(id)}">Eat</button>` : ''}</div>`;
+    const group = (title: string, list: [string, number][]) => (list.length ? `<h4 class="sub">${title}</h4>${list.map(row).join('')}` : '');
+    const food = held.filter(([id]) => isFood(id));
+    const tools = held.filter(([id]) => TOOLS.includes(id) || id === 'compost' || id === 'lure');
+    const mats = held.filter(([id]) => Object.hasOwn(MATERIALS, id));
+    const other = held.filter(([id]) => !isFood(id) && !tools.some(([t]) => t === id) && !mats.some(([m]) => m === id));
+    const items = [group('Food', food), group('Tools and supplies', tools), group('Materials', mats), group('Other', other)];
+    // The recipe book: what each station makes, ticked once made.
+    const book = (['cookfire', 'bench', 'anvil'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
     return `<h3>Weapons</h3>${weapons.join('')}
       <h3>Supplies</h3>
       <div class="row"><div><b>Flasks</b> ${c.flasks}/${c.flasksMax} <div class="desc">Restore half your health. Refilled at shrines.</div></div></div>
       ${ownsKnives(c) ? `<div class="row"><div><b>Throwing knives</b> ${c.knives}/${MAX_KNIVES} <div class="desc">Pick them up where they land. Refilled at shrines.</div></div></div>` : ''}
       ${c.arrows.wood + c.arrows.steel ? `<div class="row"><div><b>Arrows</b> ${c.arrows.wood} wood, ${c.arrows.steel} steel <div class="desc">Steel arrows hit 30% harder and are used first.</div></div></div>` : ''}
-      ${items.join('') || ''}`;
+      ${items.join('') || ''}
+      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (fish and bread at any shrine too), craft at the workbench by the forge, smith at an anvil.</p>${book}</details>`;
   }
 
   /** The class's skill tree: tiers as rows, prerequisites as lines, the picked node's ranks beside it. */
@@ -279,6 +294,7 @@ export class Menu {
       <label>Invert look Y <input type="checkbox" ${s.invertY ? 'checked' : ''} data-set="invertY"></label>
       <label>Volume <input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-set="volume"></label>
       <label>Touch controls <select data-set="touch">${['auto', 'on', 'off'].map((q) => `<option ${s.touch === q ? 'selected' : ''}>${q}</option>`).join('')}</select></label>
+      <label>Camera follows you (touch) <input type="checkbox" ${s.camFollow !== false ? 'checked' : ''} data-set="camFollow"></label>
       <div class="btnrow"><button data-act="reload">Save &amp; reload</button><button data-act="quit">Save &amp; quit to title</button></div>
     </div>`;
   }
@@ -345,7 +361,7 @@ export class Menu {
       <li>${k('Q')} cast (hold for alternate form) · ${k('1')}–${k('4')} / wheel: choose spell</li>
       <li>${k('R')} class ability (BloodRage, Power Shot, Tame, Combine, Volley)</li>
       <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+) · ${k('B')} call or ride your horse (Shift gallops)</li>
-      <li>${k('H')} drink flask · ${k('X')} eat fish · ${k('T')} switch weapon</li>
+      <li>${k('H')} drink flask · ${k('X')} eat (fish, crops) · ${k('T')} switch weapon</li>
       <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li>
       <li>${k('J')} fold or open the quest bar (click a quest there to track it)</li></ul></div>
       <div><h4>Touch</h4><ul>
@@ -354,7 +370,7 @@ export class Menu {
       <li>⚔ attack (hold with a bow) · 💥 heavy (hold to charge a power strike) · ⤿ roll · ⤒ jump</li>
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
       <li>Tap a spell slot to choose it; tap ❂ there to use your ability</li>
-      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · 🐎 horse (push the stick far to gallop) · ⊕ combine · 🐟 eat · 🗺 map · ☰ menu</li>
+      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · 🐎 horse (push the stick far to gallop) · ⊕ combine · 🐟 eat (fish, crops) · 🗺 map · ☰ menu</li>
       <li>✋ appears when you can interact</li>
       <li>Quest bar (top left): tap its header to fold it, tap a quest to track it</li></ul></div></div>`;
   }
@@ -362,6 +378,12 @@ export class Menu {
   private bind() {
     const g = this.g;
     const c = g.player.c;
+    this.el.querySelectorAll<HTMLButtonElement>('[data-eat]').forEach((b) =>
+      b.addEventListener('click', () => {
+        g.player.eatItem(g, b.dataset.eat!);
+        this.render();
+      }),
+    );
     this.el.querySelectorAll<HTMLButtonElement>('[data-equip]').forEach((b) =>
       b.addEventListener('click', () => {
         c.mainHand = Number(b.dataset.equip);

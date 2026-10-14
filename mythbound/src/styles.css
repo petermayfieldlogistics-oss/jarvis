@@ -823,6 +823,13 @@ form.acct .link { align-self: center; }
 .mbody h3::before { content: ''; flex: none; width: 12px; height: 12px; background: var(--orn-diamond) center / contain no-repeat; }
 .mbody h3::after { content: ''; flex: 1; min-width: 20px; height: 1px; background: linear-gradient(90deg, var(--gold-dim), transparent); }
 .mbody h4 { font-family: var(--display); color: var(--gold); margin: 8px 0 4px; }
+.mbody h4.sub { font-size: 13px; letter-spacing: 0.08em; opacity: 0.85; margin: 12px 0 6px; }
+.mbody details.book { margin-top: 14px; }
+.mbody details.book summary { cursor: pointer; list-style: none; }
+.mbody details.book summary h3 { display: inline; }
+.mbody details.book summary::before { content: '▸ '; color: var(--gold); }
+.mbody details.book[open] summary::before { content: '▾ '; }
+.mbody details.book .desc { line-height: 1.7; }
 .mbody .sub { color: var(--ink-dim); margin-top: 2px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
 .stats div { background: linear-gradient(rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.2)); border: 1px solid transparent; border-image: var(--orn-frame-sm) 14 / 9px / 0 stretch; padding: 7px 12px; }
@@ -1010,7 +1017,8 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 .is-touch .opts button { min-height: 44px; }
 .is-touch [data-skill] { min-width: 44px; min-height: 44px; }
 .is-touch .tbar button { width: 40px; height: 40px; }
-.tbar { flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 16px); }
+/* As wide as its buttons (an absolute box at left: 50% would otherwise shrink to half the screen and wrap). */
+.tbar { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 16px); }
 
 .is-touch .hud .bc { bottom: auto; top: max(8px, env(safe-area-inset-top)); }
 .is-touch .hud .bc .xp { display: none; }
@@ -1053,7 +1061,9 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
   .is-touch .hud .tr { right: max(8px, env(safe-area-inset-right)); }
   .is-touch .zlabel { font-size: 10px; margin-top: 4px; }
   .is-touch .tbar { top: calc(max(8px, env(safe-area-inset-top)) + 146px); gap: 4px; }
-  .is-touch .tbar button { width: 34px; height: 34px; font-size: 14px; }
+  /* One row even with every button showing (ten), on the narrowest phones. */
+  .is-touch .tbar { gap: 3px; }
+  .is-touch .tbar button { width: min(34px, calc((100vw - 43px) / 10)); height: min(34px, calc((100vw - 43px) / 10)); font-size: 14px; }
   .is-touch .hud .bc { top: calc(max(8px, env(safe-area-inset-top)) + 190px); }
   .is-touch .slot { width: 44px; height: 44px; }
   .is-touch .slot.ability { width: 40px; height: 40px; margin-left: 8px; }
@@ -1065,8 +1075,14 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
   .is-touch .toasts { top: 47%; }
   .is-touch .hud .prompt { left: 50%; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 250px); max-width: 80vw; }
   .tpad { transform: scale(0.85); transform-origin: 100% 100%; }
-  .tpad [data-a='heal'] { right: 196px; bottom: 120px; }
+  /* Above jump, clear of the ability button and the stick. */
+  .tpad [data-a='heal'] { right: 46px; bottom: 196px; }
   .tinteract { right: calc(16px + env(safe-area-inset-right)); bottom: calc(max(10px, env(safe-area-inset-bottom)) + 236px); }
+}
+
+/* Short landscape phones: the action pad a little smaller, clear of the minimap. */
+@media (orientation: landscape) and (max-height: 400px) {
+  .tpad { transform: scale(0.86); transform-origin: 100% 100%; }
 }
 
 @media (max-width: 720px), (max-height: 500px) {

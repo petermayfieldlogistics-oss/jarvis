@@ -2,6 +2,7 @@
 // Coordinates are world units; north is -z.
 
 import { ANCIENT_GLYPH, RELICS, RUNES, runeItem, type CreatureKind, type SpellId } from './defs';
+import { craftedItems, goodsItems } from './goods';
 
 /** Half the world's width: it runs from -WORLD_HALF to +WORLD_HALF on both axes. */
 export const WORLD_HALF = 900;
@@ -313,7 +314,18 @@ export const NPCS: NpcDef[] = [
   { id: 'quill', name: 'Quill', title: 'Merchant', x: 14, z: 36, color: 0x3a5a4a, facing: Math.PI },
   { id: 'mara', name: 'Mara', title: 'Fisher', x: 20, z: 143, color: 0x2a4a6a, facing: Math.PI },
   { id: 'chronicler', name: 'The Chronicler', title: 'Paid Not to Ask', x: -12, z: 40, color: 0x2a2a2a, facing: Math.PI },
+  { id: 'wren', name: 'Wren', title: 'Farmer', x: 13, z: 8, color: 0x7a6a3a, facing: Math.PI / 2 },
 ];
+
+/**
+ * Wren's field: a 3x3 grid of seed beds east of the square (bed `i` is at
+ * `plotCentre(i)`). Beds 0-2, the ones every hero gets, are the row by the
+ * gate nearest Wren.
+ */
+export const FIELD = { x: 22, z: 2, pitch: 3.4, bed: 2.6 };
+export function plotCentre(i: number): { x: number; z: number } {
+  return { x: FIELD.x + ((i % 3) - 1) * FIELD.pitch, z: FIELD.z + (1 - Math.floor(i / 3)) * FIELD.pitch };
+}
 
 /** Docks: sailors board boats here. */
 export const DOCKS = [{ x: 30, z: 150, facing: 0 }, { x: -110, z: 150, facing: 0 }];
@@ -560,7 +572,7 @@ export const FISHING_SPOTS = [{ x: 30, z: 158 }, { x: -110, z: 158 }, { x: 160, 
 
 // ------------------------------------------------------------------ quests --
 
-export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts';
+export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts' | 'harvest';
 
 export interface QuestDef {
   id: QuestId;
@@ -617,11 +629,16 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     description: 'Quill posted two bounties: Broodmother, the Giant Spider of Silken Hollow, and the Reaper that walks Mourner’s Rest after dark.',
     reward: { gold: 400, xp: 500 },
   },
+  harvest: {
+    id: 'harvest', name: "Wren's Field", giver: 'wren', goal: 4,
+    description: 'Plant, water and bring in four harvests from the seed beds in Wren’s field.',
+    reward: { gold: 80, xp: 150, item: 'seed-pumpkin' },
+  },
 };
 
 // ------------------------------------------------------------------- items --
 
-export const ITEMS: Record<string, { name: string; description: string; heal?: number }> = {
+export const ITEMS: Record<string, { name: string; description: string; heal?: number; mana?: number }> = {
   fish: { name: 'Fish', description: 'Restores 35 HP.', heal: 35 },
   'golden-fish': { name: 'Golden Fish', description: 'Restores 90 HP.', heal: 90 },
   'ember-ore': { name: 'Ember Ore', description: 'Glowing ore from Molten Peak. Used to upgrade weapons.' },
@@ -629,4 +646,8 @@ export const ITEMS: Record<string, { name: string; description: string; heal?: n
   ...Object.fromEntries(Object.values(RELICS).map((r) => [r.id, { name: r.name, description: `Relic. ${r.boon}` }])),
   // Uninscribed runes, waiting for an anvil.
   ...Object.fromEntries(Object.values(RUNES).map((r) => [runeItem(r.id), { name: r.name, description: `${r.description} Inscribe it on a weapon at an anvil.` }])),
+  // Crops and seeds from Wren's field.
+  ...goodsItems(),
+  // Materials, meals and supplies made at stations.
+  ...craftedItems(),
 };
