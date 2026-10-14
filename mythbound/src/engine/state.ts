@@ -4,6 +4,7 @@ import { RUNES } from '../data/defs';
 import { QUESTS, type QuestId } from '../data/world';
 import { normalizeCharacter, type Character } from '../rules/character';
 import { newFarm, normalizeFarm, type FarmState } from '../rules/farming';
+import { newMarket, normalizeMarket, type Market } from '../rules/food';
 
 export type QuestState = 'none' | 'active' | 'done';
 
@@ -29,6 +30,8 @@ export interface WorldState {
   playTime: number;
   /** The hero's seed beds in Wren's field. */
   farm: FarmState;
+  /** Nell's day (from play time) and the fish she has bought from this hero on it. */
+  market: Market;
 }
 
 export interface SaveData {
@@ -56,6 +59,7 @@ export function newWorldState(): WorldState {
     pos: null,
     playTime: 0,
     farm: newFarm(),
+    market: newMarket(),
   };
 }
 
@@ -78,6 +82,8 @@ export function normalizeSave(data: SaveData): SaveData {
   data.world = { ...fresh, ...data.world, quests: { ...fresh.quests, ...data.world.quests } };
   // Wren's field came later (and a damaged one is mended).
   data.world.farm = normalizeFarm(data.world.farm);
+  // So did Nell's stall.
+  data.world.market = normalizeMarket(data.world.market);
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
   normalizeCharacter(data.character);

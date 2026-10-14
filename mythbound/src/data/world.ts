@@ -2,7 +2,7 @@
 // Coordinates are world units; north is -z.
 
 import { ANCIENT_GLYPH, RELICS, RUNES, runeItem, type CreatureKind, type SpellId } from './defs';
-import { craftedItems, goodsItems } from './goods';
+import { craftedItems, goodsItems, type GoodsItem } from './goods';
 
 export const WORLD_HALF = 450;
 
@@ -260,6 +260,8 @@ export const NPCS: NpcDef[] = [
   { id: 'mara', name: 'Mara', title: 'Fisher', x: 20, z: 143, color: 0x2a4a6a, facing: Math.PI },
   { id: 'chronicler', name: 'The Chronicler', title: 'Paid Not to Ask', x: -12, z: 40, color: 0x2a2a2a, facing: Math.PI },
   { id: 'wren', name: 'Wren', title: 'Farmer', x: 13, z: 8, color: 0x7a6a3a, facing: Math.PI / 2 },
+  // By the shrine (in the gap the house skip already leaves by the Chronicler), turned toward the square.
+  { id: 'nell', name: 'Nell', title: 'Fish & Fruit', x: -14, z: 44.6, color: 0x3a6a7a, facing: 2.6 },
 ];
 
 /**
@@ -548,7 +550,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
 
 // ------------------------------------------------------------------- items --
 
-export const ITEMS: Record<string, { name: string; description: string; heal?: number; mana?: number }> = {
+export const ITEMS: Record<string, GoodsItem> = {
   fish: { name: 'Fish', description: 'Restores 35 HP.', heal: 35 },
   'golden-fish': { name: 'Golden Fish', description: 'Restores 90 HP.', heal: 90 },
   'ember-ore': { name: 'Ember Ore', description: 'Glowing ore from Molten Peak. Used to upgrade weapons.' },

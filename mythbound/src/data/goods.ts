@@ -2,7 +2,9 @@
 // Each becomes an ordinary item in a hero's pack (ITEMS in data/world.ts
 // spreads goodsItems() in). Later features add their goods here too.
 
-export type CropId = 'carrot' | 'wheat' | 'bluecap' | 'pumpkin';
+import type { DamageElement } from './defs';
+
+export type CropId = 'carrot' | 'wheat' | 'bluecap' | 'pumpkin' | 'sunberry' | 'heartapple';
 
 export interface CropDef {
   id: CropId;
@@ -19,8 +21,12 @@ export interface CropDef {
   /** Eaten: health and mana it restores. */
   heal?: number;
   mana?: number;
-  /** How the plants look: leafy tops over a root, stalks of grain, mushroom caps, a vine with a gourd. */
-  shape: 'tops' | 'stalks' | 'caps' | 'gourd';
+  /** How the plants look: leafy tops over a root, stalks of grain, mushroom caps, a vine with a gourd, a fruiting bush. */
+  shape: 'tops' | 'stalks' | 'caps' | 'gourd' | 'bush';
+  /** Who buys the crop (Wren, unless it is fruit: Nell). Seeds that cost 0 are not sold: pips come from eating the fruit. */
+  buyer?: 'nell';
+  /** What its seeds are called (a fruit's are pips). */
+  seeds?: string;
   leaf: number;
   fruit: number;
   use: string;
@@ -43,6 +49,16 @@ export const CROPS: Record<CropId, CropDef> = {
     id: 'pumpkin', name: 'Pumpkin', plural: 'pumpkins', seedPrice: 60, grow: 720, yield: [1, 2], sell: 18, heal: 60,
     shape: 'gourd', leaf: 0x3e7a2e, fruit: 0xe08a20, use: 'Slow, but filling. Eat for 60 HP.',
   },
+  // Fruit grown from pips (kept from eating Nell's fruit). The harvest is the
+  // same fruit item, with the same buff (FRUITS below); Nell buys it.
+  sunberry: {
+    id: 'sunberry', name: 'Sunberry', plural: 'sunberries', seedPrice: 0, grow: 540, yield: [2, 3], sell: 5, heal: 10, buyer: 'nell', seeds: 'pips',
+    shape: 'bush', leaf: 0x3a7a32, fruit: 0xf0b020, use: 'Grown from a pip. Nell buys it.',
+  },
+  heartapple: {
+    id: 'heartapple', name: 'Heartapple', plural: 'heartapples', seedPrice: 0, grow: 840, yield: [1, 2], sell: 7, heal: 10, buyer: 'nell', seeds: 'pips',
+    shape: 'bush', leaf: 0x2e6a2a, fruit: 0xc8282e, use: 'Grown from a pip. Nell buys it.',
+  },
 };
 
 export const CROP_IDS = Object.keys(CROPS) as CropId[];
@@ -57,17 +73,104 @@ export interface GoodsItem {
   description: string;
   heal?: number;
   mana?: number;
+  /** Fruit (and sweets made from it): eating it fills the one Fed slot with this fruit's buff. */
+  fed?: FruitId;
+  /** Game minutes the buff lasts, when not the fruit's own. */
+  fedFor?: number;
 }
 
-/** Every crop and its seed, as items for the pack. */
+/** Every crop and its seed (and every fruit), as items for the pack. */
 export function goodsItems(): Record<string, GoodsItem> {
   const out: Record<string, GoodsItem> = {};
   for (const c of Object.values(CROPS)) {
     out[c.id] = { name: c.name, description: c.use, ...(c.heal ? { heal: c.heal } : {}), ...(c.mana ? { mana: c.mana } : {}) };
-    out[seedItem(c.id)] = { name: `${c.name} seeds`, description: `Plant them in a seed bed in Wren's field. Ripe in about ${Math.round(c.grow / 60)} hours if watered.` };
+    out[seedItem(c.id)] = { name: `${c.name} ${c.seeds ?? 'seeds'}`, description: `Plant them in a seed bed in Wren's field. Ripe in about ${Math.round(c.grow / 60)} hours if watered.` };
   }
+  // Fruit (two of them are crops too: the fruit's own entry wins).
+  for (const f of Object.values(FRUITS)) out[f.id] = fruitItem(f);
   return out;
 }
+
+// ------------------------------------------------------------------ fruit --
+
+export type FruitId = 'sunberry' | 'heartapple' | 'moonplum' | 'windpear' | 'emberfig' | 'tideberry' | 'duskcherry' | 'bloodorange';
+
+/** What a Fed buff multiplies (stamina and mana regen, move speed, damage dealt). */
+export type FedStat = 'stamina' | 'mana' | 'speed' | 'damage';
+
+export interface FruitDef {
+  id: FruitId;
+  name: string;
+  /** Nell's price, before shop markups (and today's deal). */
+  price: number;
+  /** Game minutes the buff lasts (counted down by play time only). */
+  lasts: number;
+  /** Eating it also restores this. */
+  heal: number;
+  mana?: number;
+  color: number;
+  /** Nell's two shelves. */
+  shelf: 'everyday' | 'exotic';
+  /** The buff in a few words, for the satchel and the shop. */
+  short: string;
+  mul?: Partial<Record<FedStat, number>>;
+  /** Share of max HP regenerated each second. */
+  regen?: number;
+  /** Damage of this element taken is multiplied by `mul`. */
+  taken?: { element: DamageElement; mul: number };
+  /** Swim without tiring. */
+  swims?: boolean;
+  /** See in the dark as a Dark Slayer does. */
+  nightVision?: boolean;
+}
+
+// No fruit for XP or embers: levelling is tuned to kills.
+export const FRUITS: Record<FruitId, FruitDef> = {
+  sunberry: { id: 'sunberry', name: 'Sunberry', price: 20, lasts: 360, heal: 10, color: 0xf0b020, shelf: 'everyday', short: 'stamina back 30% faster', mul: { stamina: 1.3 } },
+  heartapple: { id: 'heartapple', name: 'Heartapple', price: 30, lasts: 300, heal: 10, color: 0xc8282e, shelf: 'everyday', short: 'slowly heals you', regen: 0.003 },
+  moonplum: { id: 'moonplum', name: 'Moonplum', price: 30, lasts: 480, heal: 0, mana: 15, color: 0x7a5ac8, shelf: 'everyday', short: 'mana back 40% faster', mul: { mana: 1.4 } },
+  windpear: { id: 'windpear', name: 'Windpear', price: 35, lasts: 360, heal: 5, color: 0xa8d860, shelf: 'everyday', short: 'run 8% faster', mul: { speed: 1.08 } },
+  emberfig: { id: 'emberfig', name: 'Emberfig', price: 40, lasts: 480, heal: 5, color: 0xe0601a, shelf: 'exotic', short: 'fire hurts 35% less', taken: { element: 'fire', mul: 0.65 } },
+  tideberry: { id: 'tideberry', name: 'Tideberry', price: 40, lasts: 480, heal: 5, color: 0x2a9ad8, shelf: 'exotic', short: 'water hurts 35% less, swim without tiring', taken: { element: 'water', mul: 0.65 }, swims: true },
+  duskcherry: { id: 'duskcherry', name: 'Duskcherry', price: 45, lasts: 480, heal: 5, color: 0x8a2a6a, shelf: 'exotic', short: 'dark hurts 35% less, see at night', taken: { element: 'dark', mul: 0.65 }, nightVision: true },
+  bloodorange: { id: 'bloodorange', name: 'Blood Orange', price: 60, lasts: 300, heal: 5, color: 0xd8401a, shelf: 'exotic', short: 'hit 12% harder', mul: { damage: 1.12 } },
+};
+
+export const FRUIT_IDS = Object.keys(FRUITS) as FruitId[];
+
+/** Game minutes as "6h" or "7h 40m" (whole minutes). */
+export function spanText(minutes: number): string {
+  const m = Math.max(0, Math.ceil(minutes));
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+}
+
+function fruitItem(f: FruitDef): GoodsItem {
+  const restores = [f.heal ? `${f.heal} HP` : '', f.mana ? `${f.mana} mana` : ''].filter(Boolean).join(' and ');
+  const text = f.short[0].toUpperCase() + f.short.slice(1);
+  return { name: f.name, description: `Fruit. ${text} for ${spanText(f.lasts)}. Restores ${restores}.`, heal: f.heal || undefined, mana: f.mana, fed: f.id };
+}
+
+/** The pip crops (sunberry, heartapple): seeds come only from eating the fruit. */
+export const isPip = (id: CropId) => CROPS[id].seedPrice <= 0;
+
+/** Eating a raw sunberry or heartapple may leave a pip. */
+export const PIP_CHANCE = 0.35;
+
+/** Nell's stall by the shrine, her prices, and how much fish she takes a day. */
+export const NELL_STALL = { x: -14.5, z: 47.8, facing: 2.6 };
+export const NELL = {
+  fish: 12,
+  goldenFish: 70,
+  lures: { n: 3, price: 30 },
+  /** What she pays for a fish and a golden one (10 a day, all told). */
+  buyFish: 5,
+  buyGolden: 30,
+  /** Today's fresh fruit is this much off. */
+  deal: 0.25,
+};
+/** Fish (and golden fish) Nell buys a day. A cast takes 3-4 s, so uncapped selling would beat fighting. */
+export const FISH_CAP = 10;
 
 // ---------------------------------------------------------------- crafting --
 
@@ -115,6 +218,9 @@ export const MEALS: Record<string, GoodsItem> = {
   'bluecap-broth': { name: 'Bluecap Broth', description: 'Restores 90 mana and 20 HP.', heal: 20, mana: 90 },
   'pumpkin-soup': { name: 'Pumpkin Soup', description: 'Restores 70 HP and 20 mana.', heal: 70, mana: 20 },
   'golden-feast': { name: 'Golden Feast', description: 'Restores 300 HP and 100 mana.', heal: 300, mana: 100 },
+  // Sweets: a fruit's buff for longer, and a good heal.
+  'sunberry-tart': { name: 'Sunberry Tart', description: 'Sweets. Stamina back 30% faster for 9h. Restores 40 HP.', heal: 40, fed: 'sunberry', fedFor: 540 },
+  'heartapple-pie': { name: 'Heartapple Pie', description: 'Sweets. Slowly heals you for 7h 30m. Restores 60 HP.', heal: 60, fed: 'heartapple', fedFor: 450 },
 };
 
 /** Made things that are used up (compost, lures) or kept (tools: one is enough). */
@@ -147,8 +253,8 @@ export interface RecipeDef {
   blurb: string;
 }
 
-const meal = (id: string, needs: Record<string, number>, n: number, camp = false): RecipeDef => ({
-  id, name: MEALS[id].name, station: 'cookfire', group: 'Meals', needs, makes: { kind: 'item', id, n }, camp, blurb: MEALS[id].description,
+const meal = (id: string, needs: Record<string, number>, n: number, camp = false, group = 'Meals'): RecipeDef => ({
+  id, name: MEALS[id].name, station: 'cookfire', group, needs, makes: { kind: 'item', id, n }, camp, blurb: MEALS[id].description,
 });
 
 export const RECIPES: RecipeDef[] = [
@@ -160,6 +266,8 @@ export const RECIPES: RecipeDef[] = [
   meal('bluecap-broth', { bluecap: 2, fish: 1 }, 1),
   meal('pumpkin-soup', { pumpkin: 1, carrot: 1 }, 2),
   meal('golden-feast', { 'golden-fish': 1, pumpkin: 1, 'hearth-bread': 2 }, 1),
+  meal('sunberry-tart', { sunberry: 2, wheat: 1 }, 1, false, 'Sweets'),
+  meal('heartapple-pie', { heartapple: 2, wheat: 1 }, 1, false, 'Sweets'),
   // Workbench.
   { id: 'bone-arrows', name: 'Bone Arrows', station: 'bench', group: 'Fletching', needs: { bone: 2 }, makes: { kind: 'arrows', type: 'wood', n: 20 }, blurb: '20 arrows.' },
   { id: 'steel-arrows', name: 'Steel Arrows', station: 'bench', group: 'Fletching', needs: { 'ember-ore': 1 }, arrows: 20, makes: { kind: 'arrows', type: 'steel', n: 20 }, blurb: 'Tips 20 wood arrows with steel: 30% harder hits.' },

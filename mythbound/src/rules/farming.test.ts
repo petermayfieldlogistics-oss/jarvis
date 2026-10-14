@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CROPS, SEED_PACK, seedItem } from '../data/goods';
+import { CROPS, PIP_CHANCE, SEED_PACK, seedItem } from '../data/goods';
 import { FIELD, NPCS, QUESTS, plotCentre } from '../data/world';
 import { createCharacter } from './character';
 import {
@@ -160,12 +160,24 @@ describe('harvest, feeding and selling', () => {
   });
 
   it('never pays more to grow than a crop sells for, so seeds always feed you first', () => {
-    for (const crop of Object.values(CROPS)) {
+    for (const crop of Object.values(CROPS).filter((c) => c.seedPrice > 0)) {
       const perSeed = crop.seedPrice / SEED_PACK;
       const avg = (crop.yield[0] + crop.yield[1]) / 2;
       // Selling a harvest earns a little over the seed, never a fortune.
       expect(avg * crop.sell).toBeGreaterThan(perSeed * 0.5);
       expect(avg * crop.sell).toBeLessThan(perSeed * 4);
+    }
+  });
+
+  it('grows fruit from pips (Wren sells none), slower than fighting pays', () => {
+    for (const crop of Object.values(CROPS).filter((c) => c.seedPrice <= 0)) {
+      expect(crop.buyer).toBe('nell');
+      const avg = (crop.yield[0] + crop.yield[1]) / 2;
+      // Unfed, a harvest can't even give back its own pip (berries eaten for pips are not sold).
+      expect(avg).toBeLessThan(1 / PIP_CHANCE);
+      // Fed, nine beds that pay their own pips earn under 5 embers a minute (a game minute is a second).
+      const perBed = (avg + 1 - 1 / PIP_CHANCE) * crop.sell;
+      expect(((9 * perBed) / crop.grow) * 60).toBeLessThan(5);
     }
   });
 
