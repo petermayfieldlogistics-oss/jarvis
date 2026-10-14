@@ -1114,8 +1114,10 @@ function buildCape(k: Kit, j: Joints, color: number, clasp: number, d: Dims, rag
     return [u * half, y, z0 + bow * u * u - bow + pleat + (t === 0 ? 0.02 : 0)];
   }, 0.014);
   const w = chain([c0, c1, c2, c3], [-1.24, -0.95, -0.66], 0.1, down);
+  // Thin cloth: the lining is lit like the outside (not the dark ground light) and only a little darker.
+  (front.attributes.normal.array as Float32Array).set(back.attributes.normal.array as Float32Array);
   k.add(back, MATTE, color, w);
-  k.add(front, MATTE, shade(color, 0.6), w);
+  k.add(front, MATTE, shade(color, 0.88), w);
   for (const s of [-1, 1]) k.add(ball(5, 4), METAL, clasp, j.chest, s * 0.12 * d.B, 1.52, 0.11 * d.BZ, 0, 0, 0, 0.03, 0.03, 0.02);
 }
 
@@ -1791,6 +1793,10 @@ interface State {
   staff: boolean;
   /** The last roll's kind (see AnimState.rollKind), kept while it settles. */
   rollKind: number;
+  /** A one-handed blade trailing behind on the run (0-1, eased, with hysteresis). */
+  trail: number;
+  /** The body's height last frame (the cape flaps with each step). */
+  lastBodyY: number;
 }
 
 const states = new WeakMap<O3, State>();
@@ -1801,7 +1807,7 @@ function newState(j: Joints, prof: Profile): State {
     mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, ride: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
     act: 0, spin: 0, roll: 0, tuck: 0, latched: false, lastStyle: '', lastAttack: -1, lastWindup: 0, lastDraw: 0, lastHurt: 0, hurtSide: 1, deadSide: 1,
     cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, upright: false, orbit: undefined, shoulder: false, shield: false, leftTwist: 0, carry: 0,
-    fists: false, staff: false, rollKind: 0,
+    fists: false, staff: false, rollKind: 0, trail: 0, lastBodyY: 0,
   };
 }
 
@@ -1814,12 +1820,12 @@ function blend(o: Float32Array, pose: Float32Array, w: number, upperOnly = false
 /** One stride of the walk/run cycle at phase p, added to `o`. */
 function stride(o: Float32Array, p: number, run: number, sprint: number, crouch: number, robe: number, legs: number, arms: number, armsR: number) {
   const sp = Math.sin(p);
-  const amp = lerp(0.4, 0.86, run) * (1 - 0.35 * crouch) * (1 - 0.3 * robe) * (1 + 0.12 * sprint);
+  const amp = lerp(0.4, 0.76, run) * (1 - 0.35 * crouch) * (1 - 0.3 * robe) * (1 + 0.12 * sprint);
   const bias = -0.2 * run;
   const lift = (q: number) => Math.pow(Math.max(0, Math.cos(q + 0.5 - 0.15 * run)), 1.4);
   const load = (q: number) => Math.pow(Math.max(0, Math.cos(q - 2.1)), 2);
-  const kSw = lerp(1.0, 2.05, run) * (1 - 0.3 * robe);
-  const kSt = lerp(0.12, 0.42, run);
+  const kSw = lerp(1.0, 1.75, run) * (1 - 0.3 * robe);
+  const kSt = lerp(0.12, 0.5, run);
   const swL = lift(p);
   const swR = lift(p + PI);
   o[LLX] += legs * (-amp * sp + bias);
@@ -1830,11 +1836,13 @@ function stride(o: Float32Array, p: number, run: number, sprint: number, crouch:
   o[TRX] += legs * 0.4 * swR;
   const twist = lerp(0.1, 0.17, run);
   o[HIY] += legs * twist * sp;
-  o[HIZ] += legs * 0.035 * (1 - run) * Math.sin(2 * p);
+  o[HIZ] += legs * (0.035 * (1 - run) + 0.04 * run) * Math.sin(2 * p);
+  // The chest rocks against the bounce, so the head stays steady.
+  o[CHX] -= legs * 0.03 * run * Math.cos(2 * p);
   o[SPY] -= legs * twist * 0.5 * sp;
   o[CHY] -= legs * twist * 1.1 * sp;
   o[HDY] += legs * twist * 0.5 * sp;
-  o[BY] += legs * (0.012 * (1 - run) * Math.cos(2 * p) + 0.055 * run * sp * sp);
+  o[BY] += legs * (0.012 * (1 - run) * Math.cos(2 * p) + 0.1 * run * sp * sp);
   o[BX] += legs * 0.018 * (1 - run) * Math.sin(p);
   const swing = lerp(0.32, 0.7, run) * (1 + 0.3 * sprint);
   const elbow = lerp(-0.2, -1.35, run);
@@ -1968,6 +1976,9 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   s.lastYaw = ry;
   s.yawRate = approach(s.yawRate, clamp(turn, -6, 6), 6);
   s.accel = approach(s.accel, dt > 0 ? clamp((spd - s.lastSpd) / dt, -30, 30) : 0, 5);
+  // A one-handed blade swings back to trail behind at a run (not at a walk; the
+  // gap keeps monsters chasing at about running pace from flicking between carries).
+  s.trail = approach(s.trail, s.carry === 1 && s.run > (s.trail > 0.5 ? 0.4 : 0.6) && !s.shoulder ? 1 : 0, 10);
   s.lastSpd = spd;
 
   // The current move and where we are in it.
@@ -1998,8 +2009,8 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   if (s.upright) g[WLX] = PI / 2;
   blend(g, CROUCH, s.crouch);
   // Running leans into the stride; acceleration and turns lean the body.
-  g[SPX] += s.mv * (0.2 * s.run + 0.16 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
-  g[HDX] -= s.mv * 0.1 * s.run;
+  g[SPX] += s.mv * (0.28 * s.run + 0.2 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
+  g[HDX] -= s.mv * 0.14 * s.run;
   g[BRZ] -= s.yawRate * 0.03 * s.mv * (0.3 + s.run);
   g[HIY] += s.hipYaw;
   g[SPY] -= s.hipYaw * 0.5;
@@ -2018,6 +2029,9 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     g[SPY] += (p[SPY] - g[SPY]) * chargeW;
     g[CHY] += (p[CHY] - g[CHY]) * chargeW;
   }
+  // A shield is carried forward and angled on the run (so the arm's swing shows as the shield rocking).
+  const sr = s.shield && s.carry < 2 ? s.mv * smooth(0.2, 0.7, s.run) * (1 - s.back) * (1 - s.crouch) * (1 - s.air) : 0;
+  if (sr > 0.001) for (const c of SHIELD_ARM) g[c] += (SHIELD_RUN[c] - g[c]) * sr;
   blend(g, BLOCK, s.block * (1 - s.air));
   if (s.aim > 0.001) {
     const d = clamp01(a.draw);
@@ -2208,12 +2222,14 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const legs = w * legsFree * (1 - (busy ? (mv.ownLegs ? 1 : (mv.legs ?? 1) * 0.3) : 0));
     const arms = w * armsFree;
     // A weapon arm swings less and stays straighter.
-    const armsR = s.weaponLen > 0 ? 0.55 : 1;
+    const armsR = s.weaponLen > 0 ? lerp(0.55, 0.85, s.trail) : 1;
     // Both arms pump with the stride, elbows bent. A two-handed carry (see
     // the target pose) holds the weapon still instead.
     const carry2 = s.carry >= 2 ? arms * (1 - s.back) * (1 - s.crouch) * clamp01(0.5 * s.run + 0.5 * s.sprint) : 0;
     const pump = 1 - 0.9 * carry2;
-    if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), arms * (1 - s.back) * pump, arms * armsR * (1 - s.back) * pump);
+    const armsL = arms * (1 - s.back) * pump * (1 - 0.45 * sr);
+    if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), armsL, arms * armsR * (1 - s.back) * pump);
+    if (sr > 0.001) o[ALY] += armsL * 0.2 * Math.sin(a.phase);
     if (s.back > 0.001) stride(o, -a.phase, s.run * 0.6, 0, s.crouch, prof.robe, legs * s.back, arms * s.back, arms * armsR * s.back);
   }
   // Breathing, weight shift and a wandering gaze when idle.
@@ -2273,12 +2289,19 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   // (A shouldered two-hander just sways with the arm at a walk.)
   const hold = s.mv * armsFree * (s.weaponLen > 0 && !s.shoulder ? 1 : 0) * (1 - carried);
   if (hold > 0.001) {
-    // Counter the arm swing and the body's lean, so the blade keeps its pitch.
+    // Counter the body's lean (and half the arm's swing), so the blade keeps its pitch.
     const fore = -(o[HIX] + o[SPX] + o[CHX] + o[ARX] + o[FRX]);
-    const want = s.weaponLen >= 1.45 ? 2.55 : lerp(0.95, 1.5, s.run);
-    o[WRX] = lerp(o[WRX], PI / 2 - want + fore, hold);
-    // A blade angles a little outward, clear of the legs (and in view from behind).
-    if (s.weaponLen < 1.45) o[WRY] -= 0.3 * s.run * hold;
+    const swingR = o[ARX] - cur[ARX];
+    if (s.weaponLen >= 1.45) o[WRX] = lerp(o[WRX], PI / 2 - 2.55 + fore, hold);
+    else {
+      // At a walk: forward and down, swinging with half the arm. At a run: the
+      // hand turned over, the blade trailing back and down behind the hip.
+      const fwd = PI / 2 - lerp(0.95, 1.2, s.run) + fore + 0.5 * swingR;
+      const back = -fore + 0.38 - 0.5 * swingR;
+      o[WRX] = lerp(o[WRX], lerp(fwd, back, s.trail), hold);
+      o[WRY] += hold * (lerp(-0.3 * s.run, -(PI - 0.55), s.trail) - o[WRY]);
+      o[ARZ] -= 0.15 * hold * s.trail;
+    }
   }
   // Keep elbows and knees bending the right way.
   o[FLX] = Math.min(o[FLX], 0.05);
@@ -2326,6 +2349,9 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
 
 const AIM_REST_P = poseOf(AIM_REST, NEUTRAL);
 const GUARD_LP = poseOf(GUARD_L, READY);
+/** A shield carried at a run: forward of the chest, its face turned 45° out, so the arm's swing rocks it. */
+const SHIELD_RUN = poseOf({ [ALX]: 0.33, [ALY]: -0.62, [ALZ]: 0.68, [FLX]: -1.05, [FLY]: 0.36 });
+const SHIELD_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
 const LEFT_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
 // Charging with a weapon ready. An axe or hammer is carried in both hands
 // low at the right hip, its head angled up over the shoulder, the chest
@@ -2340,6 +2366,9 @@ const REST_SHOULDER = [-1.9, 0.35];
 const CHARGE_ARMS = [ALX, ALY, ALZ, FLX, FLY, WLX, WLY, WLZ, ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
 const AIM_DRAWN_P = poseOf(AIM_DRAWN, NEUTRAL);
 
+/** How much of the cape's lift each of its bones takes (they chain, so the sheet curves as one). */
+const CAPE_SHARE = [1, 0.4, 0.3, 0.25];
+
 /** Cape, tail and wings: damped springs that trail the body's motion. */
 function secondary(s: State, a: AnimState, o: Float32Array, dt: number, snap: boolean, rollW: number, fall: number) {
   const j = s.j;
@@ -2348,20 +2377,27 @@ function secondary(s: State, a: AnimState, o: Float32Array, dt: number, snap: bo
   _steps = dt > 0.034 ? 2 : 1;
   _h = dt / _steps;
   const pitch = o[BRX] + o[HIX] + o[SPX] + o[CHX];
+  // How fast the body rises or falls (each running step), for the cape's flap.
+  const bodyY = j.body.position.y;
+  const bodyVy = !snap && dt > 0 ? clamp((bodyY - s.lastBodyY) / dt, -4, 4) : 0;
+  s.lastBodyY = bodyY;
   if (j.cape.length) {
+    const spd = a.speed;
     for (let i = 0; i < 4; i++) {
       // Drag lifts it behind an upright runner; lying flat in flight it streams along the back.
       const drag = Math.max(0, Math.cos(pitch));
-      const lift = (s.mv * (0.28 + 0.28 * s.run + 0.15 * s.sprint) * drag + s.air * 0.45) * (i === 0 ? 1 : 0.22);
-      const wind = 0.04 * Math.sin(t * 1.7 + i * 0.9) + 0.02 * Math.sin(t * 3.1 + i * 1.7) + (0.06 * s.mv + 0.12 * s.fly) * Math.sin(t * (9 + 4 * s.fly) - i * 1.3);
-      let to = (i === 0 ? 0.06 + s.prof.capeLift : 0.03) + lift + wind;
+      const lift = (s.mv * (0.28 + 0.28 * s.run + 0.15 * s.sprint) * drag + s.air * 0.45) * CAPE_SHARE[i];
+      // Ripples run down to the hem, bigger the faster you go.
+      const ripple = (0.03 + 0.07 * s.run + 0.05 * s.sprint) * s.mv * (0.5 + 0.35 * i) * Math.sin(t * (8 + 0.7 * spd) - i * 1.4);
+      const wind = 0.04 * Math.sin(t * 1.7 + i * 0.9) + 0.02 * Math.sin(t * 3.1 + i * 1.7) + 0.12 * s.fly * Math.sin(t * 13 - i * 1.3) + ripple;
+      let to = (i === 0 ? 0.06 + s.prof.capeLift + clamp(-bodyVy * 0.12, -0.25, 0.25) : 0.03) + lift + wind;
       // Hang with gravity, but never through the back.
       if (i === 0) to = Math.max(0.02 + s.prof.capeLift, to - pitch * 0.9);
       // In a roll it wraps the curled back.
       if (rollW > 0.05) to = lerp(to, i === 0 ? 0.02 : -0.45, rollW);
       if (fall > 0) to = lerp(to, 0.15, fall);
       spring(s.cape, i * 4, to, 70, 9);
-      const side = clamp(-s.yawRate * 0.06 * (1 + i * 0.4) - s.hipYaw * 0.2 + 0.03 * Math.sin(t * 1.3 + i), -0.5, 0.5);
+      const side = clamp(-s.yawRate * 0.06 * (1 + i * 0.4) - s.hipYaw * 0.2 - (o[SPY] + o[CHY]) * 0.5 + 0.03 * Math.sin(t * 1.3 + i), -0.7, 0.7);
       spring(s.cape, i * 4 + 2, side, 50, 8);
       j.cape[i].rotation.set(s.cape[i * 4], 0, s.cape[i * 4 + 2]);
     }
