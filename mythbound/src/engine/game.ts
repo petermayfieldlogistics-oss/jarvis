@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
-import { BOSSES, ENEMIES, EYES_RUINS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
+import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
 import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
+import { materialDrop } from '../rules/crafting';
 import { runeDrop } from '../rules/weapons';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
@@ -727,6 +728,12 @@ export class Game {
           if (def.drop.item === 'ember-ore') this.questProgress('ore', 0);
         }
       }
+      // Crafting materials: hides, bones, silk… (each hero rolls their own).
+      const mat = def ? materialDrop(def.id, Math.random()) : null;
+      if (mat) {
+        c.items[mat] = (c.items[mat] ?? 0) + 1;
+        this.hud.toast(`+1 ${ITEMS[mat].name}`);
+      }
       // Now and then a rune (always from a boss), matched to what the foe was made of.
       const rune = runeDrop(bossDef ? bossDef.affinity : def!.affinity, !!bossDef, Math.random(), Math.random());
       if (rune) {
@@ -774,6 +781,11 @@ export class Game {
     }, 1000);
     c.items['ember-ore'] = (c.items['ember-ore'] ?? 0) + 2;
     this.hud.toast('+2 Ember Ore');
+    // Broodmother leaves silk enough for a fishing line.
+    if (boss.id === 'giant-spider') {
+      c.items.silk = (c.items.silk ?? 0) + 3;
+      this.hud.toast('+3 Spider Silk');
+    }
     if (first) {
       this.state.flags[flag] = true;
       if (!c.weapons.some((w) => w.id === boss.reward)) {

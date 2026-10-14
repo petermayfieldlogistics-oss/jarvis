@@ -2,7 +2,7 @@
 // Coordinates are world units; north is -z.
 
 import { ANCIENT_GLYPH, RELICS, RUNES, runeItem, type CreatureKind, type SpellId } from './defs';
-import { goodsItems } from './goods';
+import { craftedItems, goodsItems } from './goods';
 
 export const WORLD_HALF = 450;
 
@@ -558,4 +558,6 @@ export const ITEMS: Record<string, { name: string; description: string; heal?: n
   ...Object.fromEntries(Object.values(RUNES).map((r) => [runeItem(r.id), { name: r.name, description: `${r.description} Inscribe it on a weapon at an anvil.` }])),
   // Crops and seeds from Wren's field.
   ...goodsItems(),
+  // Materials, meals and supplies made at stations.
+  ...craftedItems(),
 };

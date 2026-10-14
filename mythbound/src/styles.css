@@ -823,6 +823,13 @@ form.acct .link { align-self: center; }
 .mbody h3::before { content: ''; flex: none; width: 12px; height: 12px; background: var(--orn-diamond) center / contain no-repeat; }
 .mbody h3::after { content: ''; flex: 1; min-width: 20px; height: 1px; background: linear-gradient(90deg, var(--gold-dim), transparent); }
 .mbody h4 { font-family: var(--display); color: var(--gold); margin: 8px 0 4px; }
+.mbody h4.sub { font-size: 13px; letter-spacing: 0.08em; opacity: 0.85; margin: 12px 0 6px; }
+.mbody details.book { margin-top: 14px; }
+.mbody details.book summary { cursor: pointer; list-style: none; }
+.mbody details.book summary h3 { display: inline; }
+.mbody details.book summary::before { content: '▸ '; color: var(--gold); }
+.mbody details.book[open] summary::before { content: '▾ '; }
+.mbody details.book .desc { line-height: 1.7; }
 .mbody .sub { color: var(--ink-dim); margin-top: 2px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
 .stats div { background: linear-gradient(rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.2)); border: 1px solid transparent; border-image: var(--orn-frame-sm) 14 / 9px / 0 stretch; padding: 7px 12px; }

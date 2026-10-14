@@ -4,7 +4,7 @@ import { FIELD, NPCS, QUESTS, plotCentre } from '../data/world';
 import { createCharacter } from './character';
 import {
   FARM, buySeeds, cropYield, digUp, feed, growthAt, harvest, isWet, newFarm, normalizeFarm, plant, progress, rentPlot, rentPrice, ripeCount,
-  ripeIn, sellCrop, stageOf, water,
+  ripeIn, sellCrop, stageOf, water, waterAll,
 } from './farming';
 import { normalizeSave, newWorldState, type SaveData } from '../engine/state';
 
@@ -121,6 +121,20 @@ describe('harvest, feeding and selling', () => {
     expect(c.items.fish).toBe(2);
   });
 
+  it('waters every growing bed with a watering can, and feeds compost', () => {
+    const c = hero();
+    const f = newFarm();
+    f.plots[0] = { crop: 'carrot', grown: 0, at: 0, wetUntil: 0, fed: 0 };
+    f.plots[2] = { crop: 'wheat', grown: CROPS.wheat.grow, at: 0, wetUntil: 0, fed: 0 };
+    expect(waterAll(f, FARM.canLasts)).toBe(1);
+    expect(f.plots[0]!.wetUntil).toBe(FARM.canLasts);
+    expect(f.plots[2]!.wetUntil).toBe(0);
+    c.items.compost = 1;
+    expect(feed(c, f, 0, 'compost')).toBe(null);
+    expect(f.plots[0]!.fed).toBe(1);
+    expect(c.items.compost).toBe(0);
+  });
+
   it('digs a bed up', () => {
     const f = newFarm();
     f.plots[2] = { crop: 'carrot', grown: 10, at: 0, wetUntil: 0, fed: 0 };
@@ -181,6 +195,12 @@ describe('saves', () => {
     delete (old.world as Partial<typeof old.world>).farm;
     const fixed = normalizeSave(old);
     expect(fixed.world.farm).toEqual(newFarm());
+    // A watering can's longer wetness survives a reload.
+    const can = newFarm();
+    can.clock = 100;
+    plant({ items: { [seedItem('carrot')]: 1 } }, can, 0, 'carrot');
+    waterAll(can, FARM.canLasts);
+    expect(normalizeFarm(JSON.parse(JSON.stringify(can))).plots[0]!.wetUntil).toBe(100 + FARM.canLasts);
     expect(normalizeFarm(undefined)).toEqual(newFarm());
     expect(normalizeFarm('junk')).toEqual(newFarm());
     const bad = normalizeFarm({
