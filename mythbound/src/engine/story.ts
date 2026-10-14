@@ -818,7 +818,7 @@ export class Story {
       const seedRow = (id: CropId, beds: number[]): DialogOption => ({
         label: beds.length > 1
           ? `Plant ${CROPS[id].plural} in every empty bed (${Math.min(beds.length, c.items[seedItem(id)] ?? 0)})`
-          : `Plant ${CROPS[id].name.toLowerCase()} (${c.items[seedItem(id)]} ${CROPS[id].seeds ?? 'seeds'}) · ripe in ${hours(CROPS[id].grow)}`,
+          : `Plant ${CROPS[id].name.toLowerCase()} (${c.items[seedItem(id)]} ${(CROPS[id].seeds ?? 'seeds').slice(0, c.items[seedItem(id)] === 1 ? -1 : undefined)}) · ripe in ${hours(CROPS[id].grow)}`,
         action: () => this.sow(beds, id),
       });
       // At most eight buttons: with many kinds of seed, "every empty bed" gets its own list.
