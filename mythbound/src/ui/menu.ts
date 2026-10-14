@@ -6,9 +6,9 @@ import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCost, type NodeView } from '../rules/skills';
 import { questLines, trackedId } from '../engine/questlog';
 import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
-import { isFood } from '../rules/food';
+import { isFood, isFruit } from '../rules/food';
 import { recipeGold, recipesAt, TOOLS } from '../rules/crafting';
-import { MATERIALS, STATION_NAME } from '../data/goods';
+import { FRUITS, MATERIALS, STATION_NAME, spanText } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { heightAt } from '../engine/terrain';
@@ -146,11 +146,13 @@ export class Menu {
     const row = ([id, n]: [string, number]) =>
       `<div class="row"><div><b>${esc(ITEMS[id]?.name ?? id)}</b> ×${n}<div class="desc">${esc(ITEMS[id]?.description ?? '')}</div></div>${isFood(id) ? `<button data-eat="${esc(id)}">Eat</button>` : ''}</div>`;
     const group = (title: string, list: [string, number][]) => (list.length ? `<h4 class="sub">${title}</h4>${list.map(row).join('')}` : '');
-    const food = held.filter(([id]) => isFood(id));
+    const food = held.filter(([id]) => isFood(id) && !isFruit(id));
+    // Fruit and sweets: eaten for their buff (one at a time), never by X.
+    const fruit = held.filter(([id]) => isFruit(id));
     const tools = held.filter(([id]) => TOOLS.includes(id) || id === 'compost' || id === 'lure');
     const mats = held.filter(([id]) => Object.hasOwn(MATERIALS, id));
     const other = held.filter(([id]) => !isFood(id) && !tools.some(([t]) => t === id) && !mats.some(([m]) => m === id));
-    const items = [group('Food', food), group('Tools and supplies', tools), group('Materials', mats), group('Other', other)];
+    const items = [group('Food', food), group(`Fruit and sweets${c.fed ? ` · fed: ${FRUITS[c.fed.id].name}, ${spanText(c.fed.left)} left` : ''}`, fruit), group('Tools and supplies', tools), group('Materials', mats), group('Other', other)];
     // The recipe book: what each station makes, ticked once made.
     const book = (['cookfire', 'bench', 'anvil'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
     return `<h3>Weapons</h3>${weapons.join('')}
@@ -361,7 +363,7 @@ export class Menu {
       <li>${k('Q')} cast (hold for alternate form) · ${k('1')}–${k('4')} / wheel: choose spell</li>
       <li>${k('R')} class ability (BloodRage, Power Shot, Tame, Combine, Volley)</li>
       <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+) · ${k('B')} call or ride your horse (Shift gallops)</li>
-      <li>${k('H')} drink flask · ${k('X')} eat (fish, crops) · ${k('T')} switch weapon</li>
+      <li>${k('H')} drink flask · ${k('X')} eat (fish, crops) · ${k('Y')} satchel (fruit and sweets) · ${k('T')} switch weapon</li>
       <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li>
       <li>${k('J')} fold or open the quest bar (click a quest there to track it)</li></ul></div>
       <div><h4>Touch</h4><ul>
@@ -370,7 +372,7 @@ export class Menu {
       <li>⚔ attack (hold with a bow) · 💥 heavy (hold to charge a power strike) · ⤿ roll · ⤒ jump</li>
       <li>🛡 block · ✦ cast (hold for alternate) · ❂ ability · ⚗ flask</li>
       <li>Tap a spell slot to choose it; tap ❂ there to use your ability</li>
-      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · 🐎 horse (push the stick far to gallop) · ⊕ combine · 🐟 eat (fish, crops) · 🗺 map · ☰ menu</li>
+      <li>Top row: 🔒 shift lock · ◎ lock on · ⇄ weapon · ▼ sneak · 🪽 fly · 🐎 horse (push the stick far to gallop) · ⊕ combine · 🐟 eat (fish, crops) · 🍎 satchel (fruit and sweets, when you carry some) · 🗺 map · ☰ menu</li>
       <li>✋ appears when you can interact</li>
       <li>Quest bar (top left): tap its header to fold it, tap a quest to track it</li></ul></div></div>`;
   }

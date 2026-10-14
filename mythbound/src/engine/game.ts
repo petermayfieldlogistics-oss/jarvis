@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
+import { satchelCount } from '../rules/food';
+import { clearFed, fedNightVision } from '../rules/fed';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
@@ -262,6 +264,8 @@ export class Game {
       cast: c.knownSpells.length > 0,
       nextSpell: c.knownSpells.length > 1,
       eat: true,
+      // The satchel (fruit and sweets) only while there are some to eat.
+      satchel: satchelCount(c.items) > 0,
     });
   }
 
@@ -275,6 +279,7 @@ export class Game {
         mara: { armor: 0x2a4a6a, cloth: 0x223a50, accent: 0x8a8a6a, build: 'light' as const, head: 'bare' as const },
         chronicler: { armor: 0x1e1e22, cloth: 0x161618, accent: 0x6a6a6a, build: 'robe' as const, head: 'hood' as const },
         wren: { armor: 0x4a3a24, cloth: 0x7a6a3a, accent: 0xc8a050, build: 'light' as const, head: 'hat' as const },
+        nell: { armor: 0x2a4a5a, cloth: 0x3a6a7a, accent: 0x2f8a86, build: 'light' as const, head: 'bare' as const, headband: 0x2f8a86 },
       }[n.id as 'orrin'] ?? { armor: n.color, cloth: n.color, accent: 0x888888, build: 'light' as const, head: 'bare' as const };
       const rig = buildHumanoid({ skin: 0xc89a78, ...look, cape: n.id === 'lumen' ? 0xe8e0c8 : undefined });
       if (n.id === 'brann') rig.handR.add(buildWeapon('hammer'));
@@ -922,6 +927,8 @@ export class Game {
     this.mode = 'dead';
     this.audio.play('death');
     const c = p.c;
+    // Death clears the Fed slot (resting and saving keep it).
+    clearFed(c);
     if (c.gold > 0) {
       this.state.lostEmbers = { x: p.pos.x, y: Math.max(p.pos.y, WATER_LEVEL), z: p.pos.z, amount: c.gold };
       c.gold = 0;
@@ -1288,7 +1295,7 @@ export class Game {
 
     this.coop.update(dt);
     this.cam.update(dt, this);
-    this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer', this.fog);
+    this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer' || fedNightVision(this.player.c), this.fog);
     this.fx.update(gdt);
     this.hud.update(dt);
     input.endFrame();

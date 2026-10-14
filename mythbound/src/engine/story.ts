@@ -10,7 +10,8 @@ import type { DialogOption, DialogSpec } from '../ui/dialog';
 import type { Game } from './game';
 import * as THREE from 'three';
 import type { Interactable } from './world';
-import { CROP_IDS, CROPS, SEED_PACK, seedItem, type CropId } from '../data/goods';
+import { CROP_IDS, CROPS, FISH_CAP, FRUITS, FRUIT_IDS, NELL, SEED_PACK, isPip, seedItem, spanText, type CropId, type FruitId } from '../data/goods';
+import { SATCHEL_IDS, buyFruit, dealOfDay, fishRoom, fruitPrice, marketDay, nellPays, sellFish, sellFruit } from '../rules/food';
 import { FARM, buySeeds, digUp, feed, harvest, isWet, plant, progress, rentPlot, rentPrice, ripeIn, sellCrop, stageOf, water, waterAll } from '../rules/farming';
 import { MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type StationId } from '../data/goods';
 import { batches, craft, fishingPerks, hasTool, lacking, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
@@ -428,7 +429,7 @@ export class Story {
         }
         const farm = g.state.farm;
         const rent = rentPrice(c, farm);
-        const selling = CROP_IDS.some((id) => (c.items[id] ?? 0) > 0);
+        const selling = CROP_IDS.some((id) => !CROPS[id].buyer && (c.items[id] ?? 0) > 0);
         return this.open({
           title: 'Wren',
           subtitle: 'Farmer',
@@ -449,14 +450,279 @@ export class Story {
               action: () =>
                 this.open({
                   title: 'Wren',
-                  text: `Plant a seed in a bed you own, then water it: watered soil grows a crop at full speed for about ${FARM.waterLasts / 60} hours, dry soil at half speed. Nothing withers, so take your time. A fish in the soil before a crop is half grown brings in one more (a golden fish, two). Crops grow while you're out adventuring, not while you sleep.`,
+                  text: `Plant a seed in a bed you own, then water it: watered soil grows a crop at full speed for about ${FARM.waterLasts / 60} hours, dry soil at half speed. Nothing withers, so take your time. A fish in the soil before a crop is half grown brings in one more (a golden fish, two). Crops grow while you're out adventuring, not while you sleep. Kept a pip from Nell's sunberries or heartapples? Plant it like any seed: Nell buys the fruit.`,
                   options: [{ label: 'Back', action: () => this.talk('wren') }],
                 }),
             },
           ]),
         });
       }
+      case 'nell': {
+        const day = this.nellDay();
+        const fresh = FRUITS[dealOfDay(day)];
+        const catchN = (c.items.fish ?? 0) + (c.items['golden-fish'] ?? 0);
+        const room = fishRoom(g.state.market, day);
+        const fruitHeld = FRUIT_IDS.some((id) => (c.items[id] ?? 0) > 0);
+        const banter = c.raceId === 'zombie'
+          ? `Point at what you want and I'll hand it over. No touching the fruit. The dead pay a little more, love.`
+          : c.raceId === 'orc'
+            ? 'Careful, those plums bruise if you so much as look at them. Gently.'
+            : c.roleId === 'sailor'
+              ? 'A sailor! Then you know a fresh fish when you smell one. Mine came in this morning.'
+              : 'Fish from the coast, fruit from the south road.';
+        return this.open({
+          title: 'Nell',
+          subtitle: 'Fish & Fruit',
+          text: `${banter} Fresh today: ${fresh.name.toLowerCase()}, a quarter off. You have ${c.gold} embers.`,
+          options: opts([
+            { label: `Fruit… (fresh today: ${fresh.name} ${fruitPrice(c, fresh.id, day)})`, action: () => this.nellFruit() },
+            { label: 'Fish & lures…', action: () => this.nellFish() },
+            catchN > 0 ? { label: `Sell your catch (she'll take ${room} more today)`, action: () => this.nellBuysFish() } : null,
+            fruitHeld ? { label: 'Sell fruit', action: () => this.nellBuysFruit() } : null,
+            {
+              label: 'What does fruit do?',
+              action: () =>
+                this.open({
+                  title: 'Nell',
+                  text: 'Each fruit does you good for hours: one stops fire biting so hard, one keeps your legs fresh, and so on. But a belly only holds one at a time. Eat the same again and it lasts longer; eat a different one and it pushes the first out. It wears off as you travel, and dying spoils it.\n\nYour quick bite (X) never touches fruit or sweets: open your satchel (Y, or 🍎) to eat them. Sunberries and heartapples keep a pip now and then: Wren’s field will grow it. And I take ten fish a day, no more: my ice won’t hold it.',
+                  options: [{ label: 'Back', action: () => this.talk('nell') }],
+                }),
+            },
+          ]),
+        });
+      }
     }
+  }
+
+  // ------------------------------------------------------------ Nell's stall --
+
+  /** Nell's day: from this hero's play time (never the shared co-op clock, never passed time). */
+  private nellDay() {
+    return marketDay(this.g.state.playTime);
+  }
+
+  /** Fruit: the two shelves. */
+  private nellFruit() {
+    const c = this.c;
+    const fresh = dealOfDay(this.nellDay());
+    this.open({
+      title: 'Nell',
+      subtitle: 'Fruit',
+      text: `One fruit's goodness at a time. Fresh today: ${FRUITS[fresh].name.toLowerCase()} (${FRUITS[fresh].shelf}). You have ${c.gold} embers.`,
+      options: [
+        { label: 'Everyday fruit (stamina, healing, mana, speed)', action: () => this.nellShelf('everyday') },
+        { label: 'Exotic fruit (fire, water, dark, strength)', action: () => this.nellShelf('exotic') },
+        { label: 'Back', action: () => this.talk('nell') },
+      ],
+    });
+  }
+
+  private nellShelf(shelf: 'everyday' | 'exotic') {
+    const c = this.c;
+    const day = this.nellDay();
+    const fresh = dealOfDay(day);
+    this.open({
+      title: 'Nell',
+      subtitle: shelf === 'everyday' ? 'Everyday fruit' : 'Exotic fruit',
+      text: `You have ${c.gold} embers.${c.fed ? ` You're fed on ${FRUITS[c.fed.id].name.toLowerCase()} (${spanText(c.fed.left)} left).` : ''}`,
+      options: [
+        ...FRUIT_IDS.filter((id) => FRUITS[id].shelf === shelf).map((id): DialogOption => {
+          const f = FRUITS[id];
+          const have = c.items[id] ?? 0;
+          return {
+            label: `${f.name} (${fruitPrice(c, id, day)}${id === fresh ? ' · fresh, 25% off' : ''}) · ${f.short} · ${spanText(f.lasts)}${have ? ` · have ${have}` : ''}`,
+            action: () => this.nellFruitDetail(id),
+          };
+        }),
+        { label: 'Back', action: () => this.nellFruit() },
+      ],
+    });
+  }
+
+  /** One fruit: what it does, buy one or three, or buy one and eat it there and then. */
+  private nellFruitDetail(id: FruitId) {
+    const c = this.c;
+    const g = this.g;
+    const f = FRUITS[id];
+    const day = this.nellDay();
+    const price = fruitPrice(c, id, day);
+    const restores = [f.heal ? `${f.heal} HP` : '', f.mana ? `${f.mana} mana` : ''].filter(Boolean).join(' and ');
+    const replaces = c.fed && c.fed.id !== id ? FRUITS[c.fed.id].name : null;
+    const buy = (n: number, eat = false) => () => {
+      const err = buyFruit(c, id, day, n);
+      if (err) {
+        g.hud.toast(err, 'warn');
+        return this.nellFruitDetail(id);
+      }
+      g.audio.play('pickup');
+      if (eat) g.player.eatItem(g, id, true);
+      else g.hud.toast(`+${n} ${f.name.toLowerCase()}`, 'quest');
+      g.updateTouchButtons();
+      this.nellFruitDetail(id);
+    };
+    const have = c.items[id] ?? 0;
+    this.open({
+      title: f.name,
+      subtitle: `${price} embers${dealOfDay(day) === id ? ' (fresh today, 25% off)' : ''} · lasts ${spanText(f.lasts)}`,
+      text: `${f.short[0].toUpperCase()}${f.short.slice(1)} for ${spanText(f.lasts)} of travel. Eating it also restores ${restores}.${replaces ? ` It would replace your ${replaces} (${spanText(c.fed!.left)} left).` : c.fed?.id === id ? ` Another tops yours up (${spanText(c.fed.left)} left).` : ''}\n\nYou have ${c.gold} embers${have ? ` and ${have} ${f.name.toLowerCase()}` : ''}.`,
+      options: [
+        { label: `Buy 1 (${price})`, disabled: c.gold < price, action: buy(1) },
+        { label: `Buy 3 (${price * 3})`, disabled: c.gold < price * 3, action: buy(3) },
+        { label: `Buy and eat now (${price})${replaces ? ` · replaces ${replaces}` : ''}`, disabled: c.gold < price, action: buy(1, true) },
+        { label: 'Back', action: () => this.nellShelf(f.shelf) },
+      ],
+    });
+  }
+
+  private nellFish() {
+    const c = this.c;
+    const g = this.g;
+    const buy = (label: string, base: number, give: () => void): DialogOption => {
+      const cost = shopPrice(c, base);
+      return {
+        label: `${label} (${cost})`,
+        disabled: c.gold < cost,
+        action: () => {
+          c.gold -= cost;
+          give();
+          g.audio.play('pickup');
+          this.nellFish();
+        },
+      };
+    };
+    const add = (id: string, n: number) => () => (c.items[id] = (c.items[id] ?? 0) + n);
+    this.open({
+      title: 'Nell',
+      subtitle: 'Fish & lures',
+      text: `Caught this morning. A lure is used up on a cast: a wider catch and a better chance of gold. You have ${c.gold} embers.`,
+      options: [
+        buy(`Buy a fish · restores 35 HP · have ${c.items.fish ?? 0}`, NELL.fish, add('fish', 1)),
+        buy(`Buy a golden fish · restores 90 HP · have ${c.items['golden-fish'] ?? 0}`, NELL.goldenFish, add('golden-fish', 1)),
+        buy(`Buy ${NELL.lures.n} lures · have ${c.items.lure ?? 0}`, NELL.lures.price, add('lure', NELL.lures.n)),
+        { label: 'Back', action: () => this.talk('nell') },
+      ],
+    });
+  }
+
+  /** Nell buys fish, up to her daily cap (her day runs on play time). */
+  private nellBuysFish() {
+    const c = this.c;
+    const g = this.g;
+    const day = this.nellDay();
+    const room = fishRoom(g.state.market, day);
+    const tomorrow = spanText(1440 - (g.state.playTime % 1440));
+    const sell = (id: 'fish' | 'golden-fish') => () => {
+      const r = sellFish(c, g.state.market, day, id);
+      if (r.n) {
+        g.audio.play('pickup');
+        g.hud.toast(`Sold ${r.n} ${id === 'fish' ? 'fish' : 'golden fish'} (+${r.gold} embers)`, 'quest');
+        g.updateTouchButtons();
+      }
+      this.nellBuysFish();
+    };
+    const row = (id: 'fish' | 'golden-fish', name: string): DialogOption | null => {
+      const n = Math.min(c.items[id] ?? 0, room);
+      return n > 0 ? { label: `Sell ${n} ${name} (${nellPays(id)} each: ${n * nellPays(id)})`, action: sell(id) } : null;
+    };
+    this.open({
+      title: 'Nell',
+      subtitle: 'Buying fish',
+      text: room > 0
+        ? `I'll take ${room} more today (${FISH_CAP} a day, no more). ${NELL.buyFish} embers a fish, ${NELL.buyGolden} for a golden one. You have ${c.gold} embers.`
+        : `That's all my ice will hold today. Come back tomorrow (in about ${tomorrow} of your travels).`,
+      options: [
+        ...([row('golden-fish', 'golden fish'), row('fish', 'fish')].filter(Boolean) as DialogOption[]),
+        { label: 'Back', action: () => this.talk('nell') },
+      ],
+    });
+  }
+
+  private nellBuysFruit(page = 0) {
+    const c = this.c;
+    const g = this.g;
+    const held = FRUIT_IDS.filter((id) => (c.items[id] ?? 0) > 0);
+    if (!held.length) return this.talk('nell');
+    const pages = Math.ceil(held.length / 6);
+    const at = Math.min(page, pages - 1);
+    this.open({
+      title: 'Nell',
+      subtitle: 'Buying fruit',
+      text: `I pay a quarter of my price: I've a stall to keep. You have ${c.gold} embers.`,
+      options: [
+        ...held.slice(at * 6, at * 6 + 6).map((id): DialogOption => {
+          const n = c.items[id] ?? 0;
+          return {
+            label: `Sell ${n} ${FRUITS[id].name} (${nellPays(id)} each: ${n * nellPays(id)})`,
+            action: () => {
+              sellFruit(c, id);
+              g.audio.play('pickup');
+              g.updateTouchButtons();
+              this.nellBuysFruit(at);
+            },
+          };
+        }),
+        ...(pages > 1 ? [{ label: `More (page ${at + 1} of ${pages})`, action: () => this.nellBuysFruit((at + 1) % pages) }] : []),
+        { label: 'Back', action: () => this.talk('nell') },
+      ],
+    });
+  }
+
+  // ---------------------------------------------------------------- satchel --
+
+  /** Y / 🍎: fruit and sweets to eat for their buff (one Fed slot: a different fruit replaces it). */
+  satchel(page = 0) {
+    const c = this.c;
+    const held = SATCHEL_IDS.filter((id) => (c.items[id] ?? 0) > 0);
+    const fed = c.fed ? `Fed: ${FRUITS[c.fed.id].name}, ${spanText(c.fed.left)} left. ` : '';
+    if (!held.length) {
+      return this.open({
+        title: 'Satchel',
+        text: `${fed}No fruit or sweets. Nell sells fruit by the shrine; the cookfire bakes sweets.`,
+        options: [{ label: 'Close' }],
+      });
+    }
+    // Seven rows fit; more go on pages of six.
+    const per = held.length > 7 ? 6 : 7;
+    const pages = Math.ceil(held.length / per);
+    const at = Math.min(page, pages - 1);
+    this.open({
+      title: 'Satchel',
+      text: `${fed || 'Not fed. '}One fruit at a time: the same again tops it up, a different one replaces it.`,
+      options: [
+        ...held.slice(at * per, at * per + per).map((id): DialogOption => {
+          const item = ITEMS[id];
+          const f = FRUITS[item.fed!];
+          const lasts = item.fedFor ?? f.lasts;
+          const same = c.fed?.id === f.id;
+          return {
+            label: `${item.name} ×${c.items[id]} · ${f.short} · ${spanText(lasts)}${same ? ' · tops up' : ''}`,
+            action: () => this.eatFromSatchel(id),
+          };
+        }),
+        ...(pages > 1 ? [{ label: `More (page ${at + 1} of ${pages})`, action: () => this.satchel((at + 1) % pages) }] : []),
+        { label: 'Close' },
+      ],
+    });
+  }
+
+  /** Eats from the satchel; replacing a different fruit's buff asks first. */
+  private eatFromSatchel(id: string) {
+    const c = this.c;
+    const g = this.g;
+    const item = ITEMS[id];
+    const eat = () => {
+      this.g.dialog.close();
+      g.player.eatItem(g, id, true);
+    };
+    if (c.fed && item.fed && c.fed.id !== item.fed) {
+      const was = FRUITS[c.fed.id].name;
+      return this.open({
+        title: item.name,
+        text: `Eat the ${item.name.toLowerCase()}? ${FRUITS[item.fed].name} replaces your ${was} (${spanText(c.fed.left)} left).`,
+        options: [{ label: `Eat it (replaces ${was})`, action: eat }, { label: `Keep ${was}`, action: () => this.satchel() }],
+      });
+    }
+    eat();
   }
 
   // ------------------------------------------------------------------ field --
@@ -468,7 +734,8 @@ export class Story {
       subtitle: 'Seeds',
       text: `Seeds come ${SEED_PACK} to a pack. You have ${c.gold} embers.`,
       options: [
-        ...CROP_IDS.map((id): DialogOption => {
+        // Pips are not for sale: they come from eating the fruit.
+        ...CROP_IDS.filter((id) => !isPip(id)).map((id): DialogOption => {
           const crop = CROPS[id];
           const cost = shopPrice(c, crop.seedPrice);
           const have = c.items[seedItem(id)] ?? 0;
@@ -488,7 +755,8 @@ export class Story {
 
   private sellHarvest() {
     const c = this.c;
-    const list = CROP_IDS.filter((id) => (c.items[id] ?? 0) > 0);
+    // Fruit goes to Nell.
+    const list = CROP_IDS.filter((id) => !CROPS[id].buyer && (c.items[id] ?? 0) > 0);
     if (!list.length) return this.talk('wren');
     this.open({
       title: 'Wren',
@@ -547,19 +815,30 @@ export class Story {
       const seeds = CROP_IDS.filter((id) => (c.items[seedItem(id)] ?? 0) > 0);
       const empty: number[] = [];
       for (let k = 0; k < farm.owned; k++) if (!farm.plots[k]) empty.push(k);
+      const seedRow = (id: CropId, beds: number[]): DialogOption => ({
+        label: beds.length > 1
+          ? `Plant ${CROPS[id].plural} in every empty bed (${Math.min(beds.length, c.items[seedItem(id)] ?? 0)})`
+          : `Plant ${CROPS[id].name.toLowerCase()} (${c.items[seedItem(id)]} ${CROPS[id].seeds ?? 'seeds'}) · ripe in ${hours(CROPS[id].grow)}`,
+        action: () => this.sow(beds, id),
+      });
+      // At most eight buttons: with many kinds of seed, "every empty bed" gets its own list.
+      const many = seeds.length > 3;
       return this.open({
         title: 'Seed bed',
         text: seeds.length ? 'What will you plant?' : 'You have no seeds. Wren sells them, by the gate.',
         options: [
-          ...seeds.map((id): DialogOption => ({
-            label: `Plant ${CROPS[id].name.toLowerCase()} (${c.items[seedItem(id)]} seeds) · ripe in ${hours(CROPS[id].grow)}`,
-            action: () => this.sow([i], id),
-          })),
-          ...(empty.length > 1
-            ? seeds.map((id): DialogOption => ({
-                label: `Plant ${CROPS[id].plural} in every empty bed (${Math.min(empty.length, c.items[seedItem(id)] ?? 0)})`,
-                action: () => this.sow(empty, id),
-              }))
+          ...seeds.slice(0, 6).map((id) => seedRow(id, [i])),
+          ...(empty.length > 1 && !many ? seeds.map((id) => seedRow(id, empty)) : []),
+          ...(empty.length > 1 && many
+            ? [{
+                label: `Plant every empty bed (${empty.length})…`,
+                action: () =>
+                  this.open({
+                    title: 'Every empty bed',
+                    text: 'Which seed?',
+                    options: [...seeds.slice(0, 7).map((id) => seedRow(id, empty)), { label: 'Back', action: () => this.plot(i) }],
+                  }),
+              }]
             : []),
           { label: 'Leave it' },
         ],
@@ -585,6 +864,8 @@ export class Story {
       g.fx.damageNumber(g.player.center().setY(g.player.pos.y + 2.2), text, 'heal');
       g.audio.play('pickup');
       if (this.quest('harvest').state === 'active') g.questProgress('harvest', beds);
+      // Fruit brought in: the satchel button shows.
+      g.updateTouchButtons();
       return done();
     }
     if (!isWet(p, farm.clock)) {
@@ -716,6 +997,7 @@ export class Story {
         g.audio.play(station === 'anvil' ? 'slam' : 'pickup');
         g.fx.emit(g.player.center(), { color: station === 'cookfire' ? 0xffa040 : station === 'anvil' ? 0xffc070 : 0xc8a070, count: 16, speed: 3, life: 0.5, size: 0.3, up: 1.5 });
         if (r.needs['ember-ore']) g.questProgress('ore', 0);
+        g.updateTouchButtons();
         // The first time: a new recipe learned.
         const flag = `made-${r.id}`;
         if (!g.state.flags[flag]) {

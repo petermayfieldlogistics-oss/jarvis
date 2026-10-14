@@ -4,7 +4,7 @@ import { STICK, stickMove } from '../rules/touch';
 
 export type Action =
   | 'attack' | 'heavy' | 'block' | 'roll' | 'jump' | 'sprint' | 'interact' | 'cast' | 'ability' | 'lock'
-  | 'heal' | 'eat' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock' | 'quests' | 'horse'
+  | 'heal' | 'eat' | 'satchel' | 'swap' | 'combine' | 'map' | 'menu' | 'crouch' | 'fly' | 'nextSpell' | 'shiftlock' | 'quests' | 'horse'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4';
 
 /** Releasing Shift sooner than this toggles shift lock; holding it longer sprints. */
@@ -20,6 +20,7 @@ const KEYS: Record<string, Action> = {
   Tab: 'lock',
   KeyH: 'heal',
   KeyX: 'eat',
+  KeyY: 'satchel',
   KeyT: 'swap',
   KeyG: 'combine',
   KeyM: 'map',
@@ -206,6 +207,7 @@ export class Input {
         <button data-a="horse">🐎</button>
         <button data-a="combine">⊕</button>
         <button data-a="eat">🐟</button>
+        <button data-a="satchel">🍎</button>
         <button data-a="map">🗺</button>
         <button data-a="menu">☰</button>
       </div>
