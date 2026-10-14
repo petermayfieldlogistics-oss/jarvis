@@ -80,13 +80,14 @@ export function enemyModel(def: EnemyDef): Model {
     case 'frost-wolf':
       return creatureModel(buildQuad(def.color, 'wolf', def.scale));
     case 'jungle-stalker':
-      return creatureModel(buildQuad(def.color, 'hound', def.scale));
+      // A long, low black cat of a thing (the wolf's frame, without the hound's lava cracks).
+      return creatureModel(buildQuad(def.color, 'wolf', def.scale));
     case 'tangle-spider':
       return creatureModel(buildSpider(def.color, def.scale));
     case 'sand-reaver':
       return creatureModel(buildInsect(def.color, def.scale));
     case 'frost-troll': {
-      const rig = buildHumanoid({ skin: 0x8aa2b4, armor: 0x5a6670, cloth: 0x3a4650, accent: 0xa8bccc, build: 'heavy', head: 'bare', hair: 0xe8eef4, tusks: true, brawn: 1.3, glowEyes: 0x9ad8ff, scale: def.scale });
+      const rig = buildHumanoid({ skin: 0x8aa2b4, armor: 0x8a7a64, cloth: 0x4e4234, accent: 0xcfd8de, build: 'light', head: 'bare', hair: 0xe8eef4, tusks: true, brawn: 1.4, hunch: 0.2, glowEyes: 0x9ad8ff, scale: def.scale });
       rig.handR.add(buildWeapon('hammer'));
       return humanoidModel(rig);
     }
