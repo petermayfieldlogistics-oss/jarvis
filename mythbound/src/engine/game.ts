@@ -9,6 +9,7 @@ import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
 import { materialDrop } from '../rules/crafting';
 import { runeDrop } from '../rules/weapons';
+import { earnedUnlocks } from '../rules/outfit';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
@@ -33,6 +34,7 @@ import { Story } from './story';
 import { Hud } from '../ui/hud';
 import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
+import { Wardrobe } from '../ui/wardrobe';
 
 export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand';
 
@@ -124,6 +126,7 @@ export class Game {
   hud: Hud;
   dialog: Dialog;
   menu: Menu;
+  wardrobe: Wardrobe;
   story: Story;
   player!: Player;
   enemies: Enemy[] = [];
@@ -207,6 +210,7 @@ export class Game {
     this.hud = new Hud(ui, this);
     this.dialog = new Dialog(ui);
     this.menu = new Menu(ui, this);
+    this.wardrobe = new Wardrobe(ui, this);
     this.input = new Input(this.renderer.domElement);
     this.input.sensitivity = settings.sensitivity;
     this.input.invertY = settings.invertY;
@@ -254,6 +258,15 @@ export class Game {
     this.refreshHeroes();
     this.summonLizardKin();
     this.updateTouchButtons();
+    // Heroes who earned the crown or a relic's colour before the wardrobe existed get them now.
+    this.grantEarned();
+  }
+
+  /** What deeds have earned for the wardrobe (the crown, the relics' colours): given once, with a toast. */
+  grantEarned(): boolean {
+    const got = earnedUnlocks(this.player.c, this.state.trialsDone);
+    for (const name of got) this.hud.toast(`Wardrobe: ${name} unlocked`, 'quest');
+    return got.length > 0;
   }
 
   updateTouchButtons() {
@@ -1050,6 +1063,8 @@ export class Game {
       this.state.unclaimed.push(boss.reward);
       this.placeLegendary(boss.reward);
       this.questProgress(t.elder ? 'elders' : 'trials', 1);
+      // The sixth weapon trial earns the Crown of the Six.
+      this.grantEarned();
     }
     this.save();
   }
@@ -1192,6 +1207,12 @@ export class Game {
     for (let t = 0; t < seconds; t += step) this.update(step);
   }
 
+  /** The wardrobe (from the loom, a shrine or the Hero tab). */
+  openWardrobe() {
+    if (this.menu.isOpen) this.menu.close();
+    this.wardrobe.open();
+  }
+
   setMode(m: Mode) {
     this.mode = m;
     this.input.enabled = m === 'play';
@@ -1289,6 +1310,7 @@ export class Game {
     }
 
     this.coop.update(dt);
+    this.wardrobe.update(dt);
     this.cam.update(dt, this);
     // The host runs the monsters around every hero, so it needs the trees' colliders there too.
     const others = this.world.others;

@@ -154,14 +154,16 @@ is what was chosen; each is easy to change:
   home. Friends see you ride, in your horse's coat.
 - **Farming**: Wren the farmer keeps a fenced field of nine seed beds just east of Hearthhold's square, by the forge.
   Three beds are yours (the row by the gate); Wren rents the other six (120, then 250 embers each) and gives a first
-  pack of carrot seeds. Buy seeds from Wren in packs of four (carrots 3 h, wheat 4 h, bluecap mushrooms 5 h, pumpkins
-  12 h of play to ripen), stand at a bed and tap ✋ / F: plant, then water (one tap waters the whole row; watered soil
+  pack of carrot seeds. Buy seeds from Wren in packs of four, as food crops (carrots 3 h, wheat 4 h, bluecap mushrooms
+  5 h, pumpkins 12 h of play to ripen) or fibre & dye plants for the loom (flax 5 h, madder, woad and weld 7 h).
+  At an empty bed pick a crop (food or fibre first, once you carry more than seven kinds), then this bed or every
+  empty bed. Stand at a bed and tap ✋ / F: plant, then water (one tap waters the whole row; watered soil
   grows at full speed for 4 h, dry soil at half), and harvest the row when ripe. Nothing withers. A fish fed to a bed
   before it is half grown brings in one more crop (a golden fish, two). Crops grow while you play, not while you pass
   time at a shrine. The field shows a green dot on the minimap and says when crops ripen. Carrots and pumpkins heal,
   bluecaps restore mana; Wren buys any crop, and wheat is for bread later. Wren's quest: bring in four harvests. In
   co-op each hero tends their own crops in the same field.
-- **Crafting**: three stations, touch-friendly (tap ✋ at one; recipes you can make are ticked with how many; the rest
+- **Crafting**: four stations, touch-friendly (tap ✋ at one; recipes you can make are ticked with how many; the rest
   say what's missing; then Make 1, Make 5 or Make all). The first time you make something you learn it (+10 XP).
   - **Cookfire** (by Wren's field): Grilled Fish (+60), Hearth Bread (+40), Root Stew (+75), Fisher's Pie (+160),
     Bluecap Broth (+90 mana), Pumpkin Soup, Golden Feast (+300 HP, +100 mana). Any shrine's flame cooks the simple
@@ -170,11 +172,31 @@ is what was chosen; each is easy to change:
     crop), fishing lures (a wider catch and a better chance of gold; one per cast), a Watering Can (waters every bed
     at once, wet for 6 h) and a Silk Fishing Line (a wider catch on every cast).
   - **Anvil** ("Smith something"): the four runes from ore and monster parts for far less than Brann asks, and
-    Horseshoes (your horse gallops a third longer). A Blacksmith pays half the embers.
+    Horseshoes (your horse gallops a third longer). A Blacksmith pays half the embers. Its Gear group also smiths the
+    metal clothes (see Clothing).
+  - **Loom** (just north of Wren's field, with three dye vats): Weave (linen from 3 flax, hoods, a mask, a hat, a
+    headband), Tailor (jerkin, robe, gi, cloak), Plant dyes, Rare dyes, and Change outfit.
   - **Materials** drop from monsters (each hero rolls their own in co-op): hide (wolves, boars), silk (spiderlings; three
     from Broodmother), chitin (scorpions), kelp (the drowned, or a missed catch), bone (skeletons), wisps (wraiths),
     cinder hearts (imps, magma hounds). Quill buys them (not kelp). The Gear tab groups the pack (food, tools, materials) and has a
     recipe book.
+- **Clothing**: purely for looks, no stats. Three slots (Head, Body, Cloak) and four colours (Cloth, Leather/plate,
+  Trim, Cloak); "Class's own" is the default for each. 15 garments: free bare head and no cloak; hood, mask, hat,
+  headband, jerkin, robe, gi and cloak from the loom; circlet, great helm, legion galea and plate harness from the
+  anvil; the Crown of the Six for beating all six weapon trials. 17 colours: making a dye teaches the colour for good
+  (seven plant dyes from madder, woad, weld and flax; seven rare ones from cinder hearts, bone, kelp, chitin, drake
+  scale, golden fish and ore, watcher lens and wisp), and each elder relic teaches one (Pearl, Tidal Blue,
+  Dragonfire). Older heroes get what they already earned when they load. Quill sells some clothes and the three plant
+  dyes ("Any curios?"). New materials: linen (bandits), bronze scrap (legionaries), drake scale, watcher lens.
+  - **Wardrobe**: opens from the loom, any shrine ("Change outfit") and the Hero tab (which counts Clothes n/15 ·
+    Colours n/17). A panel down the right on a wide or sideways screen, a bottom sheet (up to 55%) in portrait; big
+    tiles and 48 px swatches; locked ones say how to get them. Each tap dresses the hero, who turns to face you;
+    Keep saves it, Undo puts back the saved outfit, Close or Esc leaves it as it was. Only somewhere safe (not
+    riding, swimming, flying, sailing, in a trial, in a fight or just hurt). Angelic heroes can't wear a cloak
+    (their wings), and the ༼ ∞ኒ keep their own hood.
+  - **Co-op**: friends see your outfit after Keep (never the previews). The hello carries seven numbers (garments by
+    index, colours as hex), so a friend on an older build with fewer dyes still sees the right colours; a hello
+    without them, or with junk, shows your class look. Each hero's wardrobe saves with their own character.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
   button by each food.

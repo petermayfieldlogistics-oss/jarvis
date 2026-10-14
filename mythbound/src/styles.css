@@ -63,7 +63,7 @@ small { color: var(--ink-dim); }
 * { scrollbar-width: thin; scrollbar-color: #6b5430 rgba(0, 0, 0, 0.3); }
 
 /* Beveled bronze buttons. */
-button.primary, .title .tbtns button, .cnav button, .opts button, .btnrow button, .row button, .sslot, .mtabs .resume {
+button.primary, .title .tbtns button, .cnav button, .opts button, .btnrow button, .row button, .sslot, .mtabs .resume, .wtile, .wchans button, .wfoot button {
   background: linear-gradient(#2e271d, #18140f 58%, #110e0a);
   color: var(--ink);
   border: 1px solid rgba(216, 180, 104, 0.42);
@@ -722,6 +722,79 @@ form.acct .link { align-self: center; }
 @keyframes charge-full { from { transform: rotate(-90deg) scale(1); } to { transform: rotate(-90deg) scale(1.12); } }
 .crosshair::before { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff3d6; }
 .crosshair.sl::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; border: 1px solid rgba(255, 226, 160, 0.6); }
+
+/* --------------------------------------------------------- wardrobe -- */
+/* A sheet over the bottom of the screen (portrait), or a panel down the right
+   (landscape), so the hero stays in view while trying things on. */
+.wardrobe { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; pointer-events: none !important; }
+.wsheet {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 55vh;
+  max-height: 55dvh;
+  padding: 10px max(14px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  background: radial-gradient(ellipse at 50% 0%, rgba(80, 60, 30, 0.3), transparent 60%), linear-gradient(rgba(24, 20, 14, 0.95), rgba(10, 8, 6, 0.96));
+  border: 1px solid transparent;
+  border-image: var(--orn-frame) 20 / 18px / 0 stretch;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.7);
+  animation: sheetUp 0.22s ease-out;
+  touch-action: pan-y;
+}
+@keyframes sheetUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes sheetIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.whead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.whead .dtitle { font-size: 20px; }
+.whead .dtitle::after { display: none; }
+.wtabs { display: flex; gap: 2px; margin: 6px 0 8px; border-bottom: 1px solid; border-image: var(--rule) 1; }
+.wtabs button {
+  flex: 1;
+  min-height: 44px;
+  padding: 6px 4px;
+  background: none;
+  border: 0;
+  color: var(--ink-dim);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.wtabs button:hover { color: #fff3d6; box-shadow: none; }
+.wtabs button.on { color: #fff3d6; background: linear-gradient(transparent, rgba(216, 180, 104, 0.18)); box-shadow: inset 0 -2px 0 var(--gold-hi); text-shadow: 0 0 10px rgba(255, 210, 120, 0.5); }
+.wbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.wtiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.wtile { min-height: 64px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 3px; text-align: left; }
+.wtile b { font-size: 14px; color: #f2dca0; font-weight: 600; }
+.wtile small { font-family: var(--serif); font-size: 13px; line-height: 1.25; }
+.wtile.on, .wchans button.on { border-color: var(--gold-hi); background: linear-gradient(rgba(216, 180, 104, 0.32), rgba(60, 44, 20, 0.9)); box-shadow: inset 0 0 0 1px rgba(246, 226, 166, 0.6), 0 0 12px rgba(216, 180, 104, 0.4); }
+.wtile.locked { opacity: 0.55; border-style: dashed; }
+.wtile.locked b::before { content: '? '; color: var(--gold); }
+.wchans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; }
+.wchans button { min-height: 44px; padding: 4px 6px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; letter-spacing: 0.04em; }
+.wdot { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(246, 226, 166, 0.6); box-shadow: 0 1px 2px #000; }
+.wdot.own, .wsw.own { background: repeating-linear-gradient(45deg, #6a5838 0 5px, #241d14 5px 10px); }
+.wswatches { display: grid; grid-template-columns: repeat(auto-fill, 48px); gap: 8px; justify-content: start; }
+.wsw { width: 48px; height: 48px; padding: 0; display: grid; place-items: center; border-radius: 4px; border: 2px solid #0a0806; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 1px 3px rgba(0, 0, 0, 0.6); }
+.wsw.on { outline: 2px solid var(--gold-hi); outline-offset: 2px; box-shadow: 0 0 12px rgba(246, 226, 166, 0.6); }
+.wsw.locked { background: #17130e; border: 1px dashed var(--gold-dim); color: var(--gold-dim); font-size: 20px; }
+.wsw.own span { font-size: 10px; letter-spacing: 0.05em; color: #fff3d6; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+.whint { margin-top: 8px; color: var(--ink-dim); font-style: italic; font-size: 14px; }
+.wfoot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.wfoot button { min-height: 48px; min-width: 84px; }
+.wfoot button[data-act="close"] { margin-right: auto; }
+.wardrow { align-items: center; margin-top: 10px; }
+.wardrow small { font-family: var(--serif); font-size: 14px; }
+/* Landscape (a desktop, a phone on its side): a panel down the right. */
+@media (orientation: landscape) and (min-width: 700px) {
+  .wardrobe { justify-content: flex-end; align-items: stretch; }
+  .wsheet { width: min(440px, 46vw); max-height: none; padding-top: max(10px, env(safe-area-inset-top)); box-shadow: -8px 0 30px rgba(0, 0, 0, 0.7); animation-name: sheetIn; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .wsheet { padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .whead .dtitle { font-size: 17px; }
+  .wtabs { margin: 2px 0 6px; }
+  .wtiles { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}
 
 /* ----------------------------------------------------------- dialog -- */
 .dialog, .fishing {

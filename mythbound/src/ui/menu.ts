@@ -12,7 +12,8 @@ import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCo
 import { questLines, trackedId } from '../engine/questlog';
 import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
 import { isFood } from '../rules/food';
-import { recipeGold, recipesAt, TOOLS } from '../rules/crafting';
+import { hasMade, recipeGold, recipesAt, TOOLS } from '../rules/crafting';
+import { wardrobeCounts } from '../rules/outfit';
 import { MATERIALS, STATION_NAME } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
@@ -114,6 +115,7 @@ export class Menu {
     if (c.devilDeals) lines.push(`Deals with the Devil: ${c.devilDeals}/4.${isLightSealed(c, this.g.gameMinutes) ? ' Light sealed.' : ''}`);
     if (c.hpLost) lines.push(`Max HP lost to Soul or Power: ${Math.round(c.hpLost)}.`);
     if (c.tamed.length) lines.push(`Tamed: ${c.tamed.join(', ')}.`);
+    const wr = wardrobeCounts(c.wardrobe);
     const traits = (title: string, list: string[]) => `<div class="trait"><h4>${esc(title)}</h4><ul>${list.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
     return `
       <h2>${esc(c.name)}</h2>
@@ -126,6 +128,7 @@ export class Menu {
         <div>Embers <b>${c.gold}</b></div>
         <div>Trials <b>${WEAPON_TRIALS.filter((t) => this.g.state.trialsDone.includes(t.id)).length} / ${WEAPON_TRIALS.length}</b></div>
       </div>
+      <div class="btnrow wardrow"><button data-act="wardrobe">Wardrobe</button><small>Clothes ${wr.garments}/${wr.ofGarments} · Colours ${wr.dyes}/${wr.ofDyes}</small></div>
       ${lines.length ? `<ul class="notes">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
       <div class="cols traits">
         ${traits(CLASSES[c.classId].name, CLASSES[c.classId].traits)}
@@ -158,14 +161,14 @@ export class Menu {
     const other = held.filter(([id]) => !isFood(id) && !tools.some(([t]) => t === id) && !mats.some(([m]) => m === id));
     const items = [group('Food', food), group('Tools and supplies', tools), group('Materials', mats), group('Other', other)];
     // The recipe book: what each station makes, ticked once made.
-    const book = (['cookfire', 'bench', 'anvil'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
+    const book = (['cookfire', 'bench', 'anvil', 'loom'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] || hasMade(c, r) ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
     return `<h3>Weapons</h3>${weapons.join('')}
       <h3>Supplies</h3>
       <div class="row"><div><b>Flasks</b> ${c.flasks}/${c.flasksMax} <div class="desc">Restore half your health. Refilled at shrines.</div></div></div>
       ${ownsKnives(c) ? `<div class="row"><div><b>Throwing knives</b> ${c.knives}/${MAX_KNIVES} <div class="desc">Pick them up where they land. Refilled at shrines.</div></div></div>` : ''}
       ${c.arrows.wood + c.arrows.steel ? `<div class="row"><div><b>Arrows</b> ${c.arrows.wood} wood, ${c.arrows.steel} steel <div class="desc">Steel arrows hit 30% harder and are used first.</div></div></div>` : ''}
       ${items.join('') || ''}
-      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (fish and bread at any shrine too), craft at the workbench by the forge, smith at an anvil.</p>${book}</details>`;
+      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (fish and bread at any shrine too), craft at the workbench by the forge, smith at an anvil, weave and dye at the loom north of the field.</p>${book}</details>`;
   }
 
   /** The class's skill tree: tiers as rows, prerequisites as lines, the picked node's ranks beside it. */
@@ -424,6 +427,7 @@ export class Menu {
       g.audio.play('pickup');
       this.render();
     });
+    this.el.querySelector('[data-act="wardrobe"]')?.addEventListener('click', () => g.openWardrobe());
     this.el.querySelector('[data-act="respec"]')?.addEventListener('click', () => {
       if (!this.respecArmed) {
         this.respecArmed = true;
