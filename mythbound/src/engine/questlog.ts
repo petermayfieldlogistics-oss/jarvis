@@ -1,7 +1,7 @@
 // The quest log behind the HUD's quest bar and the Quests tab: what each active
 // quest asks for next, and where to go when a place is known.
 
-import { ELDER_TRIALS, ENEMIES, FISHING_SPOTS, LAIRS, NPCS, ORE_NODES, QUESTS, SPAWNS, WEAPON_TRIALS, ZONES, type QuestId } from '../data/world';
+import { ELDER_TRIALS, ENEMIES, FIELD, FISHING_SPOTS, LAIRS, NPCS, ORE_NODES, QUESTS, SPAWNS, WEAPON_TRIALS, ZONES, type QuestId } from '../data/world';
 import type { WorldState } from './state';
 import { zoneAt } from './terrain';
 
@@ -34,6 +34,7 @@ const LABEL: Record<QuestId, string> = {
   pages: 'Missing Pages',
   elders: 'The Elder Foes',
   hunts: 'Monster Hunts',
+  harvest: "Wren's Field",
 };
 
 const OBJECTIVE: Record<QuestId, string> = {
@@ -46,6 +47,7 @@ const OBJECTIVE: Record<QuestId, string> = {
   pages: 'The pages blew far and wide',
   elders: 'Face the next elder foe',
   hunts: 'Hunt the monster in its lair',
+  harvest: 'Plant, water and harvest',
 };
 
 // Camps where a quest's monsters live, named after their region.
@@ -87,6 +89,8 @@ function targetFor(id: QuestId, state: WorldState, x: number, z: number): QuestT
       return nearest(DARK_CAMPS, x, z);
     case 'bounty':
       return nearest(BANDIT_CAMPS, x, z);
+    case 'harvest':
+      return { x: FIELD.x, z: FIELD.z, name: "Wren's field" };
     default:
       return null;
   }

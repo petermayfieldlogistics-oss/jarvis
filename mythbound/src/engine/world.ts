@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
-  ANVILS, DOCKS, EYES_RUINS, FISHING_SPOTS, ISLAND, LAIRS, LORE, NPCS, ORE_NODES, PAGES, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
+  ANVILS, DOCKS, EYES_RUINS, FIELD, FISHING_SPOTS, ISLAND, LAIRS, LORE, NPCS, ORE_NODES, PAGES, plotCentre, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
@@ -18,7 +18,7 @@ export interface Collider {
   top: number;
 }
 
-export type InteractKind = 'npc' | 'shrine' | 'lore' | 'tome' | 'page' | 'anvil' | 'dock' | 'fish' | 'ore' | 'trial' | 'loot';
+export type InteractKind = 'npc' | 'shrine' | 'lore' | 'tome' | 'page' | 'anvil' | 'dock' | 'fish' | 'ore' | 'trial' | 'loot' | 'plot';
 
 export interface Interactable {
   id: string;
@@ -874,6 +874,7 @@ export class World {
     this.buildLairs();
     this.buildEyeRuins();
     this.buildLoreAndLoot();
+    this.buildField();
     this.batch.build(this.root, quality !== 'low');
     this.buildMotes();
     this.buildSmoke();
@@ -1461,6 +1462,52 @@ export class World {
       }
     }
     // Interactables for townsfolk are added by the game (they are actors).
+  }
+
+  /**
+   * Wren's field: a fenced yard of nine seed beds (their soil and crops are
+   * drawn by the game's FarmView, as each hero's own), a scarecrow, a trough
+   * and a seed crate. Draws no random numbers, so the rest of the world is
+   * laid out as before.
+   */
+  private buildField() {
+    const b = this.batch;
+    const x0 = FIELD.x - 5.2, x1 = FIELD.x + 5.5, z0 = FIELD.z - 5.5, z1 = FIELD.z + 5.5;
+    // Fenced all round but for a gate on the west side, by the beds nearest Wren.
+    const gate0 = FIELD.z + 1.6, gate1 = FIELD.z + 4.6;
+    this.fence(x0, z0, x1, z0);
+    this.fence(x1, z0, x1, z1);
+    this.fence(x1, z1, x0, z1);
+    this.fence(x0, z1, x0, gate1);
+    this.fence(x0, gate0, x0, z0);
+    for (let i = 0; i < 9; i++) {
+      const { x, z } = plotCentre(i);
+      const y = this.groundY(x, z);
+      // A border of logs round each bed.
+      const h = FIELD.bed / 2;
+      for (const [dx, dz, w, d] of [[0, -h, FIELD.bed + 0.2, 0.2], [0, h, FIELD.bed + 0.2, 0.2], [-h, 0, 0.2, FIELD.bed], [h, 0, 0.2, FIELD.bed]] as const) {
+        b.paint(BOX, 0x3a2a1c, x + dx, y + 0.08, z + dz, 0, w, 0.16, d);
+      }
+      this.interactables.push({ id: `plot-${i}`, kind: 'plot', x, y: y + 0.5, z, radius: 1.7, label: 'Seed bed' });
+    }
+    // Outside the fence: a scarecrow at the far corner, a water trough and seed crates by the gate.
+    {
+      const x = x1 + 1.2, z = z0 + 1.2, y = this.groundY(x, z);
+      b.paint(BOX, 0x4a3420, x, y + 1.1, z, 0, 0.12, 2.2, 0.12);
+      b.paint(BOX, 0x4a3420, x, y + 1.6, z, 0, 1.4, 0.1, 0.1);
+      b.paint(BOX, 0x8a6a3a, x, y + 1.4, z, 0, 0.5, 0.7, 0.3);
+      b.paint(ICO, 0xd8c890, x, y + 2.0, z, 0, 0.26, 0.26, 0.26);
+      b.paint(CONE4, 0xa88a4a, x, y + 2.3, z, Math.PI / 4, 0.42, 0.3, 0.42);
+      this.addCollider(x, z, 0.3);
+    }
+    {
+      const x = x0 - 1.1, z = FIELD.z - 1.2, y = this.groundY(x, z);
+      b.paint(BOX, 0x5a4430, x, y + 0.35, z, 0, 0.9, 0.7, 1.8);
+      b.add(BOX, mat(0x2a4a5a, { rough: 0.15 }), x, y + 0.68, z, 0, 0.7, 0.04, 1.6);
+      this.addCollider(x, z, 0.8);
+    }
+    this.crate(x0 - 1.0, z0 + 1.0, 0.3, 0.7);
+    this.crate(x0 - 1.1, z1 - 0.6, 1.1, 0.6);
   }
 
   private anvil(x: number, z: number) {

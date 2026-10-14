@@ -26,6 +26,8 @@ import {
 } from '../rules/power';
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { HORSE, rideBlock, rideSpeed, rideStep } from '../rules/horse';
+import { EAT_GAP, eatItem, foodCount, pickFood } from '../rules/food';
+import { ITEMS } from '../data/world';
 import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
 import { Ally, Boss, Enemy, type Actor } from './entities';
 import type { Game } from './game';
@@ -198,6 +200,7 @@ export class Player {
   private hurtAt = -99;
   private rideHintAt = -99;
   private horseDt = 0;
+  private lastBite = -99;
   crouching = false;
   blocking = false;
   /** Running flat out this frame (the camera widens its view). */
@@ -2265,13 +2268,35 @@ export class Player {
     g.audio.play('drink');
   }
 
+  /** X / 🐟: eats what suits (the biggest heal when badly hurt; mana food at full health). */
   private eat(g: Game) {
     const items = this.c.items;
-    const kind = (items['golden-fish'] ?? 0) > 0 && this.hp < this.maxHp * 0.4 ? 'golden-fish' : (items.fish ?? 0) > 0 ? 'fish' : (items['golden-fish'] ?? 0) > 0 ? 'golden-fish' : null;
-    if (!kind) return g.hud.toast('You have nothing to eat.');
-    items[kind]--;
-    this.heal(kind === 'fish' ? 35 : 90);
-    g.hud.toast(kind === 'fish' ? 'You eat a fish. (+35 HP)' : 'You eat a golden fish. (+90 HP)');
+    if (foodCount(items) <= 0) return g.hud.toast('You have nothing to eat.');
+    const id = pickFood(items, (this.hp + this.healing) / this.maxHp, this.soulOrPower ? 1 : this.mana / this.maxMana);
+    if (!id) return g.hud.toast("You're not hungry.");
+    this.eatItem(g, id);
+  }
+
+  /**
+   * Eats one of something (X, or the Gear menu): a bite a second at most,
+   * not mid-roll, staggered or in the saddle, and it heals over a moment like
+   * a flask (so pausing the game to eat is no quicker than eating in play).
+   */
+  eatItem(g: Game, id: string) {
+    if (!this.alive) return;
+    if (this.blackout > 0 || this.stagger > 0 || this.rollT >= 0) return g.hud.toast('Not now!');
+    if (this.riding || this.sailing) return g.hud.toast('Get down first.');
+    // The game's clock runs on while the menu is open (the hero's own pauses with it).
+    if (g.clock - this.lastBite < EAT_GAP) return g.hud.toast('Still chewing…');
+    const got = eatItem(this.c.items, id);
+    if (!got) return g.hud.toast('You have none.');
+    this.lastBite = g.clock;
+    this.healing += got.heal;
+    const mana = this.soulOrPower ? 0 : Math.min(this.maxMana - this.mana, got.mana);
+    this.mana += mana;
+    const name = ITEMS[id].name.toLowerCase();
+    g.hud.toast(`You eat ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}.${got.heal ? ` (+${got.heal} HP)` : ''}${mana >= 1 ? ` (+${Math.round(mana)} mana)` : ''}`);
+    g.audio.play('drink');
   }
 
   // ---------------------------------------------------------------- spells --

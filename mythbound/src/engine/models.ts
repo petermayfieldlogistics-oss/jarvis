@@ -845,6 +845,14 @@ export function buildShield(): THREE.Group {
 
 // ------------------------------------------------------------------ props --
 
+/** A farmer's hoe: an ash shaft and an iron blade (held like a staff, harmless). */
+export function buildHoe(): THREE.Object3D {
+  const g = new THREE.Group();
+  part(cyl(0.025, 0.03, 1.5, 6), mat(0x8a6a44, { rough: 0.8 }), 0, 0.55, 0, g);
+  part(box(0.24, 0.12, 0.03), mat(0x5a5a5e, { rough: 0.5, metal: 0.6 }), 0, 1.28, 0.06, g).rotation.x = -0.35;
+  return compact(g);
+}
+
 export function buildBoat(): THREE.Group {
   const g = new THREE.Group();
   const wood = mat(0x5a3e24, { rough: 0.85 });
