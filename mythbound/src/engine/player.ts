@@ -3124,7 +3124,8 @@ export class Player {
     const speed = Math.hypot(vx, vz);
     a.speed = this.sailing ? 0 : speed;
     a.moving = Math.min(1, speed / 4);
-    a.phase += speed * dt * (this.sprinting ? 1.6 : 1.9);
+    // Steps per metre from the speed alone, so a friend's copy of this hero strides the same.
+    a.phase += speed * dt * (1.9 - 0.3 * Math.min(1, Math.max(0, (speed - 8.5) / 2)));
     // Travel in the rig's own frame: x along its local +X, z forward (the
     // same frame entities.ts writes and humanoid.ts turns the hips toward).
     if (speed > 0.05 && !this.sailing) {

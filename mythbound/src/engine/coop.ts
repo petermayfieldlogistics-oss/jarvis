@@ -368,7 +368,7 @@ export class RemoteHero implements Hero {
     const sailing = (f & 32) !== 0;
     a.speed = sailing ? 0 : speed;
     a.moving = sailing ? 0 : Math.min(1, speed / 4);
-    a.phase += speed * dt * 1.8;
+    a.phase += speed * dt * (1.9 - 0.3 * Math.min(1, Math.max(0, (speed - 8.5) / 2)));
     if (speed > 0.05 && !sailing) {
       const sy = Math.sin(yaw), cy = Math.cos(yaw);
       const kk = Math.min(1, speed / 2.5) / speed;
