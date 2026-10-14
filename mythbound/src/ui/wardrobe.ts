@@ -115,9 +115,10 @@ export class Wardrobe {
       cam.clearViewOffset();
       return;
     }
+    // Matches the sheet's CSS: a panel down the right in landscape, a bottom sheet (55%) otherwise.
     const w = window.innerWidth, h = window.innerHeight;
-    if (w > 900 && w > h) cam.setViewOffset(w, h, Math.min(220, w * 0.2), 0, w, h);
-    else cam.setViewOffset(w, h, 0, h * 0.24, w, h);
+    if (w > h && w >= 700) cam.setViewOffset(w, h, Math.min(440, w * 0.46) / 2, 0, w, h);
+    else cam.setViewOffset(w, h, 0, h * 0.27, w, h);
   }
 
   private onClick(e: Event) {
