@@ -43,8 +43,8 @@ function passDist(x: number, z: number): number {
 
 /** The Frostspine: ridged peaks rising northward, parted by a pass. */
 function peaksHeight(x: number, z: number): number {
-  const rise = smoothstep(-420, -640, z) * smoothstep(16, 70, passDist(x, z));
-  return 10 + 4 * fbm(x / 50, z / 50, 3) + rise * (18 + 125 * Math.pow(ridged(x / 270, z / 270, 4), 1.5));
+  const rise = smoothstep(-430, -720, z) * smoothstep(16, 70, passDist(x, z));
+  return 10 + 4 * fbm(x / 50, z / 50, 3) + rise * (16 + 115 * Math.pow(ridged(x / 270, z / 270, 4), 1.5));
 }
 
 /** The Cinderwaste: black plains, small cinder cones, pools of lava. */
@@ -98,10 +98,14 @@ function outerHeight(x: number, z: number, h0: number): number {
   if (w <= 0) return h0;
   const mix = (a: () => number, b: () => number, k: number) => (k <= 0 ? a() : k >= 1 ? b() : lerp(a(), b(), k));
   let sum = 0, hs = 0;
-  if (wN > 0) (hs += wN * mix(() => peaksHeight(x, z), () => cinderHeight(x, z), smoothstep(200, 380, x))), (sum += wN);
-  if (wE > 0) (hs += wE * mix(() => dunesHeight(x, z), () => oceanHeight(x, z), smoothstep(140, 260, z))), (sum += wE);
+  // (Molten Peak's northern flank stands up out of the Frostspine's foothills.)
+  const flank = Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.radius ? h0 : -Infinity;
+  if (wN > 0) (hs += wN * Math.max(flank, mix(() => peaksHeight(x, z), () => cinderHeight(x, z), smoothstep(200, 380, x)))), (sum += wN);
+  // The corners belong to one land each: the Cinderwaste (NE), the sea (SE), the jungle (SW), the Frostspine (NW).
+  const south = smoothstep(140, 260, z), north = smoothstep(-330, -450, z);
+  if (wE > 0) (hs += wE * mix(() => mix(() => dunesHeight(x, z), () => oceanHeight(x, z), south), () => cinderHeight(x, z), north)), (sum += wE);
   if (wS > 0) (hs += wS * mix(() => oceanHeight(x, z), () => jungleHeight(x, z), smoothstep(-200, -330, x))), (sum += wS);
-  if (wW > 0) (hs += wW * mix(() => elderHeight(x, z), () => jungleHeight(x, z), smoothstep(220, 340, z))), (sum += wW);
+  if (wW > 0) (hs += wW * mix(() => mix(() => elderHeight(x, z), () => jungleHeight(x, z), smoothstep(220, 340, z)), () => peaksHeight(x, z), north)), (sum += wW);
   return lerp(h0, hs / sum, w);
 }
 
@@ -184,6 +188,7 @@ export function zoneAt(x: number, z: number): ZoneId {
   if (Math.max(ax, az) > 450) {
     // The outer lands, by which edge is nearest.
     if (az >= ax) return pz < 0 ? (px > 290 ? 'cinder' : 'peaks') : px < -265 ? 'jungle' : 'ocean';
+    if (pz < -390) return px > 0 ? 'cinder' : 'peaks';
     return px > 0 ? (pz > 200 ? 'ocean' : 'dunes') : pz > 280 ? 'jungle' : 'elderwood';
   }
   if (px < -140 && pz > 115) return 'swamp';

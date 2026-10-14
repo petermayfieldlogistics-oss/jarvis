@@ -4,14 +4,14 @@ import { SONGS } from '../rules/weapons';
 import { BURST_COLOR, type Burst } from '../rules/power';
 import { HORSE } from '../rules/horse';
 import { foodCount } from '../rules/food';
-import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
+import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, WORLD_HALF, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
 import { Boss } from '../engine/entities';
 import type { Game } from '../engine/game';
 import { nextQuestHint, questLines, trackedId, type QuestLine, type QuestTarget } from '../engine/questlog';
 import { saveSettings } from '../engine/state';
-import { mapImage, toMap } from './mapimage';
+import { mapImage, paintMap, toMap } from './mapimage';
 
 /** Two or three letters that tell spells apart on small touch slots. */
 const shortName = (name: string) => {
@@ -763,8 +763,10 @@ export class Hud {
     const S = 150;
     const p = g.player.pos;
     const img = mapImage();
+    // The map paints itself in a little at a time, around the hero first.
+    paintMap(g.settings.quality === 'low' ? 1.5 : 2.5, p.x, p.z);
     const range = 110; // world units across half the minimap
-    const scale = img.width / 900;
+    const scale = img.width / (WORLD_HALF * 2);
     const rot = g.camYaw - Math.PI;
     ctx.setTransform(this.miniScale, 0, 0, this.miniScale, 0, 0);
     ctx.clearRect(0, 0, S, S);

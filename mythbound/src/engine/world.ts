@@ -818,7 +818,7 @@ const DENSITY: Partial<Record<ZoneId, Partial<Record<PlantKind, number>>>> = {
   peaks: { pine: 0.09, rock: 0.07, grass: 0.12, dead: 0.004 },
   cinder: { ashtree: 0.03, rock: 0.08, dead: 0.01, crystal: 0.004 },
   dunes: { cactus: 0.006, rock: 0.012, dead: 0.003 },
-  elderwood: { oak: 0.11, pine: 0.12, birch: 0.03, bush: 0.06, rock: 0.03, grass: 0.3, toadstool: 0.03, mushroom: 0.01 },
+  elderwood: { oak: 0.065, pine: 0.07, birch: 0.02, bush: 0.05, rock: 0.03, grass: 0.3, toadstool: 0.03, mushroom: 0.01 },
   jungle: { palm: 0.08, oak: 0.06, bush: 0.12, grass: 0.45, flowers: 0.08, reeds: 0.05, mushroom: 0.01 },
   ocean: { palm: 0.06, bush: 0.03, rock: 0.03, grass: 0.15, reeds: 0.02 },
 };
@@ -841,7 +841,7 @@ const PALETTES: Partial<Record<PlantKind, Partial<Record<ZoneId, number[]>>>> = 
   crystal: { crossroads: [0xa070ff, 0x7060ff, 0xc080ff], cinder: [0xff6a20, 0xff9a40] },
 };
 /** Trees in the Elderwood grow huge. */
-const GIANT: Partial<Record<ZoneId, number>> = { elderwood: 1.6, jungle: 1.15 };
+const GIANT: Partial<Record<ZoneId, number>> = { elderwood: 1.45, jungle: 1.15 };
 
 /** A chimney, brazier or the volcano's plume, drawn from the shared smoke pool. */
 interface SmokeSource {
