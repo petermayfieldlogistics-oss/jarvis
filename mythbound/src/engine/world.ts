@@ -1515,7 +1515,7 @@ export class World {
   /**
    * The crafting stations by Wren's field: a cookfire (stones, logs, a
    * tripod and pot over a flickering flame, with smoke and firelight) and a
-   * workbench. Draws no random numbers (the rest of the world stays as it was).
+   * workbench, and the loom. Draws no random numbers (the rest of the world stays as it was).
    */
   private buildStations() {
     const b = this.batch;
@@ -1545,6 +1545,8 @@ export class World {
         this.emitters.push({ pos: new THREE.Vector3(x, y + 1, z), color: 0xff8030, intensity: 10, distance: 12, flicker: 0.35 });
         this.fixedSmoke(x, y + 1.3, z, 0, 0.61);
         this.addCollider(x, z, 1.1);
+      } else if (s.id === 'loom') {
+        this.loom(x, y, z);
       } else {
         // A trestle table with a vice, a saw, a bundle of arrows, and crates.
         b.paint(BOX, 0x6a4a2a, x, y + 0.88, z, 0.4, 2.2, 0.1, 0.9);
@@ -1562,6 +1564,45 @@ export class World {
       }
       this.interactables.push({ id: `station-${s.id}`, kind: 'station', x, y: y + 1, z, radius: 2.8, label: s.label });
     }
+  }
+
+  /**
+   * The loom north of Wren's field: an upright frame with its warp strung
+   * and a red cloth half woven, a weaver's bench, and three dye vats (madder
+   * red, woad blue, weld yellow). Faces the field. Draws no random numbers.
+   */
+  private loom(x: number, y: number, z: number) {
+    const b = this.batch;
+    const wood = 0x5a3e24, dark = 0x3e2a1a, cloth = 0x9a2a22;
+    // Two uprights on feet, a warp beam on top and a breast beam at the weaver's lap.
+    for (const sx of [-0.85, 0.85]) {
+      b.paint(BOX, wood, x + sx, y + 0.95, z, 0, 0.12, 1.9, 0.12);
+      b.paint(BOX, dark, x + sx, y + 0.06, z, 0, 0.14, 0.12, 1.0);
+    }
+    b.paint(CYL6, wood, x, y + 1.8, z, 0, 0.13, 1.84, 0.13, 0, Math.PI / 2);
+    b.paint(CYL6, wood, x, y + 0.72, z + 0.06, 0, 0.11, 1.84, 0.11, 0, Math.PI / 2);
+    // The cloth rolled on the breast beam, and the half woven above it, with a cream stripe.
+    b.paint(CYL6, cloth, x, y + 0.66, z + 0.06, 0, 0.2, 1.5, 0.2, 0, Math.PI / 2);
+    b.paint(BOX, cloth, x, y + 0.98, z, 0, 1.46, 0.5, 0.03);
+    b.paint(BOX, 0xd8cfb0, x, y + 1.08, z, 0, 1.47, 0.06, 0.035);
+    // The warp: pale threads from the cloth's edge up to the beam.
+    for (let i = 0; i < 11; i++) b.paint(BOX, 0xe8e0c8, x - 0.7 + i * 0.14, y + 1.49, z, 0, 0.014, 0.62, 0.014);
+    // A heddle bar across the threads and a shuttle resting in the shed.
+    b.paint(BOX, dark, x, y + 1.36, z + 0.02, 0, 1.66, 0.05, 0.05);
+    b.paint(BOX, 0x8a6a44, x + 0.25, y + 1.24, z + 0.04, 0, 0.36, 0.05, 0.08);
+    // The weaver's bench, on the field side.
+    b.paint(BOX, 0x6a4a2a, x, y + 0.46, z + 0.85, 0, 1.0, 0.08, 0.34);
+    for (const sx of [-0.4, 0.4]) b.paint(BOX, dark, x + sx, y + 0.22, z + 0.85, 0, 0.08, 0.44, 0.28);
+    this.addCollider(x - 0.5, z, 0.6);
+    this.addCollider(x + 0.5, z, 0.6);
+    // Three dye vats to the east, each brimming with its colour; a stick in the red.
+    const vats: [number, number, number][] = [[1.75, -0.35, 0x9a2a22], [2.45, 0.3, 0x2a4a8a], [1.8, 0.95, 0xc8a83a]];
+    for (const [dx, dz, dye] of vats) {
+      const vx = x + dx, vz = z + dz;
+      this.barrel(vx, vz);
+      b.paint(CYL, dye, vx, this.groundY(vx, vz) + 1.025, vz, 0, 0.6, 0.02, 0.6);
+    }
+    b.paint(BOX, 0x8a6a44, x + 1.85, y + 1.15, z - 0.35, 0.5, 0.04, 0.9, 0.04, 0.35, 0);
   }
 
   /** A smoke plume with a fixed seed (so it draws no random number). */

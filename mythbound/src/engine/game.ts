@@ -9,6 +9,7 @@ import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
 import { materialDrop } from '../rules/crafting';
 import { runeDrop } from '../rules/weapons';
+import { earnedUnlocks } from '../rules/outfit';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
@@ -255,6 +256,15 @@ export class Game {
     this.refreshHeroes();
     this.summonLizardKin();
     this.updateTouchButtons();
+    // Heroes who earned the crown or a relic's colour before the wardrobe existed get them now.
+    this.grantEarned();
+  }
+
+  /** What deeds have earned for the wardrobe (the crown, the relics' colours): given once, with a toast. */
+  grantEarned(): boolean {
+    const got = earnedUnlocks(this.player.c, this.state.trialsDone);
+    for (const name of got) this.hud.toast(`Wardrobe: ${name} unlocked`, 'quest');
+    return got.length > 0;
   }
 
   updateTouchButtons() {
@@ -1051,6 +1061,8 @@ export class Game {
       this.state.unclaimed.push(boss.reward);
       this.placeLegendary(boss.reward);
       this.questProgress(t.elder ? 'elders' : 'trials', 1);
+      // The sixth weapon trial earns the Crown of the Six.
+      this.grantEarned();
     }
     this.save();
   }

@@ -462,14 +462,27 @@ export class Story {
 
   // ------------------------------------------------------------------ field --
 
-  private seedShop() {
+  /** Wren's seeds: food crops for the table, or fibre and dye plants for the loom. */
+  private seedShop(fibre?: boolean): void {
     const c = this.c;
+    if (fibre === undefined) {
+      return this.open({
+        title: 'Wren',
+        subtitle: 'Seeds',
+        text: `Seeds come ${SEED_PACK} to a pack. Food for the table, or flax and dye plants for the loom up the lane. You have ${c.gold} embers.`,
+        options: [
+          { label: 'Food crops (carrots, wheat, bluecaps, pumpkins)', action: () => this.seedShop(false) },
+          { label: 'Fibre & dye (flax, madder, woad, weld)', action: () => this.seedShop(true) },
+          { label: 'Back', action: () => this.talk('wren') },
+        ],
+      });
+    }
     this.open({
       title: 'Wren',
-      subtitle: 'Seeds',
-      text: `Seeds come ${SEED_PACK} to a pack. You have ${c.gold} embers.`,
+      subtitle: fibre ? 'Fibre & dye seeds' : 'Food crop seeds',
+      text: `${fibre ? 'The loom north of the field spins flax into linen and steeps the dye plants. ' : ''}Seeds come ${SEED_PACK} to a pack. You have ${c.gold} embers.`,
       options: [
-        ...CROP_IDS.map((id): DialogOption => {
+        ...CROP_IDS.filter((id) => !!CROPS[id].fibre === fibre).map((id): DialogOption => {
           const crop = CROPS[id];
           const cost = shopPrice(c, crop.seedPrice);
           const have = c.items[seedItem(id)] ?? 0;
@@ -478,11 +491,11 @@ export class Story {
             disabled: c.gold < cost,
             action: () => {
               if (!buySeeds(c, id)) this.g.audio.play('pickup');
-              this.seedShop();
+              this.seedShop(fibre);
             },
           };
         }),
-        { label: 'Back', action: () => this.talk('wren') },
+        { label: 'Back', action: () => this.seedShop() },
       ],
     });
   }
@@ -544,28 +557,7 @@ export class Story {
         options: [{ label: `Rent it (${price})`, disabled: c.gold < price, action: () => this.rentBed() }, { label: 'Leave it' }],
       });
     }
-    if (!p) {
-      const seeds = CROP_IDS.filter((id) => (c.items[seedItem(id)] ?? 0) > 0);
-      const empty: number[] = [];
-      for (let k = 0; k < farm.owned; k++) if (!farm.plots[k]) empty.push(k);
-      return this.open({
-        title: 'Seed bed',
-        text: seeds.length ? 'What will you plant?' : 'You have no seeds. Wren sells them, by the gate.',
-        options: [
-          ...seeds.map((id): DialogOption => ({
-            label: `Plant ${CROPS[id].name.toLowerCase()} (${c.items[seedItem(id)]} seeds) · ripe in ${hours(CROPS[id].grow)}`,
-            action: () => this.sow([i], id),
-          })),
-          ...(empty.length > 1
-            ? seeds.map((id): DialogOption => ({
-                label: `Plant ${CROPS[id].plural} in every empty bed (${Math.min(empty.length, c.items[seedItem(id)] ?? 0)})`,
-                action: () => this.sow(empty, id),
-              }))
-            : []),
-          { label: 'Leave it' },
-        ],
-      });
-    }
+    if (!p) return this.sowBed(i);
     const crop = CROPS[p.crop];
     const stage = stageOf(p, farm.clock);
     // One tap does the whole row (this bed and the others beside it that need the same).
@@ -634,6 +626,59 @@ export class Story {
         },
         { label: 'Leave it' },
       ].filter(Boolean) as DialogOption[],
+    });
+  }
+
+  /**
+   * An empty bed: pick a seed (food or fibre first, when there are too many
+   * kinds for one list), then this bed or every empty one.
+   */
+  private sowBed(i: number, fibre?: boolean, crop?: CropId): void {
+    const c = this.c;
+    const farm = this.g.state.farm;
+    const all = CROP_IDS.filter((id) => (c.items[seedItem(id)] ?? 0) > 0);
+    const empty: number[] = [];
+    for (let k = 0; k < farm.owned; k++) if (!farm.plots[k]) empty.push(k);
+    if (!all.length) return this.open({ title: 'Seed bed', text: 'You have no seeds. Wren sells them, by the gate.', options: [{ label: 'Leave it' }] });
+    // A seed picked: here, or in every empty bed.
+    if (crop) {
+      const n = c.items[seedItem(crop)] ?? 0;
+      if (empty.length < 2) return this.sow([i], crop);
+      return this.open({
+        title: 'Seed bed',
+        subtitle: CROPS[crop].name,
+        text: `You have ${n} ${CROPS[crop].name.toLowerCase()} seeds; ${empty.length} of your beds are empty. Ripe in ${hours(CROPS[crop].grow)}.`,
+        options: [
+          { label: 'Plant this bed', action: () => this.sow([i], crop) },
+          { label: `Plant every empty bed (${Math.min(empty.length, n)})`, action: () => this.sow(empty, crop) },
+          { label: 'Back', action: () => this.sowBed(i, fibre) },
+        ],
+      });
+    }
+    // Up to seven kinds fit in one list; more are split into food and fibre.
+    const split = all.length > 7 && fibre === undefined;
+    if (split) {
+      return this.open({
+        title: 'Seed bed',
+        text: 'What will you plant?',
+        options: [
+          { label: 'Food crops', action: () => this.sowBed(i, false) },
+          { label: 'Fibre & dye', action: () => this.sowBed(i, true) },
+          { label: 'Leave it' },
+        ],
+      });
+    }
+    const seeds = fibre === undefined ? all : all.filter((id) => !!CROPS[id].fibre === fibre);
+    return this.open({
+      title: 'Seed bed',
+      text: empty.length > 1 ? `What will you plant? (${empty.length} of your beds are empty.)` : 'What will you plant?',
+      options: [
+        ...seeds.map((id): DialogOption => ({
+          label: `${CROPS[id].name} (${c.items[seedItem(id)]} seeds) · ripe in ${hours(CROPS[id].grow)}`,
+          action: () => this.sowBed(i, fibre, id),
+        })),
+        fibre === undefined ? { label: 'Leave it' } : { label: 'Back', action: () => this.sowBed(i) },
+      ],
     });
   }
 
@@ -1198,6 +1243,8 @@ export class Story {
       c.items[weaponId] = 1;
       // The pearl's boon: one more flask, filled at once.
       if (weaponId === 'leviathan-pearl') (c.flasksMax++, (c.flasks = c.flasksMax));
+      // Each elder relic teaches its colour for the wardrobe.
+      g.grantEarned();
       g.player.hp = Math.min(g.player.maxHp, g.player.hp);
       g.audio.play('victory');
       g.save();
