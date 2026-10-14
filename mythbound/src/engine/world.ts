@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
-  ANVILS, DOCKS, EYES_RUINS, FISHING_SPOTS, ISLAND, LAIRS, LORE, NPCS, ORE_NODES, PAGES, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
+  ANVILS, DOCKS, EYES_RUINS, FISHING_SPOTS, ISLAND, LAIRS, LAVA_POOLS, LORE, NPCS, OASES, ORE_NODES, PAGES, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
 import { mulberry32, noise2, smoothstep } from './noise';
-import { buildTerrainMesh, detailTexture, heightAt, inLava, LAVA_LEVEL, normalAt, zoneAt, WATER_LEVEL } from './terrain';
+import { detailTexture, groundTile, heightAt, inLava, LAVA_LEVEL, normalAt, POOL_LAVA, TILE, TILES, zoneAt, WATER_LEVEL } from './terrain';
 
 export type Quality = 'low' | 'medium' | 'high';
 
@@ -402,11 +402,12 @@ function plant(parts: VPart[], sway: number, from = 0): THREE.BufferGeometry {
 /** Grass tints: golden on the plains, lush in the wood, sickly in the mire. */
 const GRASS: Partial<Record<ZoneId, number>> = {
   town: 0x8e8a42, plains: 0xb09a48, forest: 0x4e6a30, coast: 0x9a9a5c, swamp: 0x4e5430, crossroads: 0x4e4a5a,
+  peaks: 0x7a8a62, elderwood: 0x3e5a28, jungle: 0x3a7a24, ocean: 0x8a9a54,
 };
 
-type PlantKind = 'pine' | 'oak' | 'birch' | 'bush' | 'grass' | 'flowers' | 'reeds' | 'toadstool' | 'mushroom' | 'crystal' | 'dead' | 'ashtree' | 'cactus' | 'rock';
+type PlantKind = 'pine' | 'oak' | 'birch' | 'bush' | 'grass' | 'flowers' | 'reeds' | 'toadstool' | 'mushroom' | 'crystal' | 'dead' | 'ashtree' | 'cactus' | 'palm' | 'rock';
 const SMALL: PlantKind[] = ['grass', 'flowers', 'reeds', 'toadstool', 'mushroom'];
-const TREES: PlantKind[] = ['pine', 'oak', 'birch', 'dead', 'ashtree', 'cactus'];
+const TREES: PlantKind[] = ['pine', 'oak', 'birch', 'dead', 'ashtree', 'cactus', 'palm'];
 
 /**
  * A lumpy ball of leaves: a jittered icosahedron with round normals, so the
@@ -527,6 +528,15 @@ function plantGeometries(leafDetail: number): Record<Exclude<PlantKind, 'rock'>,
       { geo: CYL6, color: 0x4a6a3a, top: 0x5a7a44, at: [-0.88, 2.45, 0], scale: [0.32, 1.0, 0.32] },
       { geo: ICO, color: 0xe0607a, at: [0, 3.28, 0], scale: [0.16, 0.1, 0.16] },
     ], 0),
+    // A leaning, ringed trunk and a crown of drooping fronds (islands, oases, the jungle).
+    palm: plant([
+      ...[0, 1, 2, 3].map((k): VPart => ({ geo: TAPER, color: 0x5a4430, top: 0x806446, at: [0.14 * k * k + 0.06 * k, 1.05 + k * 2, 0], scale: [0.46 - k * 0.05, 2.15, 0.46 - k * 0.05], rot: [0, 0, -0.06 - 0.07 * k] })),
+      ...[0, 1, 2, 3, 4, 5, 6].map((i): VPart => {
+        const a = (i / 7) * TAU + 0.3;
+        return { geo: BOX, color: 0x6a6a6a, top: 0xffffff, tint: 1, at: [1.75 + Math.cos(a) * 1.55, 8.05, Math.sin(a) * 1.55], scale: [3.3, 0.06, 0.62], rot: [0, -a, -0.42] };
+      }),
+      ...[0, 1, 2].map((i): VPart => ({ geo: ICO, color: 0x4a3420, at: [1.75 + Math.cos(i * 2.1) * 0.3, 7.75, Math.sin(i * 2.1) * 0.3], scale: [0.22, 0.24, 0.22] })),
+    ], 0.55, 4),
   };
 }
 
@@ -630,7 +640,7 @@ interface MoteKind {
   blink?: boolean;
   windy?: number;
 }
-// dust, firefly, ember, ash, sand, mist, spore
+// dust, firefly, ember, ash, sand, mist, spore, snow
 const MOTES: MoteKind[] = [
   { color: 0xffe2b0, size: [0.03, 0.06], alpha: 0.5, add: 1, bright: 0.9, vel: [0.1, 0.03, 0.06], wander: 0.2, life: [6, 11], y: [0.3, 5], radius: 16, share: 1, sunlit: true },
   { color: 0xc8ff5a, size: [0.1, 0.16], alpha: 1, add: 1, bright: 1.8, vel: [0, 0.04, 0], wander: 0.8, life: [5, 9], y: [0.3, 2.8], radius: 22, share: 1, blink: true },
@@ -639,18 +649,25 @@ const MOTES: MoteKind[] = [
   { color: 0xc8a676, size: [0.035, 0.07], alpha: 0.75, add: 0, vel: [0, 0.05, 0], wander: 0.6, life: [1.5, 3], y: [0.05, 2], radius: 15, share: 1, windy: 14 },
   { color: 0xc4ccc4, size: [3.5, 7], alpha: 0.13, add: 0, vel: [0, 0.02, 0], wander: 0.12, life: [10, 16], y: [0.2, 2.2], radius: 30, share: 0.22, windy: 1.2 },
   { color: 0xb48cff, size: [0.06, 0.1], alpha: 0.9, add: 1, bright: 1.4, vel: [0, 0.12, 0], wander: 0.35, life: [6, 10], y: [0.3, 4], radius: 20, share: 1 },
+  { color: 0xf4f8ff, size: [0.05, 0.1], alpha: 0.95, add: 0, vel: [0.25, -1.1, 0.15], wander: 0.5, life: [5, 9], y: [0.5, 12], radius: 22, share: 1, windy: 3 },
 ];
 /** What floats in the air of each region, by day and by night. */
 const MOTE_MIX: Record<ZoneId, [number[], number[]]> = {
-  town: [[0.3, 0, 0, 0, 0, 0, 0], [0, 0.12, 0, 0, 0, 0.3, 0]],
-  plains: [[0.45, 0, 0, 0, 0, 0, 0], [0, 0.4, 0, 0, 0, 0.3, 0]],
-  forest: [[0.5, 0, 0, 0, 0, 0.5, 0], [0, 0.8, 0, 0, 0, 0.8, 0]],
-  desert: [[0.12, 0, 0, 0, 0.85, 0, 0], [0, 0, 0, 0, 0.45, 0, 0]],
-  volcano: [[0, 0, 0.55, 0.45, 0, 0, 0], [0, 0, 0.6, 0.4, 0, 0, 0]],
-  coast: [[0.3, 0, 0, 0, 0, 0.6, 0], [0, 0.08, 0, 0, 0, 0.8, 0]],
-  swamp: [[0.15, 0, 0, 0, 0, 1.6, 0], [0, 0.6, 0, 0, 0, 2, 0]],
-  crossroads: [[0, 0, 0, 0, 0, 1.6, 0.35], [0, 0, 0, 0, 0, 2, 0.5]],
-  badlands: [[0.1, 0, 0.08, 0.25, 0.4, 0, 0], [0, 0, 0.12, 0.25, 0.3, 0, 0]],
+  town: [[0.3, 0, 0, 0, 0, 0, 0, 0], [0, 0.12, 0, 0, 0, 0.3, 0, 0]],
+  plains: [[0.45, 0, 0, 0, 0, 0, 0, 0], [0, 0.4, 0, 0, 0, 0.3, 0, 0]],
+  forest: [[0.5, 0, 0, 0, 0, 0.5, 0, 0], [0, 0.8, 0, 0, 0, 0.8, 0, 0]],
+  desert: [[0.12, 0, 0, 0, 0.85, 0, 0, 0], [0, 0, 0, 0, 0.45, 0, 0, 0]],
+  volcano: [[0, 0, 0.55, 0.45, 0, 0, 0, 0], [0, 0, 0.6, 0.4, 0, 0, 0, 0]],
+  coast: [[0.3, 0, 0, 0, 0, 0.6, 0, 0], [0, 0.08, 0, 0, 0, 0.8, 0, 0]],
+  swamp: [[0.15, 0, 0, 0, 0, 1.6, 0, 0], [0, 0.6, 0, 0, 0, 2, 0, 0]],
+  crossroads: [[0, 0, 0, 0, 0, 1.6, 0.35, 0], [0, 0, 0, 0, 0, 2, 0.5, 0]],
+  badlands: [[0.1, 0, 0.08, 0.25, 0.4, 0, 0, 0], [0, 0, 0.12, 0.25, 0.3, 0, 0, 0]],
+  peaks: [[0.15, 0, 0, 0, 0, 0.5, 0, 1.2], [0, 0, 0, 0, 0, 0.6, 0, 1.4]],
+  cinder: [[0, 0, 0.8, 0.7, 0, 0, 0, 0], [0, 0, 0.9, 0.5, 0, 0, 0, 0]],
+  dunes: [[0.1, 0, 0, 0, 1.2, 0, 0, 0], [0, 0.1, 0, 0, 0.6, 0, 0, 0]],
+  elderwood: [[0.6, 0, 0, 0, 0, 0.7, 0, 0], [0, 1, 0, 0, 0, 1, 0.2, 0]],
+  jungle: [[0.4, 0, 0, 0, 0, 0.9, 0, 0], [0, 1.4, 0, 0, 0, 1.1, 0, 0]],
+  ocean: [[0.2, 0, 0, 0, 0, 0.7, 0, 0], [0, 0.1, 0, 0, 0, 0.9, 0, 0]],
 };
 
 // ------------------------------------------------------------- god rays --
@@ -778,6 +795,53 @@ interface PlantTile {
   range: number;
 }
 
+/** What every plant tile is made from (built once). */
+interface PlantKit {
+  geos: Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry>;
+  plantMat: THREE.Material;
+  rockMat: THREE.Material;
+  grassScale: number;
+}
+
+/** How thickly each kind grows in each region (per 6 m candidate spot). */
+const DENSITY: Partial<Record<ZoneId, Partial<Record<PlantKind, number>>>> = {
+  plains: { oak: 0.032, birch: 0.006, bush: 0.02, rock: 0.02, grass: 0.5, flowers: 0.16 },
+  forest: { pine: 0.27, oak: 0.05, birch: 0.035, bush: 0.045, rock: 0.03, grass: 0.35, toadstool: 0.02 },
+  desert: { cactus: 0.025, rock: 0.03, dead: 0.008 },
+  volcano: { ashtree: 0.024, rock: 0.06 },
+  coast: { oak: 0.012, bush: 0.02, rock: 0.04, grass: 0.12, reeds: 0.04 },
+  swamp: { dead: 0.1, mushroom: 0.05, reeds: 0.1, grass: 0.32, rock: 0.02 },
+  crossroads: { dead: 0.06, crystal: 0.025, rock: 0.05, grass: 0.12 },
+  badlands: { dead: 0.012, rock: 0.05 },
+  town: { grass: 0.15, flowers: 0.05 },
+  peaks: { pine: 0.09, rock: 0.07, grass: 0.12, dead: 0.004 },
+  cinder: { ashtree: 0.03, rock: 0.08, dead: 0.01, crystal: 0.004 },
+  dunes: { cactus: 0.006, rock: 0.012, dead: 0.003 },
+  elderwood: { oak: 0.11, pine: 0.12, birch: 0.03, bush: 0.06, rock: 0.03, grass: 0.3, toadstool: 0.03, mushroom: 0.01 },
+  jungle: { palm: 0.08, oak: 0.06, bush: 0.12, grass: 0.45, flowers: 0.08, reeds: 0.05, mushroom: 0.01 },
+  ocean: { palm: 0.06, bush: 0.03, rock: 0.03, grass: 0.15, reeds: 0.02 },
+};
+/** Palms crowd round an oasis. */
+const OASIS_PLANTS: Partial<Record<PlantKind, number>> = { palm: 0.28, bush: 0.08, grass: 0.4, reeds: 0.08 };
+const PALETTES: Partial<Record<PlantKind, Partial<Record<ZoneId, number[]>>>> = {
+  // Golden canopies on the plains, amber and green in the wood, autumn by the coast.
+  oak: {
+    plains: [0xc8962a, 0xd8a838, 0xb07a24, 0xa89a34], forest: [0x4a5a2a, 0x5a6a30, 0x8a6a28, 0x6a7a34], coast: [0x7a8a40, 0x9a6a30],
+    elderwood: [0x3a4a22, 0x2e4020, 0x4a5a28, 0x5a5a26], jungle: [0x2a6a20, 0x347a28, 0x226020],
+  },
+  birch: { plains: [0xd8b440, 0xc8c050], forest: [0xb8b848, 0xd0a840, 0x98a840], elderwood: [0x98a840, 0xa8a038] },
+  // Frosted pines up in the Frostspine.
+  pine: { forest: [0xffffff, 0xd8e8d0, 0xc0d0c8, 0xe8e0c0], peaks: [0xe8f0f4, 0xd8e4e8, 0xf4f8fa], elderwood: [0xb0c8a8, 0xc0d0b8, 0xa8b8a0] },
+  bush: { plains: [0x8a8a38, 0xa08a34], forest: [0x4a5a2c, 0x5a6232], coast: [0x6a7a40], elderwood: [0x3a4a24, 0x44522a], jungle: [0x2a6a24, 0x3a7a2a], ocean: [0x4a7a34], dunes: [0x5a7a34] },
+  palm: { jungle: [0x4a8a2a, 0x3a7a24, 0x5a9a34], ocean: [0x6a9a3a, 0x5a8a30], dunes: [0x6a8a34, 0x7a9a3a] },
+  flowers: { plains: [0xffd040, 0xffc020, 0xfff0d0, 0xe04030], town: [0xffd040, 0xfff0d0], jungle: [0xff4a6a, 0xffa020, 0xc040ff] },
+  toadstool: { forest: [0xb83a2a, 0xa8402a, 0x9a7a50], elderwood: [0xb83a2a, 0x9a7a50] },
+  mushroom: { swamp: [0x40e0c0, 0x60c0ff, 0xb070ff], elderwood: [0x60c0ff], jungle: [0xff70c0, 0xffb040] },
+  crystal: { crossroads: [0xa070ff, 0x7060ff, 0xc080ff], cinder: [0xff6a20, 0xff9a40] },
+};
+/** Trees in the Elderwood grow huge. */
+const GIANT: Partial<Record<ZoneId, number>> = { elderwood: 1.6, jungle: 1.15 };
+
 /** A chimney, brazier or the volcano's plume, drawn from the shared smoke pool. */
 interface SmokeSource {
   x: number;
@@ -796,7 +860,18 @@ const SMOKE = [
   { life: 14, n: [12, 22], range: 2000 },
 ] as const;
 
-const TILE = 150;
+/** Ground and plants are built (a little each frame) out to this far from the hero, and the nearest at once on arrival. */
+const BUILD_R = 560;
+const PRIME_R = 230;
+/** Ground vertices per tile side, by quality. */
+const GROUND_SEGS = { low: 32, medium: 40, high: 50 } as const;
+const tileKey = (cx: number, cz: number) => (cx + 64) * 128 + cz + 64;
+/** Distance from a point to the nearest edge of a tile (0 inside it). */
+function tileGap(x: number, z: number, cx: number, cz: number): number {
+  const dx = Math.max(0, cx * TILE - x, x - (cx + 1) * TILE);
+  const dz = Math.max(0, cz * TILE - z, z - (cz + 1) * TILE);
+  return Math.hypot(dx, dz);
+}
 
 export class World {
   root = new THREE.Group();
@@ -829,6 +904,16 @@ export class World {
   private waterU!: Record<string, THREE.IUniform>;
   private lavaTime = { value: 0 };
   private plantTiles: PlantTile[] = [];
+  /** Ground tiles built so far (they stay: about 0.1 MB each), the one being built, and those wanted. */
+  private groundTiles: { mesh: THREE.Mesh; x: number; z: number }[] = [];
+  private built = new Set<number>();
+  private job: { key: number; it: Generator<void, void> } | null = null;
+  private wanted: { key: number; cx: number; cz: number }[] = [];
+  private wantT = 0;
+  private segs: number;
+  private shoreData!: Uint8Array;
+  private shoreTex!: THREE.DataTexture;
+  private plants!: PlantKit;
   private motes!: PointPool;
   private moteState!: { vel: Float32Array; age: Float32Array; life: Float32Array; kind: Int8Array; seed: Float32Array; alpha: Float32Array; mix: Float32Array };
   private smoke!: PointPool;
@@ -861,12 +946,12 @@ export class World {
       scene.add(l);
     }
 
-    const terrain = buildTerrainMesh(quality === 'low' ? 200 : quality === 'medium' ? 260 : 320);
-    this.root.add(terrain);
-    this.buildWater(terrain);
+    // The ground and plants stream in by tile around the hero (see stream()).
+    this.segs = GROUND_SEGS[quality];
+    this.buildWater();
     this.buildLava();
     this.buildGiant();
-    this.buildVegetation();
+    this.plants = this.plantKit();
     this.buildTown();
     this.buildDocks();
     this.buildShrines();
@@ -969,15 +1054,19 @@ export class World {
     return heightAt(x, z);
   }
 
-  /** The sea: ripples, fresnel sky reflection, sun glint and surf, with depth baked from the terrain. */
-  private buildWater(terrain: THREE.Mesh) {
-    const pos = terrain.geometry.attributes.position as THREE.BufferAttribute;
-    const n = Math.round(Math.sqrt(pos.count));
-    const data = new Uint8Array(n * n);
-    for (let i = 0; i < n * n; i++) data[i] = Math.max(0, Math.min(255, ((WATER_LEVEL - pos.getY(i)) / 8) * 255));
+  /**
+   * The sea: ripples, fresnel sky reflection, sun glint and surf, with depth
+   * from the ground (each ground tile fills in its part as it is built; the
+   * rest reads as open sea until then, far off in the haze).
+   */
+  private buildWater() {
+    const n = TILES * this.segs + 1;
+    const data = new Uint8Array(n * n).fill(255);
     const shore = new THREE.DataTexture(data, n, n, THREE.RedFormat);
     shore.magFilter = shore.minFilter = THREE.LinearFilter;
     shore.needsUpdate = true;
+    this.shoreData = data;
+    this.shoreTex = shore;
     // Grid vertex i sits at -WORLD_HALF + i * step; map onto texel centres.
     const a = (n - 1) / (n * WORLD_HALF * 2);
     this.waterU = THREE.UniformsUtils.merge([
@@ -996,7 +1085,7 @@ export class World {
     this.waterU.uShore = { value: shore };
     const material = new THREE.ShaderMaterial({ vertexShader: WATER_VERT, fragmentShader: WATER_FRAG, uniforms: this.waterU, transparent: true, fog: true });
     if (this.quality === 'low') material.defines = { WATER_LQ: '' };
-    const geo = new THREE.PlaneGeometry(2400, 2400, 1, 1);
+    const geo = new THREE.PlaneGeometry(WORLD_HALF * 2 + 2600, WORLD_HALF * 2 + 2600, 1, 1);
     geo.rotateX(-Math.PI / 2);
     this.water = new THREE.Mesh(geo, material);
     this.water.position.y = WATER_LEVEL;
@@ -1029,6 +1118,16 @@ export class World {
     this.lava = new THREE.Mesh(geo, material);
     this.lava.position.set(VOLCANO.x, LAVA_LEVEL, VOLCANO.z);
     this.root.add(this.lava);
+    // The Cinderwaste's pools, in the same melt.
+    for (const p of LAVA_POOLS) {
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28).rotateX(-Math.PI / 2), material);
+      pool.position.set(p.x, POOL_LAVA, p.z);
+      this.root.add(pool);
+      this.emitters.push({ pos: new THREE.Vector3(p.x, POOL_LAVA + 2, p.z), color: 0xff5010, intensity: 26, distance: p.r * 2.2, flicker: 0.3 });
+      const haze = glowSprite(0xff6020, p.r * 2.6, 0.22);
+      haze.position.set(p.x, POOL_LAVA + 4, p.z);
+      this.root.add(haze);
+    }
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
       const r = (VOLCANO.platform + VOLCANO.crater) / 2;
@@ -1066,12 +1165,15 @@ export class World {
     (halo.material as THREE.SpriteMaterial).fog = false;
     halo.position.copy(this.giantOrb.position);
     g.add(halo);
-    g.position.set(-80, -60, -640);
+    // Far beyond the Frostspine, past the world's northern edge.
+    g.position.set(-80, -90, -1350);
+    g.scale.setScalar(1.7);
     g.rotation.y = 0.3;
     this.root.add(g);
   }
 
-  private buildVegetation() {
+  /** The plants' shared geometry and materials (the plants themselves are built by tile, as the hero nears). */
+  private plantKit(): PlantKit {
     const geos = plantGeometries(this.quality === 'high' ? 1 : 0);
     const plantMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86 });
     const { time, wind, glow, leafLift } = this;
@@ -1092,22 +1194,28 @@ export class World {
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * (vGlow * uGlow + vLeaf * uLift);');
     };
     const rockMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true });
+    return { geos, plantMat, rockMat, grassScale: this.quality === 'low' ? 0.3 : this.quality === 'medium' ? 0.6 : 1 };
+  }
 
-    const sets = new Map<string, { kind: PlantKind; cx: number; cz: number; mats: THREE.Matrix4[]; colors: THREE.Color[] }>();
+  /**
+   * The plants of one tile, a row of candidate spots at a time. Each tile has
+   * its own seed and every spot draws the same numbers whatever the quality,
+   * so trees, rocks and their colliders stand in the same places for every
+   * player (only grass and flowers thin out on lower settings).
+   */
+  private *plantTile(cx: number, cz: number): Generator<void, void> {
+    const { geos, plantMat, rockMat, grassScale } = this.plants;
+    const rand = mulberry32((((cx + 64) * 73856093) ^ ((cz + 64) * 19349663)) >>> 0);
+    const sets = new Map<PlantKind, { mats: THREE.Matrix4[]; colors: THREE.Color[] }>();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
-    // Instances are grouped in tiles so whole tiles can be culled.
-    const put = (kind: PlantKind, x: number, z: number, s: number, color: THREE.Color, sink = 0.2) => {
-      const cx = Math.floor(x / TILE);
-      const cz = Math.floor(z / TILE);
-      const key = `${kind}:${cx},${cz}`;
-      let set = sets.get(key);
-      if (!set) sets.set(key, (set = { kind, cx, cz, mats: [], colors: [] }));
+    const put = (kind: PlantKind, x: number, z: number, s: number, color: THREE.Color, sink: number, turn: number, tall: number) => {
+      let set = sets.get(kind);
+      if (!set) sets.set(kind, (set = { mats: [], colors: [] }));
       const y = this.groundY(x, z) - sink * s;
-      set.mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, this.rand() * TAU), new THREE.Vector3(s, s * (0.85 + this.rand() * 0.3), s)));
+      set.mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, turn * TAU), new THREE.Vector3(s, s * (0.85 + tall * 0.3), s)));
       set.colors.push(color);
     };
-
     const avoid = (x: number, z: number, pad: number) => {
       if (Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.radius + pad) return true;
       for (const t of TRIALS) if (Math.hypot(x - t.x, z - t.z) < t.radius + pad + 4) return true;
@@ -1116,74 +1224,57 @@ export class World {
       if (Math.hypot(x - EYES_RUINS.x, z - EYES_RUINS.z) < 22 + pad) return true;
       return false;
     };
-
-    const density: Partial<Record<ZoneId, Partial<Record<PlantKind, number>>>> = {
-      plains: { oak: 0.032, birch: 0.006, bush: 0.02, rock: 0.02, grass: 0.5, flowers: 0.16 },
-      forest: { pine: 0.27, oak: 0.05, birch: 0.035, bush: 0.045, rock: 0.03, grass: 0.35, toadstool: 0.02 },
-      desert: { cactus: 0.025, rock: 0.03, dead: 0.008 },
-      volcano: { ashtree: 0.024, rock: 0.06 },
-      coast: { oak: 0.012, bush: 0.02, rock: 0.04, grass: 0.12, reeds: 0.04 },
-      swamp: { dead: 0.1, mushroom: 0.05, reeds: 0.1, grass: 0.32, rock: 0.02 },
-      crossroads: { dead: 0.06, crystal: 0.025, rock: 0.05, grass: 0.12 },
-      badlands: { dead: 0.012, rock: 0.05 },
-      town: { grass: 0.15, flowers: 0.05 },
-    };
-    const palettes: Partial<Record<PlantKind, Partial<Record<ZoneId, number[]>>>> = {
-      // Golden canopies on the plains, amber and green in the wood, autumn by the coast.
-      oak: { plains: [0xc8962a, 0xd8a838, 0xb07a24, 0xa89a34], forest: [0x4a5a2a, 0x5a6a30, 0x8a6a28, 0x6a7a34], coast: [0x7a8a40, 0x9a6a30] },
-      birch: { plains: [0xd8b440, 0xc8c050], forest: [0xb8b848, 0xd0a840, 0x98a840] },
-      pine: { forest: [0xffffff, 0xd8e8d0, 0xc0d0c8, 0xe8e0c0] },
-      bush: { plains: [0x8a8a38, 0xa08a34], forest: [0x4a5a2c, 0x5a6232], coast: [0x6a7a40] },
-      flowers: { plains: [0xffd040, 0xffc020, 0xfff0d0, 0xe04030], town: [0xffd040, 0xfff0d0] },
-      toadstool: { forest: [0xb83a2a, 0xa8402a, 0x9a7a50] },
-      mushroom: { swamp: [0x40e0c0, 0x60c0ff, 0xb070ff] },
-      crystal: { crossroads: [0xa070ff, 0x7060ff, 0xc080ff] },
-    };
-    const grassScale = this.quality === 'low' ? 0.3 : this.quality === 'medium' ? 0.6 : 1;
     const step = 6;
-    for (let gx = -WORLD_HALF + 10; gx < WORLD_HALF - 10; gx += step) {
-      for (let gz = -WORLD_HALF + 10; gz < WORLD_HALF - 10; gz += step) {
-        const x = gx + (this.rand() - 0.5) * step;
-        const z = gz + (this.rand() - 0.5) * step;
+    const lim = WORLD_HALF - 10;
+    for (let gz = cz * TILE + step / 2; gz < (cz + 1) * TILE; gz += step) {
+      for (let gx = cx * TILE + step / 2; gx < (cx + 1) * TILE; gx += step) {
+        const x = gx + (rand() - 0.5) * step;
+        const z = gz + (rand() - 0.5) * step;
+        if (Math.abs(x) > lim || Math.abs(z) > lim) continue;
         const y = this.groundY(x, z);
         if (y < 0.6 || inLava(x, z, y)) continue;
         const zone = zoneAt(x, z);
-        const d = density[zone];
+        const oasis = zone === 'dunes' && OASES.some((o) => Math.hypot(x - o.x, z - o.z) < o.r * 2.4);
+        const d = oasis ? OASIS_PLANTS : DENSITY[zone];
         if (!d) continue;
         const slope = normalAt(x, z).y;
         const clump = 0.5 + 0.5 * noise2(x / 40, z / 40);
+        const giant = GIANT[zone] ?? 1;
         for (const [k, p] of Object.entries(d)) {
           const kind = k as PlantKind;
+          // Always five draws, used or not, so the quality setting never shifts what grows where.
+          const roll = rand(), pick = rand(), shade = rand(), size = rand(), turn = rand();
           const small = SMALL.includes(kind);
           const tree = TREES.includes(kind);
           const chance = p * (kind === 'grass' ? grassScale * 3 : small ? grassScale * 2 : 1) * (kind === 'pine' || kind === 'oak' || kind === 'birch' ? 0.4 + clump * 1.2 : 1);
-          if (this.rand() > chance) continue;
+          if (roll > chance) continue;
           if (kind !== 'grass' && kind !== 'rock' && slope < 0.8) continue;
           if (kind === 'reeds' && y > 3) continue;
           if (avoid(x, z, small ? -6 : 2)) continue;
-          const pal = palettes[kind]?.[zone];
-          const color = pal ? new THREE.Color(pal[Math.floor(this.rand() * pal.length)]) : new THREE.Color(1, 1, 1);
-          color.multiplyScalar(0.9 + this.rand() * 0.2);
+          const pal = PALETTES[kind]?.[zone];
+          const color = pal ? new THREE.Color(pal[Math.floor(pick * pal.length)]) : new THREE.Color(1, 1, 1);
+          color.multiplyScalar(0.9 + shade * 0.2);
+          const tall = (turn * 7.31) % 1;
           if (kind === 'grass') {
-            put('grass', x, z, 0.8 + this.rand() * 0.8, color.setHex(GRASS[zone] ?? ZONES[zone].ground).multiplyScalar(1.1 + this.rand() * 0.4), 0);
+            put('grass', x, z, 0.8 + size * 0.8, color.setHex(GRASS[zone] ?? ZONES[zone].ground).multiplyScalar(1.1 + shade * 0.4), 0, turn, tall);
           } else if (kind === 'rock') {
-            const s = 0.6 + this.rand() * this.rand() * 4;
-            put('rock', x, z, s, color.setHex(ZONES[zone].rock).multiplyScalar(1.15 + this.rand() * 0.3), 0.35);
+            const s = 0.6 + size * ((pick * 3.7) % 1) * 4;
+            put('rock', x, z, s, color.setHex(ZONES[zone].rock).multiplyScalar(1.15 + shade * 0.3), 0.35, turn, tall);
             if (s > 1.8) this.addCollider(x, z, s * 0.85, this.groundY(x, z) + s * 0.8);
           } else if (small || kind === 'bush' || kind === 'crystal') {
-            put(kind, x, z, (kind === 'bush' ? 0.8 : 0.7) + this.rand() * 0.6, color, kind === 'crystal' ? 0.1 : 0.05);
+            put(kind, x, z, (kind === 'bush' ? 0.8 : 0.7) + size * 0.6, color, kind === 'crystal' ? 0.1 : 0.05, turn, tall);
             if (kind === 'crystal') this.addCollider(x, z, 0.6);
           } else {
-            const s = 0.8 + this.rand() * 0.6;
-            put(kind, x, z, s, color);
-            if (tree) this.addCollider(x, z, (kind === 'oak' ? 0.8 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
+            const s = (0.8 + size * 0.6) * (kind === 'palm' ? 1 : giant);
+            put(kind, x, z, s, color, 0.2, turn, tall);
+            if (tree) this.addCollider(x, z, (kind === 'oak' ? 0.8 : kind === 'palm' ? 0.5 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
           }
         }
       }
+      yield;
     }
     const lowRange = this.quality === 'low' ? 0.75 : 1;
-    for (const set of sets.values()) {
-      const { kind } = set;
+    for (const [kind, set] of sets) {
       const geo = kind === 'rock' ? ROCK : geos[kind];
       const mesh = new THREE.InstancedMesh(geo, kind === 'rock' ? rockMat : plantMat, set.mats.length);
       set.mats.forEach((m, i) => mesh.setMatrixAt(i, m));
@@ -1191,9 +1282,68 @@ export class World {
       mesh.computeBoundingSphere();
       mesh.castShadow = this.quality !== 'low' && (TREES.includes(kind) || kind === 'rock');
       mesh.receiveShadow = true;
+      mesh.visible = false;
       this.root.add(mesh);
       const range = (SMALL.includes(kind) ? 110 : kind === 'bush' || kind === 'crystal' ? 190 : 420) * lowRange;
-      this.plantTiles.push({ mesh, x: (set.cx + 0.5) * TILE, z: (set.cz + 0.5) * TILE, range });
+      this.plantTiles.push({ mesh, x: (cx + 0.5) * TILE, z: (cz + 0.5) * TILE, range });
+    }
+  }
+
+  /** One tile of the world: its ground (and its part of the sea's shore depth), then its plants. */
+  private *worldTile(cx: number, cz: number): Generator<void, void> {
+    const mesh: THREE.Mesh = yield* groundTile(cx, cz, this.segs, this.quality !== 'low');
+    this.root.add(mesh);
+    this.groundTiles.push({ mesh, x: (cx + 0.5) * TILE, z: (cz + 0.5) * TILE });
+    // Its depths go into the sea's shore texture (vertices sit on the texture's grid).
+    const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+    const n = this.segs + 1, N = TILES * this.segs + 1, half = (TILES / 2) * this.segs;
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) {
+        const gi = cx * this.segs + i + half, gj = cz * this.segs + j + half;
+        if (gi < 0 || gj < 0 || gi >= N || gj >= N) continue;
+        this.shoreData[gj * N + gi] = Math.max(0, Math.min(255, ((WATER_LEVEL - pos.getY(j * n + i)) / 8) * 255));
+      }
+    this.shoreTex.needsUpdate = true;
+    yield* this.plantTile(cx, cz);
+  }
+
+  /**
+   * Streams the world in around the hero: tiles nearest first, a few
+   * milliseconds of building a frame; on arriving somewhere unbuilt (a new
+   * game, fast travel, a respawn) the tiles close by are built at once.
+   */
+  private stream(dt: number, focus: THREE.Vector3) {
+    const fx = focus.x, fz = focus.z;
+    const here = tileKey(Math.floor(fx / TILE), Math.floor(fz / TILE));
+    const arrived = !this.built.has(here);
+    this.wantT -= dt;
+    if (arrived || this.wantT <= 0) {
+      this.wantT = 0.5;
+      this.wanted.length = 0;
+      const r = Math.ceil(BUILD_R / TILE) + 1;
+      const c0 = Math.floor(fx / TILE), r0 = Math.floor(fz / TILE);
+      for (let cz = r0 - r; cz <= r0 + r; cz++)
+        for (let cx = c0 - r; cx <= c0 + r; cx++) {
+          if (cx < -TILES / 2 || cz < -TILES / 2 || cx >= TILES / 2 || cz >= TILES / 2) continue;
+          const key = tileKey(cx, cz);
+          if (this.built.has(key) || this.job?.key === key) continue;
+          if (tileGap(fx, fz, cx, cz) < BUILD_R) this.wanted.push({ key, cx, cz });
+        }
+      this.wanted.sort((a, b) => tileGap(fx, fz, a.cx, a.cz) - tileGap(fx, fz, b.cx, b.cz));
+    }
+    // Arriving: everything close by now, so the hero never stands on nothing.
+    const t0 = performance.now();
+    const budget = arrived ? Infinity : this.quality === 'low' ? 3 : 4;
+    while (performance.now() - t0 < budget) {
+      if (!this.job) {
+        const next = this.wanted.shift();
+        if (!next || (arrived && tileGap(fx, fz, next.cx, next.cz) > PRIME_R)) break;
+        this.job = { key: next.key, it: this.worldTile(next.cx, next.cz) };
+      }
+      if (this.job.it.next().done) {
+        this.built.add(this.job.key);
+        this.job = null;
+      }
     }
   }
 
@@ -2151,8 +2301,14 @@ export class World {
     this.eyeMaterial.emissiveIntensity = 0.3 + night * 2.8 + Math.sin(t * 0.7) * 0.15;
     this.giantOrb.rotation.y = t * 0.05;
 
-    // Plants far beyond the fog (or too small to see) are skipped entirely.
+    this.stream(dt, focus);
+    // Ground and plants far beyond the fog (or too small to see) are skipped entirely.
     const view = Math.min(440, 2.4 / fog.density);
+    for (const gt of this.groundTiles) {
+      const dx = Math.max(0, Math.abs(focus.x - gt.x) - TILE / 2);
+      const dz = Math.max(0, Math.abs(focus.z - gt.z) - TILE / 2);
+      gt.mesh.visible = dx * dx + dz * dz < (view + 40) ** 2;
+    }
     for (const p of this.plantTiles) {
       const dx = Math.max(0, Math.abs(focus.x - p.x) - TILE / 2);
       const dz = Math.max(0, Math.abs(focus.z - p.z) - TILE / 2);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { fbm, lerp, noise2, smoothstep, tileableNoise } from './noise';
-import { ISLAND, SHRINES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId } from '../data/world';
+import { CINDER_CONES, ISLAND, ISLES, LAVA_POOLS, OASES, PASS, SHRINES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId } from '../data/world';
 
 export const WATER_LEVEL = 0;
 /** Depth at which you start swimming. */
@@ -11,6 +11,99 @@ const dist = (x: number, z: number, p: { x: number; z: number }) => Math.hypot(x
 const RIM = 88 * Math.pow(1 - VOLCANO.crater / VOLCANO.radius, 1.4);
 export const CRATER_FLOOR = RIM - 20;
 export const LAVA_LEVEL = RIM - 22.5;
+/** The surface of the Cinderwaste's lava pools. */
+export const POOL_LAVA = 2.2;
+
+/** Ridged noise in [0, 1]: sharp crests where the noise crosses zero (mountain ridges). */
+function ridged(x: number, y: number, octaves: number): number {
+  let sum = 0, amp = 1, freq = 1, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    const r = 1 - Math.abs(noise2(x * freq + i * 17.3, y * freq - i * 9.1));
+    sum += amp * r * r;
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return sum / norm;
+}
+
+/** Distance from a point to the pass through the Frostspine (a chain of segments). */
+function passDist(x: number, z: number): number {
+  let best = Infinity;
+  for (let i = 0; i < PASS.length - 1; i++) {
+    const [ax, az] = PASS[i], [bx, bz] = PASS[i + 1];
+    const vx = bx - ax, vz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz)));
+    best = Math.min(best, Math.hypot(x - ax - vx * t, z - az - vz * t));
+  }
+  return best;
+}
+
+// The outer lands' ground, each on its own (blended in by outerHeight).
+
+/** The Frostspine: ridged peaks rising northward, parted by a pass. */
+function peaksHeight(x: number, z: number): number {
+  const rise = smoothstep(-420, -640, z) * smoothstep(16, 70, passDist(x, z));
+  return 10 + 4 * fbm(x / 50, z / 50, 3) + rise * (18 + 125 * Math.pow(ridged(x / 270, z / 270, 4), 1.5));
+}
+
+/** The Cinderwaste: black plains, small cinder cones, pools of lava. */
+function cinderHeight(x: number, z: number): number {
+  let h = 5 + 4 * fbm(x / 90 + 2, z / 90, 3) + 1.2 * fbm(x / 14, z / 14, 2);
+  for (const c of CINDER_CONES) {
+    const d = Math.hypot(x - c.x, z - c.z);
+    if (d < c.r) h += c.h * Math.pow(1 - d / c.r, 1.6) - (d < c.r * 0.16 ? c.h * 0.3 * (1 - d / (c.r * 0.16)) : 0);
+  }
+  for (const p of LAVA_POOLS) {
+    const d = Math.hypot(x - p.x, z - p.z);
+    if (d < p.r * 1.6) h = lerp(h + (d > p.r ? 1.2 * (1 - smoothstep(p.r, p.r * 1.6, d)) : 0), POOL_LAVA - 1.2, 1 - smoothstep(p.r * 0.8, p.r * 1.05, d));
+  }
+  return h;
+}
+
+/** The Sea of Sand: long dunes, and oases. */
+function dunesHeight(x: number, z: number): number {
+  let h = 7 + 12 * Math.pow(Math.abs(Math.sin((x * 0.82 + z * 0.57) / 42 + 3.2 * fbm(x / 170, z / 170, 2))), 1.5) + 4 * fbm(x / 60, z / 60, 2);
+  for (const o of OASES) {
+    const d = Math.hypot(x - o.x, z - o.z);
+    if (d < o.r * 2.6) h = lerp(h, lerp(-1.7, 1.4, smoothstep(o.r * 0.7, o.r * 1.1, d)), 1 - smoothstep(o.r * 1.2, o.r * 2.6, d));
+  }
+  return h;
+}
+
+/** The Elderwood: high rolling forest hills. */
+const elderHeight = (x: number, z: number) => 9 + 9 * fbm(x / 110 + 3, z / 110, 4) + 3 * fbm(x / 28, z / 28, 2);
+
+/** The Verdant Tangle: low, wet ground cut by streams. */
+function jungleHeight(x: number, z: number): number {
+  const h = 3.8 + 6 * fbm(x / 80 + 9, z / 80, 4);
+  const stream = 1 - smoothstep(0.025, 0.07, Math.abs(fbm(x / 210, z / 210 + 4, 3)));
+  return lerp(h, -1.9, stream);
+}
+
+/** The Wine-Dark Sea: deep water and its islands. */
+function oceanHeight(x: number, z: number): number {
+  let h = -20 + 5 * fbm(x / 140, z / 140, 3);
+  for (const s of ISLES) {
+    const d = Math.hypot(x - s.x, z - s.z);
+    if (d < s.r * 1.6) h = lerp(h, 1.5 + s.h * (1 - smoothstep(0, s.r, d)) + 1.5 * fbm(x / 18, z / 18, 2), 1 - smoothstep(s.r * 0.75, s.r * 1.5, d));
+  }
+  return h;
+}
+
+/** Beyond the heartland: the outer lands blended in by which edge is near (corners mix two). */
+function outerHeight(x: number, z: number, h0: number): number {
+  const wN = smoothstep(-400, -540, z), wS = smoothstep(400, 540, z), wE = smoothstep(400, 540, x), wW = smoothstep(-400, -540, x);
+  const w = Math.max(wN, wS, wE, wW);
+  if (w <= 0) return h0;
+  const mix = (a: () => number, b: () => number, k: number) => (k <= 0 ? a() : k >= 1 ? b() : lerp(a(), b(), k));
+  let sum = 0, hs = 0;
+  if (wN > 0) (hs += wN * mix(() => peaksHeight(x, z), () => cinderHeight(x, z), smoothstep(200, 380, x))), (sum += wN);
+  if (wE > 0) (hs += wE * mix(() => dunesHeight(x, z), () => oceanHeight(x, z), smoothstep(140, 260, z))), (sum += wE);
+  if (wS > 0) (hs += wS * mix(() => oceanHeight(x, z), () => jungleHeight(x, z), smoothstep(-200, -330, x))), (sum += wS);
+  if (wW > 0) (hs += wW * mix(() => elderHeight(x, z), () => jungleHeight(x, z), smoothstep(220, 340, z))), (sum += wW);
+  return lerp(h0, hs / sum, w);
+}
 
 /** Terrain height before places are flattened. */
 function rawHeight(x: number, z: number): number {
@@ -50,9 +143,11 @@ function rawHeight(x: number, z: number): number {
     }
   }
 
-  // The world's edge: mountains (and sea cliffs to the south).
+  h = outerHeight(x, z, h);
+
+  // The world's edge: mountains (the open sea just runs on until the world ends).
   const edge = Math.max(Math.abs(x), Math.abs(z));
-  if (edge > WORLD_HALF - 70) h += Math.pow((edge - (WORLD_HALF - 70)) / 70, 2) * 70 * (0.7 + 0.3 * fbm(x / 30, z / 30, 2));
+  if (edge > WORLD_HALF - 70 && h > -3) h += Math.pow((edge - (WORLD_HALF - 70)) / 70, 2) * 70 * (0.7 + 0.3 * fbm(x / 30, z / 30, 2));
   return h;
 }
 
@@ -85,6 +180,12 @@ export function zoneAt(x: number, z: number): ZoneId {
   const pz = z + 34 * noise2(x / 110, z / 110 + 7) + 10 * noise2(x / 30 + 5, z / 30);
   if (dist(x, z, TOWN) < TOWN.radius) return 'town';
   if (dist(px, pz, VOLCANO) < VOLCANO.radius * 0.8) return 'volcano';
+  const ax = Math.abs(px), az = Math.abs(pz);
+  if (Math.max(ax, az) > 450) {
+    // The outer lands, by which edge is nearest.
+    if (az >= ax) return pz < 0 ? (px > 290 ? 'cinder' : 'peaks') : px < -265 ? 'jungle' : 'ocean';
+    return px > 0 ? (pz > 200 ? 'ocean' : 'dunes') : pz > 280 ? 'jungle' : 'elderwood';
+  }
   if (px < -140 && pz > 115) return 'swamp';
   if (pz > 135 || dist(x, z, ISLAND) < ISLAND.radius * 1.6) return 'coast';
   if (px < -150 && pz < -150) return 'crossroads';
@@ -96,7 +197,10 @@ export function zoneAt(x: number, z: number): ZoneId {
 
 export function inLava(x: number, z: number, y: number): boolean {
   const dv = dist(x, z, VOLCANO);
-  return dv > VOLCANO.platform + 0.5 && dv < VOLCANO.crater - 1 && y < LAVA_LEVEL + 1.2;
+  if (dv > VOLCANO.platform + 0.5 && dv < VOLCANO.crater - 1 && y < LAVA_LEVEL + 1.2) return true;
+  if (y > POOL_LAVA + 1.2) return false;
+  for (const p of LAVA_POOLS) if (dist(x, z, p) < p.r * 0.85) return true;
+  return false;
 }
 
 export function waterDepth(x: number, z: number): number {
@@ -147,6 +251,7 @@ export function detailTexture(): THREE.DataTexture {
 const PATCH: Record<ZoneId, number> = {
   town: 0x5a5e32, plains: 0x5f6a2c, forest: 0x403a24, desert: 0xc4a070, volcano: 0x2a2421,
   coast: 0x9a9070, swamp: 0x3a3a20, crossroads: 0x2e2c3a, badlands: 0x7e5434,
+  peaks: 0x5a6a4a, cinder: 0x1e1816, dunes: 0xdcb87a, elderwood: 0x3a3218, jungle: 0x2a6a24, ocean: 0x5a7a3a,
 };
 
 const tmpA = new THREE.Color();
@@ -224,66 +329,17 @@ const TERRAIN_NORMAL = /* glsl */ `
 }
 `;
 
-export function buildTerrainMesh(segments: number, hq = segments > 200): THREE.Mesh {
-  const size = WORLD_HALF * 2;
-  const geo = new THREE.PlaneGeometry(size, size, segments, segments);
-  geo.rotateX(-Math.PI / 2);
-  geo.deleteAttribute('uv');
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const colors = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    pos.setY(i, heightAt(x, z));
-  }
-  geo.computeVertexNormals();
-  const normals = geo.attributes.normal as THREE.BufferAttribute;
-  const sand = new THREE.Color(0x9c8a64);
-  const ash = new THREE.Color(0x5a5450);
-  const basalt = new THREE.Color(0x231c1a);
-  const path = new THREE.Color(0x7b6a4c);
-  const scorch = new THREE.Color(0x3a2a22);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    const y = pos.getY(i);
-    // Blend the zone colours of nearby points for soft borders.
-    tmpA.setRGB(0, 0, 0);
-    for (const [ox, oz] of [[0, 0], [10, 0], [-10, 0], [0, 10], [0, -10]]) {
-      const zid = zoneAt(x + ox, z + oz);
-      tmpB.setHex(ZONES[zid].ground).lerp(tmpC.setHex(PATCH[zid]), smoothstep(-0.2, 0.5, noise2(x / 55 + 3, z / 55)) * 0.75);
-      tmpA.r += tmpB.r / 5;
-      tmpA.g += tmpB.g / 5;
-      tmpA.b += tmpB.b / 5;
-    }
-    const zone = ZONES[zoneAt(x, z)];
-    const slope = 1 - normals.getY(i);
-    const rock = smoothstep(0.18, 0.4, slope);
-    tmpB.setHex(zone.rock);
-    tmpA.lerp(tmpB, rock);
-    if (zone.id !== 'swamp' && y < 1.6 && y > -3) tmpA.lerp(sand, 1 - smoothstep(0.4, 1.6, y));
-    if (y < -3) tmpA.lerp(tmpB.setHex(0x3a3d38), 0.6);
-    if (zone.id === 'volcano') {
-      const dv = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
-      tmpA.lerp(basalt, smoothstep(VOLCANO.crater + 30, VOLCANO.crater + 4, dv) * 0.8);
-      tmpA.lerp(ash, smoothstep(25, 70, y) * 0.55 * (1 - rock * 0.5));
-      // Old lava runs streaking down the cone.
-      const run = Math.abs(Math.sin(Math.atan2(z - VOLCANO.z, x - VOLCANO.x) * 9 + noise2(x / 30, z / 30) * 2));
-      tmpA.lerp(scorch, smoothstep(0.85, 1, run) * smoothstep(VOLCANO.radius, VOLCANO.crater + 20, dv) * 0.6);
-    }
-    if (zone.id === 'town') {
-      // Worn roads crossing the town square.
-      const road = Math.min(Math.abs(x - TOWN.x), Math.abs(z - TOWN.z));
-      tmpA.lerp(path, 1 - smoothstep(2, 4.5, road));
-      tmpA.lerp(path, (1 - smoothstep(9, 13, Math.hypot(x - TOWN.x, z - TOWN.z))) * 0.8);
-    }
-    const n = 0.88 + 0.24 * (0.5 + 0.5 * noise2(x / 4.3, z / 4.3));
-    colors[i * 3] = tmpA.r * n;
-    colors[i * 3 + 1] = tmpA.g * n;
-    colors[i * 3 + 2] = tmpA.b * n;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+/** Ground is built and drawn in square tiles this wide (the world is TILES across). */
+export const TILE = 150;
+export const TILES = Math.round((WORLD_HALF * 2) / TILE);
+
+const materials = new Map<boolean, THREE.MeshStandardMaterial>();
+
+/** The ground's material, shared by every tile (with the detail shader). */
+export function terrainMaterial(hq: boolean): THREE.MeshStandardMaterial {
+  let mat = materials.get(hq);
+  if (mat) return mat;
+  mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
   mat.defines = { TOWN_POS: `vec2(${TOWN.x.toFixed(1)}, ${TOWN.z.toFixed(1)})`, TOWN_R: TOWN.radius.toFixed(1) };
   if (hq) mat.defines.TERRAIN_HQ = '';
   const detail = detailTexture();
@@ -298,8 +354,119 @@ export function buildTerrainMesh(segments: number, hq = segments > 200): THREE.M
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${TERRAIN_ROUGH}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${TERRAIN_NORMAL}`);
   };
-  const mesh = new THREE.Mesh(geo, mat);
+  materials.set(hq, mat);
+  return mat;
+}
+
+const SAND = new THREE.Color(0x9c8a64);
+const ASH = new THREE.Color(0x5a5450);
+const BASALT = new THREE.Color(0x231c1a);
+const PATH = new THREE.Color(0x7b6a4c);
+const SCORCH = new THREE.Color(0x3a2a22);
+const SNOW = new THREE.Color(0xeef2f6);
+const EMBER = new THREE.Color(0x6a2414);
+const BLEND: [number, number][] = [[0, 0], [10, 0], [-10, 0], [0, 10], [0, -10]];
+
+/** The ground's colour at a point (height y, flatness ny: the normal's y). */
+function groundColor(x: number, z: number, y: number, ny: number, out: THREE.Color): THREE.Color {
+  // Blend the zone colours of nearby points for soft borders.
+  out.setRGB(0, 0, 0);
+  for (const [ox, oz] of BLEND) {
+    const zid = zoneAt(x + ox, z + oz);
+    tmpB.setHex(ZONES[zid].ground).lerp(tmpC.setHex(PATCH[zid]), smoothstep(-0.2, 0.5, noise2(x / 55 + 3, z / 55)) * 0.75);
+    out.r += tmpB.r / 5;
+    out.g += tmpB.g / 5;
+    out.b += tmpB.b / 5;
+  }
+  const zone = ZONES[zoneAt(x, z)];
+  const rock = smoothstep(0.18, 0.4, 1 - ny);
+  out.lerp(tmpB.setHex(zone.rock), rock);
+  if (zone.id !== 'swamp' && zone.id !== 'cinder' && y < 1.6 && y > -3) out.lerp(SAND, 1 - smoothstep(0.4, 1.6, y));
+  if (y < -3) out.lerp(tmpB.setHex(0x3a3d38), 0.6);
+  if (zone.id === 'volcano') {
+    const dv = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
+    out.lerp(BASALT, smoothstep(VOLCANO.crater + 30, VOLCANO.crater + 4, dv) * 0.8);
+    out.lerp(ASH, smoothstep(25, 70, y) * 0.55 * (1 - rock * 0.5));
+    // Old lava runs streaking down the cone.
+    const run = Math.abs(Math.sin(Math.atan2(z - VOLCANO.z, x - VOLCANO.x) * 9 + noise2(x / 30, z / 30) * 2));
+    out.lerp(SCORCH, smoothstep(0.85, 1, run) * smoothstep(VOLCANO.radius, VOLCANO.crater + 20, dv) * 0.6);
+  } else if (zone.id === 'peaks') {
+    // Snow on the heights, thinning on the steepest faces.
+    out.lerp(SNOW, smoothstep(34, 60, y + 8 * noise2(x / 40, z / 40)) * (1 - rock * 0.55));
+  } else if (zone.id === 'cinder') {
+    // Glowing seams and the scorched rims of the lava pools.
+    out.lerp(EMBER, (1 - smoothstep(0, 0.05, Math.abs(noise2(x / 26, z / 26)))) * 0.55);
+    for (const p of LAVA_POOLS) out.lerp(SCORCH, (1 - smoothstep(p.r, p.r * 1.8, Math.hypot(x - p.x, z - p.z))) * 0.7);
+  } else if (zone.id === 'town') {
+    // Worn roads crossing the town square.
+    const road = Math.min(Math.abs(x - TOWN.x), Math.abs(z - TOWN.z));
+    out.lerp(PATH, 1 - smoothstep(2, 4.5, road));
+    out.lerp(PATH, (1 - smoothstep(9, 13, Math.hypot(x - TOWN.x, z - TOWN.z))) * 0.8);
+  }
+  const n = 0.88 + 0.24 * (0.5 + 0.5 * noise2(x / 4.3, z / 4.3));
+  return out.multiplyScalar(n);
+}
+
+/**
+ * One tile of ground (tile cx, cz covers x from cx * TILE to (cx + 1) * TILE),
+ * built a row at a time: each `yield` lets a frame through, so streaming in
+ * new ground never stalls the game. Vertices sit on one world-wide grid and
+ * normals come from the heights around them, so tiles meet without seams.
+ */
+export function* groundTile(cx: number, cz: number, segs: number, hq: boolean): Generator<void, THREE.Mesh> {
+  const n = segs + 1, W = n + 2, step = TILE / segs;
+  const at = (k: number, base: number) => (base * segs + k) * step;
+  const hs = new Float32Array(W * W);
+  for (let j = -1; j <= n; j++) {
+    const z = at(j, cz);
+    for (let i = -1; i <= n; i++) hs[(j + 1) * W + i + 1] = heightAt(at(i, cx), z);
+    yield;
+  }
+  const H = (i: number, j: number) => hs[(j + 1) * W + i + 1];
+  const pos = new Float32Array(n * n * 3);
+  const nrm = new Float32Array(n * n * 3);
+  const col = new Float32Array(n * n * 3);
+  for (let j = 0; j < n; j++) {
+    const z = at(j, cz);
+    for (let i = 0; i < n; i++) {
+      const x = at(i, cx), y = H(i, j), k = (j * n + i) * 3;
+      let nx = H(i - 1, j) - H(i + 1, j), ny = 2 * step, nz = H(i, j - 1) - H(i, j + 1);
+      const l = Math.hypot(nx, ny, nz);
+      (nx /= l), (ny /= l), (nz /= l);
+      pos[k] = x;
+      pos[k + 1] = y;
+      pos[k + 2] = z;
+      nrm[k] = nx;
+      nrm[k + 1] = ny;
+      nrm[k + 2] = nz;
+      groundColor(x, z, y, ny, tmpA);
+      col[k] = tmpA.r;
+      col[k + 1] = tmpA.g;
+      col[k + 2] = tmpA.b;
+    }
+    yield;
+  }
+  const index = new Uint16Array(segs * segs * 6);
+  let q = 0;
+  for (let j = 0; j < segs; j++)
+    for (let i = 0; i < segs; i++) {
+      const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+      index[q++] = a;
+      index[q++] = c;
+      index[q++] = b;
+      index[q++] = b;
+      index[q++] = c;
+      index[q++] = d;
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(new THREE.BufferAttribute(index, 1));
+  geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, terrainMaterial(hq));
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
+  mesh.matrixAutoUpdate = false;
   return mesh;
 }

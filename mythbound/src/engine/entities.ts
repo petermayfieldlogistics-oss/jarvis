@@ -76,6 +76,30 @@ export function enemyModel(def: EnemyDef): Model {
       return creatureModel(buildImp(def.color, def.scale));
     case 'spiderling':
       return creatureModel(buildSpider(def.color, def.scale));
+    // The outer lands.
+    case 'frost-wolf':
+      return creatureModel(buildQuad(def.color, 'wolf', def.scale));
+    case 'jungle-stalker':
+      return creatureModel(buildQuad(def.color, 'hound', def.scale));
+    case 'tangle-spider':
+      return creatureModel(buildSpider(def.color, def.scale));
+    case 'sand-reaver':
+      return creatureModel(buildInsect(def.color, def.scale));
+    case 'frost-troll': {
+      const rig = buildHumanoid({ skin: 0x8aa2b4, armor: 0x5a6670, cloth: 0x3a4650, accent: 0xa8bccc, build: 'heavy', head: 'bare', hair: 0xe8eef4, tusks: true, brawn: 1.3, glowEyes: 0x9ad8ff, scale: def.scale });
+      rig.handR.add(buildWeapon('hammer'));
+      return humanoidModel(rig);
+    }
+    case 'ash-revenant': {
+      const rig = buildHumanoid({ skin: 0x3a302c, armor: 0x2a2220, cloth: 0x1a1412, accent: 0xff6a20, build: 'heavy', head: 'skull', glowEyes: 0xff8a30, cape: 0x1e1614, scale: def.scale });
+      rig.handR.add(buildWeapon('sword'));
+      return humanoidModel(rig);
+    }
+    case 'sea-raider': {
+      const rig = buildHumanoid({ skin: 0xa8805e, armor: 0x3a4a5a, cloth: 0x6a2a24, accent: 0xc8a050, build: 'light', head: 'bare', headband: 0x8a2a20, hair: 0x2a1c14, scale: def.scale });
+      rig.handR.add(buildWeapon('sword'));
+      return humanoidModel(rig);
+    }
   }
 }
 
@@ -174,6 +198,13 @@ const MOVESET: Record<EnemyId, { melee: Move[]; ranged?: Move[] }> = {
   'fire-imp': { melee: [m('claw', 0.5, 0.45, 0.5, { lunge: 3 })], ranged: [m('throw', 0.6, 0.55, 0.6, { ranged: true })] },
   drake: { melee: [m('bite', 0.65, 0.55, 0.7, { lunge: 6 })], ranged: [m('volley', 0.8, 0.7, 0.8, { ranged: true, shots: 3, dmg: 0.6 })] },
   spiderling: { melee: [m('bite', 0.45, 0.45, 0.5, { lunge: 7 })] },
+  'frost-wolf': { melee: [m('bite', 0.5, 0.5, 0.5, { lunge: 10 }), m('bite', 0.45, 0.45, 0.6, { lunge: 7 })] },
+  'jungle-stalker': { melee: [m('claw', 0.45, 0.45, 0.5, { lunge: 11 }), m('bite', 0.5, 0.5, 0.55, { lunge: 6 })] },
+  'tangle-spider': { melee: [m('bite', 0.5, 0.5, 0.55, { lunge: 8 })] },
+  'sand-reaver': { melee: [m('claw', 0.6, 0.5, 0.55, { lunge: 3 }), m('sting', 0.85, 0.6, 0.8, { dmg: 1.4 })] },
+  'frost-troll': { melee: [m('overhead', 0.9, 0.7, 0.9, { lunge: 3, dmg: 1.4 }), m('heavy', 1, 0.7, 1, { lunge: 2, dmg: 1.6 })] },
+  'ash-revenant': { melee: [m('slash', 0.55, 0.55, 0.5, { lunge: 2.5 }), m('slash2', 0.5, 0.55, 0.55, { lunge: 2.5 }), m('heavy', 0.8, 0.7, 0.8, { lunge: 3, dmg: 1.4 })] },
+  'sea-raider': { melee: [m('slash', 0.5, 0.55, 0.45, { lunge: 3 }), m('thrust', 0.6, 0.55, 0.55, { lunge: 4.5 }), m('overhead', 0.75, 0.6, 0.7, { lunge: 3, dmg: 1.3 })] },
 };
 
 /** Colours for affinity effects (boss auras, rune circles, shockwaves). */
@@ -869,12 +900,12 @@ export class Enemy extends Actor {
     const r = Math.random();
     if (!this.aware) return this.setState('idle');
     this.side = Math.random() < 0.5 ? -1 : 1;
-    if (id === 'bandit' || id === 'mars-legionary') {
+    if (id === 'bandit' || id === 'mars-legionary' || id === 'sea-raider' || id === 'ash-revenant') {
       if (r < 0.3) return this.startCircle(0.5, 0);
       if (r < 0.65) return this.startCircle(1.3, this.side);
     } else if (id === 'skeleton' || id === 'drowned') {
       if (r < 0.3) return this.startCircle(1.1, this.side);
-    } else if (id === 'wolf' || id === 'magma-hound') {
+    } else if (id === 'wolf' || id === 'magma-hound' || id === 'frost-wolf' || id === 'jungle-stalker') {
       // Hit and run: hop back, then circle the prey.
       if (r < 0.45) return this.startCircle(0.4, 0);
       if (r < 0.75) return this.startCircle(1.2, this.side);
