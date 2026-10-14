@@ -144,6 +144,8 @@ button:not(:disabled):active { transform: translateY(1px); }
 .title .tinner:has(.slotgrid) { max-width: min(1080px, 100%); width: 100%; }
 .title .who { margin: -12px 0 18px; color: var(--ink-dim); font-size: 17px; }
 .title .who b { color: #9fe0ff; font-weight: 600; }
+.title .invite { margin: -6px auto 16px; max-width: 30em; padding: 8px 12px; border: 1px solid rgba(120, 200, 255, 0.35); background: rgba(20, 40, 60, 0.45); color: var(--ink); font-size: 15px; }
+.title .invite b { color: #9fe0ff; letter-spacing: 0.15em; }
 button.link { background: none; border: none; box-shadow: none; color: var(--ink-dim); text-decoration: underline; text-underline-offset: 3px; font-size: 15px; padding: 6px 8px; margin-top: 10px; cursor: pointer; }
 button.link:not(:disabled):hover { color: var(--gold-hi); box-shadow: none; }
 button.danger { border-color: #a03020 !important; color: #ffb8a8 !important; }
@@ -865,6 +867,7 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 .coop .cstatus { margin: 10px 0; padding: 8px 12px; border-left: 2px solid var(--gold); background: rgba(0, 0, 0, 0.3); max-width: 520px; }
 .coop .cstatus.busy::after { content: ' …'; animation: pulse 0.8s infinite alternate; }
 .form input[type='text'] { background: #17130f; color: var(--ink); border: 1px solid var(--line); padding: 5px 8px; font-family: var(--serif); font-size: 15px; min-width: 160px; }
+.form input.invitelink { display: block; width: 100%; max-width: 520px; box-sizing: border-box; margin-top: 8px; font-size: 13px; color: var(--ink-dim); }
 .form input.codein { text-transform: uppercase; letter-spacing: 0.2em; width: 9em; min-width: 0; font-family: var(--display); }
 .coop ul.who { list-style: none; padding: 0; margin: 6px 0; }
 .coop ul.who li { padding: 3px 0; }
