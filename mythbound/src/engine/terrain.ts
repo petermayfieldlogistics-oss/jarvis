@@ -149,9 +149,13 @@ function rawHeight(x: number, z: number): number {
 
   h = outerHeight(x, z, h);
 
-  // The world's edge: mountains (the open sea just runs on until the world ends).
+  // The world's edge: mountains, except where the open sea runs on until the world ends
+  // (faded out across the same wide bands that turn the land into sea, so there is no wall).
   const edge = Math.max(Math.abs(x), Math.abs(z));
-  if (edge > WORLD_HALF - 70 && h > -3) h += Math.pow((edge - (WORLD_HALF - 70)) / 70, 2) * 70 * (0.7 + 0.3 * fbm(x / 30, z / 30, 2));
+  if (edge > WORLD_HALF - 70) {
+    const sea = Math.max(smoothstep(400, 540, z) * smoothstep(-330, -200, x), smoothstep(400, 540, x) * smoothstep(140, 260, z));
+    h += Math.pow((edge - (WORLD_HALF - 70)) / 70, 2) * 70 * (0.7 + 0.3 * fbm(x / 30, z / 30, 2)) * (1 - sea);
+  }
   return h;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { heightAt, zoneAt, inLava, CRATER_FLOOR, LAVA_LEVEL } from './terrain';
-import { SHRINES, TRIALS, TOWN, VOLCANO, NPCS, ISLAND, ISLES, LAVA_POOLS, OASES } from '../data/world';
+import { SHRINES, SPAWNS, TRIALS, TOWN, VOLCANO, NPCS, ISLAND, ISLES, LAVA_POOLS, OASES } from '../data/world';
 
 describe('terrain', () => {
   it('puts places in their zones', () => {
@@ -73,6 +73,22 @@ describe('the outer lands', () => {
         if (!arena && edge > 395 && edge < 560) expect(Math.abs(h - last), `${dx},${dz} at ${r}`).toBeLessThan(2.6);
         last = h;
       }
+    }
+  });
+});
+
+describe('places in the outer lands', () => {
+  it('puts every monster camp on dry land, out of lava, clear of the shrines', () => {
+    for (const s of SPAWNS.filter((c) => Math.max(Math.abs(c.x), Math.abs(c.z)) > 430)) {
+      expect(heightAt(s.x, s.z), `${s.x},${s.z}`).toBeGreaterThan(0.5);
+      expect(inLava(s.x, s.z, heightAt(s.x, s.z)), `${s.x},${s.z}`).toBe(false);
+      if (Math.max(Math.abs(s.x), Math.abs(s.z)) > 430) for (const sh of SHRINES) expect(Math.hypot(s.x - sh.x, s.z - sh.z) - s.radius, `${s.x},${s.z} near ${sh.id}`).toBeGreaterThan(24);
+    }
+  });
+
+  it('meets the world edge without walls where the sea meets the land', () => {
+    for (let x = -890; x <= 890; x += 2) {
+      for (const z of [870, 880, 888]) expect(Math.abs(heightAt(x + 2, z) - heightAt(x, z)), `${x},${z}`).toBeLessThan(6);
     }
   });
 });

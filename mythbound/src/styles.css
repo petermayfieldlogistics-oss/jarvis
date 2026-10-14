@@ -666,6 +666,9 @@ form.acct .link { align-self: center; }
 .vignette.hurt { background: radial-gradient(ellipse at center, transparent 55%, rgba(140, 0, 0, 0.75) 100%); }
 .vignette.eyes { background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 40, 10, 0.9) 100%); transition: opacity 0.2s; }
 .blackout { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+/* Arriving somewhere new (fast travel, a respawn): a moment of dark while the ground close by is built. */
+.hud .veil { position: absolute; inset: 0; background: #0b0a08; opacity: 0; pointer-events: none; transition: opacity 0.45s ease-out; }
+.hud .veil.on { opacity: 1; transition: opacity 0.12s; }
 .numbers, .barlayer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .dmg { position: absolute; left: 0; top: 0; font-family: var(--display); font-weight: 700; font-size: 16px; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; white-space: nowrap; }
 .dmg.crit { color: #ffd04a; font-size: 22px; }

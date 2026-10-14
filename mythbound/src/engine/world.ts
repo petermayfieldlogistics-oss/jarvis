@@ -863,7 +863,9 @@ const SMOKE = [
 
 /** Ground and plants are built (a little each frame) out to this far from the hero, and the nearest at once on arrival. */
 const BUILD_R = 560;
-const PRIME_R = 230;
+const PRIME_R = 160;
+/** On the host, trees' and rocks' colliders are built this far around every other hero (for the monsters it runs there). */
+const COLLIDE_R = 230;
 /** Ground vertices per tile side, by quality. */
 const GROUND_SEGS = { low: 32, medium: 40, high: 50 } as const;
 const tileKey = (cx: number, cz: number) => (cx + 64) * 128 + cz + 64;
@@ -910,6 +912,14 @@ export class World {
   private built = new Set<number>();
   private job: { key: number; it: Generator<void, void> } | null = null;
   private wanted: { key: number; cx: number; cz: number }[] = [];
+  /** Tiles whose plant colliders exist (built in full, or colliders only around another hero). */
+  private collided = new Set<number>();
+  private colJob: { key: number; it: Generator<void, void> } | null = null;
+  private wantedCol: { key: number; cx: number; cz: number }[] = [];
+  /** On the co-op host: where the other heroes are. Set by the game each frame. */
+  others: { x: number; z: number }[] = [];
+  /** Arrived somewhere unbuilt (a new game, fast travel, a respawn): the nearby tiles are still being built, and the screen is veiled. */
+  priming = true;
   private wantT = 0;
   private segs: number;
   private shoreData!: Uint8Array;
@@ -1206,13 +1216,17 @@ export class World {
    * so trees, rocks and their colliders stand in the same places for every
    * player (only grass and flowers thin out on lower settings).
    */
-  private *plantTile(cx: number, cz: number): Generator<void, void> {
+  private *plantTile(cx: number, cz: number, meshes = true): Generator<void, void> {
     const { geos, plantMat, rockMat, grassScale } = this.plants;
+    // Colliders once per tile (a tile near another hero in co-op may have had them built already).
+    const key = tileKey(cx, cz);
+    const collide = !this.collided.has(key);
     const rand = mulberry32((((cx + 64) * 73856093) ^ ((cz + 64) * 19349663)) >>> 0);
     const sets = new Map<PlantKind, { mats: THREE.Matrix4[]; colors: THREE.Color[] }>();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     const put = (kind: PlantKind, x: number, z: number, s: number, color: THREE.Color, sink: number, turn: number, tall: number) => {
+      if (!meshes) return;
       let set = sets.get(kind);
       if (!set) sets.set(kind, (set = { mats: [], colors: [] }));
       const y = this.groundY(x, z) - sink * s;
@@ -1263,19 +1277,21 @@ export class World {
           } else if (kind === 'rock') {
             const s = 0.6 + size * ((pick * 3.7) % 1) * 4;
             put('rock', x, z, s, color.setHex(ZONES[zone].rock).multiplyScalar(1.15 + shade * 0.3), 0.35, turn, tall);
-            if (s > 1.8) this.addCollider(x, z, s * 0.85, this.groundY(x, z) + s * 0.8);
+            if (s > 1.8 && collide) this.addCollider(x, z, s * 0.85, this.groundY(x, z) + s * 0.8);
           } else if (small || kind === 'bush' || kind === 'crystal') {
             put(kind, x, z, (kind === 'bush' ? 0.8 : 0.7) + size * 0.6, color, kind === 'crystal' ? 0.1 : 0.05, turn, tall);
-            if (kind === 'crystal') this.addCollider(x, z, 0.6);
+            if (kind === 'crystal' && collide) this.addCollider(x, z, 0.6);
           } else {
             const s = (0.8 + size * 0.6) * (kind === 'palm' ? 1 : giant);
             put(kind, x, z, s, color, 0.2, turn, tall);
-            if (tree) this.addCollider(x, z, (kind === 'oak' ? 0.8 : kind === 'palm' ? 0.5 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
+            if (tree && collide) this.addCollider(x, z, (kind === 'oak' ? 0.8 : kind === 'palm' ? 0.5 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
           }
         }
       }
       yield;
     }
+    this.collided.add(key);
+    if (!meshes) return;
     const lowRange = this.quality === 'low' ? 0.75 : 1;
     for (const [kind, set] of sets) {
       const geo = kind === 'rock' ? ROCK : geos[kind];
@@ -1312,15 +1328,18 @@ export class World {
 
   /**
    * Streams the world in around the hero: tiles nearest first, a few
-   * milliseconds of building a frame; on arriving somewhere unbuilt (a new
-   * game, fast travel, a respawn) the tiles close by are built at once.
+   * milliseconds of building a frame. Arriving somewhere unbuilt (a new
+   * game, fast travel, a respawn) builds the tiles close by faster, behind a
+   * veil, so the hero never stands on nothing and the game never freezes.
+   * On the co-op host, the trees' and rocks' colliders are also built around
+   * the other heroes, for the monsters it runs near them.
    */
   private stream(dt: number, focus: THREE.Vector3) {
     const fx = focus.x, fz = focus.z;
     const here = tileKey(Math.floor(fx / TILE), Math.floor(fz / TILE));
-    const arrived = !this.built.has(here);
+    if (!this.built.has(here) && this.job?.key !== here) this.priming = true;
     this.wantT -= dt;
-    if (arrived || this.wantT <= 0) {
+    if (this.priming || this.wantT <= 0) {
       this.wantT = 0.5;
       this.wanted.length = 0;
       const r = Math.ceil(BUILD_R / TILE) + 1;
@@ -1333,20 +1352,51 @@ export class World {
           if (tileGap(fx, fz, cx, cz) < BUILD_R) this.wanted.push({ key, cx, cz });
         }
       this.wanted.sort((a, b) => tileGap(fx, fz, a.cx, a.cz) - tileGap(fx, fz, b.cx, b.cz));
+      // The other heroes' surroundings: colliders only.
+      this.wantedCol.length = 0;
+      for (const o of this.others) {
+        const oc = Math.floor(o.x / TILE), or = Math.floor(o.z / TILE), k = Math.ceil(COLLIDE_R / TILE);
+        for (let cz = or - k; cz <= or + k; cz++)
+          for (let cx = oc - k; cx <= oc + k; cx++) {
+            if (cx < -TILES / 2 || cz < -TILES / 2 || cx >= TILES / 2 || cz >= TILES / 2) continue;
+            const key = tileKey(cx, cz);
+            if (this.collided.has(key) || this.colJob?.key === key || this.job?.key === key) continue;
+            if (tileGap(o.x, o.z, cx, cz) < COLLIDE_R && !this.wantedCol.some((w) => w.key === key)) this.wantedCol.push({ key, cx, cz });
+          }
+      }
     }
-    // Arriving: everything close by now, so the hero never stands on nothing.
+    // Close by first; the veil lifts once everything within PRIME_R is built.
+    if (this.priming) {
+      const next = this.wanted[0];
+      if (!this.job && (!next || tileGap(fx, fz, next.cx, next.cz) > PRIME_R)) this.priming = false;
+    }
     const t0 = performance.now();
-    const budget = arrived ? Infinity : this.quality === 'low' ? 3 : 4;
+    // (Behind the veil nothing shows, so arriving can take a bigger share of each frame.)
+    const budget = this.priming ? 30 : this.quality === 'low' ? 3 : 4;
     while (performance.now() - t0 < budget) {
-      if (!this.job) {
-        const next = this.wanted.shift();
-        if (!next || (arrived && tileGap(fx, fz, next.cx, next.cz) > PRIME_R)) break;
+      if (!this.job && this.wanted.length) {
+        const next = this.wanted.shift()!;
+        // (Its colliders may be on their way already: finish those first, so they are built once.)
+        if (this.colJob?.key === next.key) {
+          while (!this.colJob.it.next().done);
+          this.colJob = null;
+        }
         this.job = { key: next.key, it: this.worldTile(next.cx, next.cz) };
       }
-      if (this.job.it.next().done) {
-        this.built.add(this.job.key);
-        this.job = null;
+      if (this.job) {
+        if (this.job.it.next().done) {
+          this.built.add(this.job.key);
+          this.job = null;
+        }
+        continue;
       }
+      if (!this.colJob) {
+        const next = this.wantedCol.shift();
+        if (!next) break;
+        if (this.collided.has(next.key)) continue;
+        this.colJob = { key: next.key, it: this.plantTile(next.cx, next.cz, false) };
+      }
+      if (this.colJob.it.next().done) this.colJob = null;
     }
   }
 

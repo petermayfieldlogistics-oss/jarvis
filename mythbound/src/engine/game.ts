@@ -246,7 +246,9 @@ export class Game {
     this.scene.add(this.player.rig.root);
     const p = this.state.pos;
     const shrine = SHRINES.find((s) => s.id === this.state.lastShrine) ?? SHRINES[0];
-    if (p) this.player.pos.set(p[0], p[1], p[2]);
+    // A saved spot is put back on the ground (the land may have changed under it since: the old edge mountains are gone);
+    // one now under the sea goes back to the shrine.
+    if (p && heightAt(p[0], p[2]) > -1) this.player.pos.set(p[0], Math.min(p[1], heightAt(p[0], p[2]) + 0.5), p[2]);
     else this.player.pos.set(shrine.x + 2, heightAt(shrine.x + 2, shrine.z + 3), shrine.z + 3);
     this.cam.yaw = Math.PI;
     this.refreshHeroes();
@@ -1288,6 +1290,11 @@ export class Game {
 
     this.coop.update(dt);
     this.cam.update(dt, this);
+    // The host runs the monsters around every hero, so it needs the trees' colliders there too.
+    const others = this.world.others;
+    let n = 0;
+    if (this.coop.isHost) for (const r of this.coop.remotes.values()) if (r.ready) ((others[n] ??= { x: 0, z: 0 }).x = r.pos.x), (others[n++].z = r.pos.z);
+    others.length = n;
     this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer', this.fog);
     this.fx.update(gdt);
     this.hud.update(dt);

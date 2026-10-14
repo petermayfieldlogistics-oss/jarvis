@@ -516,7 +516,7 @@ export const SPAWNS: SpawnDef[] = [
   { x: -380, z: 700, radius: 20, enemies: [['tangle-spider', 3], ['jungle-stalker', 1]] },
   { x: -760, z: 420, radius: 20, enemies: [['jungle-stalker', 2]] },
   // The isles.
-  { x: 340, z: 610, radius: 20, enemies: [['sea-raider', 3]] },
+  { x: 395, z: 605, radius: 16, enemies: [['sea-raider', 3]] },
   { x: -60, z: 700, radius: 18, enemies: [['sea-raider', 2], ['drowned', 1]] },
   { x: 640, z: 450, radius: 18, enemies: [['sea-raider', 2], ['drowned', 2]] },
 ];

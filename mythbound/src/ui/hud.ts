@@ -76,6 +76,7 @@ export class Hud {
   root: HTMLElement;
   numberLayer: HTMLElement;
   private hp: Bar;
+  private veiled = true;
   private mana: Bar;
   private stam: Bar;
   private status: HTMLElement;
@@ -143,6 +144,7 @@ export class Hud {
       <div class="vignette hurt"></div>
       <div class="vignette eyes"></div>
       <div class="blackout"></div>
+      <div class="veil on"></div>
       <div class="barlayer"></div>
       <div class="numbers"></div>
       <div class="crosshair"></div>
@@ -403,6 +405,8 @@ export class Hud {
     const g = this.g;
     const p = g.player;
     const c = p.c;
+    // A veil while the ground close by is still being built (arriving somewhere new).
+    if (g.world.priming !== this.veiled) this.root.querySelector('.veil')!.classList.toggle('on', (this.veiled = g.world.priming));
     const hpK = Math.max(0, p.hp / p.maxHp);
     const low = hpK < 0.3 && p.alive;
     this.setBar(this.hp, 'bar hp', hpK, dt, low ? ' low' : '', `<b>${Math.ceil(p.hp)}</b> / ${p.maxHp}`);
@@ -764,7 +768,7 @@ export class Hud {
     const p = g.player.pos;
     const img = mapImage();
     // The map paints itself in a little at a time, around the hero first.
-    paintMap(g.settings.quality === 'low' ? 1.5 : 2.5, p.x, p.z);
+    paintMap(g.settings.quality === 'low' ? 1 : 2, p.x, p.z);
     const range = 110; // world units across half the minimap
     const scale = img.width / (WORLD_HALF * 2);
     const rot = g.camYaw - Math.PI;

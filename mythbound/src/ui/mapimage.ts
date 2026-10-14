@@ -10,6 +10,11 @@ let img: ImageData;
 /** Rows still to paint, the nearest to the hero last (popped first), and which are done. */
 let rows: number[] | null = null;
 const painted = new Uint8Array(SIZE);
+/** The row being painted, and how far along it (a row is painted a chunk at a time, so no frame overruns its budget). */
+let row = -1;
+let col = 0;
+let west = 0;
+const CHUNK = 32;
 
 /**
  * A painted top-down map of the whole world. It fills in a few rows each
@@ -40,36 +45,42 @@ export function paintMap(ms: number, x: number, z: number): boolean {
     }
   }
   const t0 = performance.now();
-  while (rows.length && performance.now() - t0 < ms) {
-    const py = rows.pop()!;
-    paintRow(py);
-    painted[py] = 1;
-    ctx.putImageData(img, 0, 0, 0, py, SIZE, 1);
+  while ((row >= 0 || rows.length) && performance.now() - t0 < ms) {
+    if (row < 0) {
+      row = rows.pop()!;
+      col = 0;
+      west = heightAt(-WORLD_HALF, -WORLD_HALF + (row + 0.5) * ((WORLD_HALF * 2) / SIZE));
+    }
+    const end = Math.min(SIZE, col + CHUNK);
+    paintSpan(row, col, end);
+    ctx.putImageData(img, 0, 0, col, row, end - col, 1);
+    col = end;
+    if (col >= SIZE) (painted[row] = 1), (row = -1);
   }
-  return rows.length > 0;
+  return row >= 0 || rows.length > 0;
 }
 
-function paintRow(py: number) {
+/** Paints pixels [from, to) of a row (`west` carries the height to their west, for the hill shading). */
+function paintSpan(py: number, from: number, to: number) {
   const scale = (WORLD_HALF * 2) / SIZE;
   const z = -WORLD_HALF + (py + 0.5) * scale;
-  let west = heightAt(-WORLD_HALF, z);
-  for (let px = 0; px < SIZE; px++) {
+  for (let px = from; px < to; px++) {
     const x = -WORLD_HALF + (px + 0.5) * scale;
     const h = heightAt(x, z);
-    let col: number;
-    if (inLava(x, z, h)) col = 0xff5010;
-    else if (h < 0) col = h < -12 ? 0x14283a : h < -6 ? 0x1a3040 : 0x2a4a58;
+    let rgb: number;
+    if (inLava(x, z, h)) rgb = 0xff5010;
+    else if (h < 0) rgb = h < -12 ? 0x14283a : h < -6 ? 0x1a3040 : 0x2a4a58;
     else {
       const zone = zoneAt(x, z);
-      col = zone === 'peaks' && h > 55 ? 0xd8dee4 : ZONES[zone].ground;
+      rgb = zone === 'peaks' && h > 55 ? 0xd8dee4 : ZONES[zone].ground;
     }
     // Hill shading, lit from the west.
     const shade = h >= 0 ? Math.max(0.55, Math.min(1.35, 1 + (west - h) * 0.12)) : 1;
     west = h;
     const i = (py * SIZE + px) * 4;
-    img.data[i] = Math.min(255, ((col >> 16) & 255) * shade * 1.2);
-    img.data[i + 1] = Math.min(255, ((col >> 8) & 255) * shade * 1.2);
-    img.data[i + 2] = Math.min(255, (col & 255) * shade * 1.2);
+    img.data[i] = Math.min(255, ((rgb >> 16) & 255) * shade * 1.2);
+    img.data[i + 1] = Math.min(255, ((rgb >> 8) & 255) * shade * 1.2);
+    img.data[i + 2] = Math.min(255, (rgb & 255) * shade * 1.2);
   }
 }
 
