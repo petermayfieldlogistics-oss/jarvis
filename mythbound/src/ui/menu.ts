@@ -1,5 +1,10 @@
 import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
+import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
+
+/** Where the world map names the outer lands. */
+const REGION_LABELS: [number, number, ZoneId][] = [
+  [-300, -720, 'peaks'], [640, -680, 'cinder'], [700, -200, 'dunes'], [-700, -150, 'elderwood'], [-620, 680, 'jungle'], [300, 760, 'ocean'],
+];
 import { rewardName } from '../engine/bosses';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treesFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
@@ -7,13 +12,15 @@ import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCo
 import { questLines, trackedId } from '../engine/questlog';
 import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
 import { isFood, isFruit } from '../rules/food';
-import { recipeGold, recipesAt, TOOLS } from '../rules/crafting';
+import { hasMade, recipeGold, recipesAt, TOOLS } from '../rules/crafting';
+import { wardrobeCounts } from '../rules/outfit';
 import { FRUITS, MATERIALS, STATION_NAME, spanText } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
+import { inviteLink } from '../rules/invite';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
-import { mapImage, toMap } from './mapimage';
+import { mapImage, paintMap, toMap } from './mapimage';
 
 type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
 
@@ -108,6 +115,7 @@ export class Menu {
     if (c.devilDeals) lines.push(`Deals with the Devil: ${c.devilDeals}/4.${isLightSealed(c, this.g.gameMinutes) ? ' Light sealed.' : ''}`);
     if (c.hpLost) lines.push(`Max HP lost to Soul or Power: ${Math.round(c.hpLost)}.`);
     if (c.tamed.length) lines.push(`Tamed: ${c.tamed.join(', ')}.`);
+    const wr = wardrobeCounts(c.wardrobe);
     const traits = (title: string, list: string[]) => `<div class="trait"><h4>${esc(title)}</h4><ul>${list.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
     return `
       <h2>${esc(c.name)}</h2>
@@ -120,6 +128,7 @@ export class Menu {
         <div>Embers <b>${c.gold}</b></div>
         <div>Trials <b>${WEAPON_TRIALS.filter((t) => this.g.state.trialsDone.includes(t.id)).length} / ${WEAPON_TRIALS.length}</b></div>
       </div>
+      <div class="btnrow wardrow"><button data-act="wardrobe">Wardrobe</button><small>Clothes ${wr.garments}/${wr.ofGarments} · Colours ${wr.dyes}/${wr.ofDyes}</small></div>
       ${lines.length ? `<ul class="notes">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
       <div class="cols traits">
         ${traits(CLASSES[c.classId].name, CLASSES[c.classId].traits)}
@@ -154,14 +163,14 @@ export class Menu {
     const other = held.filter(([id]) => !isFood(id) && !tools.some(([t]) => t === id) && !mats.some(([m]) => m === id));
     const items = [group('Food', food), group(`Fruit and sweets${c.fed ? ` · fed: ${FRUITS[c.fed.id].name}, ${spanText(c.fed.left)} left` : ''}`, fruit), group('Tools and supplies', tools), group('Materials', mats), group('Other', other)];
     // The recipe book: what each station makes, ticked once made.
-    const book = (['cookfire', 'bench', 'anvil'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
+    const book = (['cookfire', 'bench', 'anvil', 'loom'] as const).map((st) => `<h4 class="sub">${STATION_NAME[st]}</h4><div class="desc">${recipesAt(st).map((r) => `${this.g.state.flags[`made-${r.id}`] || hasMade(c, r) ? '✔ ' : ''}${esc(r.name)} <small>(${Object.entries(r.needs).map(([id, n]) => `${n} ${esc(ITEMS[id]?.name ?? id)}`).join(', ')}${r.arrows ? `, ${r.arrows} wood arrows` : ''}${r.gold ? `, ${recipeGold(c, r)} embers` : ''})</small>${r.camp ? ' <small>· any shrine</small>' : ''}`).join('<br>')}</div>`).join('');
     return `<h3>Weapons</h3>${weapons.join('')}
       <h3>Supplies</h3>
       <div class="row"><div><b>Flasks</b> ${c.flasks}/${c.flasksMax} <div class="desc">Restore half your health. Refilled at shrines.</div></div></div>
       ${ownsKnives(c) ? `<div class="row"><div><b>Throwing knives</b> ${c.knives}/${MAX_KNIVES} <div class="desc">Pick them up where they land. Refilled at shrines.</div></div></div>` : ''}
       ${c.arrows.wood + c.arrows.steel ? `<div class="row"><div><b>Arrows</b> ${c.arrows.wood} wood, ${c.arrows.steel} steel <div class="desc">Steel arrows hit 30% harder and are used first.</div></div></div>` : ''}
       ${items.join('') || ''}
-      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (fish and bread at any shrine too), craft at the workbench by the forge, smith at an anvil.</p>${book}</details>`;
+      <details class="book"><summary><h3>Recipe book</h3></summary><p class="hint">Cook at the fire by Wren's field (fish and bread at any shrine too), craft at the workbench by the forge, smith at an anvil, weave and dye at the loom north of the field.</p>${book}</details>`;
   }
 
   /** The class's skill tree: tiers as rows, prerequisites as lines, the picked node's ranks beside it. */
@@ -301,6 +310,12 @@ export class Menu {
     </div>`;
   }
 
+  /** The link that brings a friend straight into this room (always the online game's address, which co-op needs). */
+  private inviteLink(): string {
+    const here = /github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+    return inviteLink(here ? location.origin + location.pathname : PAGES_URL, this.g.coop.room);
+  }
+
   private coopName(): string {
     const c = this.g.player.c;
     return this.g.settings.coopName || this.g.accountName || c.classId[0].toUpperCase() + c.classId.slice(1);
@@ -316,7 +331,10 @@ export class Menu {
       const host = party.find((m) => m.host);
       return `<div class="coop form">
         ${co.isHost
-          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div><p class="hint">Friends open Mythbound, go to Menu → Co-op, type this code and press Join.</p>`
+          ? `<p>Your room code:</p><div class="code">${esc(co.room)}</div>
+            <div class="btnrow"><button class="primary" data-act="coop-invite">Share invite link</button></div>
+            <input type="text" class="invitelink" readonly value="${esc(this.inviteLink())}">
+            <p class="hint">Send friends the link: they sign in, pick a hero and land in your world. Or they can open Mythbound, go to Menu → Co-op, type the code and press Join.</p>`
           : `<p>You are in <b>${esc(host?.name ?? 'the host')}</b>’s world (room <b>${esc(co.room)}</b>).</p>`}
         <ul class="who"><li>${co.isHost ? '♛ ' : ''}${esc(name)} <small>(you)</small></li>${party.map((m) => `<li>${m.host ? '♛ ' : ''}${esc(m.name)} <small>level ${m.level}${m.alive ? '' : ' · fallen'}</small></li>`).join('')}</ul>
         ${status}
@@ -411,6 +429,7 @@ export class Menu {
       g.audio.play('pickup');
       this.render();
     });
+    this.el.querySelector('[data-act="wardrobe"]')?.addEventListener('click', () => g.openWardrobe());
     this.el.querySelector('[data-act="respec"]')?.addEventListener('click', () => {
       if (!this.respecArmed) {
         this.respecArmed = true;
@@ -495,6 +514,27 @@ export class Menu {
       void g.coop.join(g.settings.coopServer || DEFAULT_SERVER, this.coopCode, this.coopName());
     });
     this.el.querySelector('[data-act="coop-leave"]')?.addEventListener('click', () => g.coop.leave());
+    const link = this.el.querySelector<HTMLInputElement>('.invitelink');
+    link?.addEventListener('focus', () => link.select());
+    this.el.querySelector('[data-act="coop-invite"]')?.addEventListener('click', async () => {
+      const url = this.inviteLink();
+      // Phones get the share sheet (Messages, Discord…); elsewhere the link goes on the clipboard.
+      if (navigator.share && g.input.touch) {
+        try {
+          await navigator.share({ title: 'Mythbound', text: `Join my Mythbound world (room ${g.coop.room})`, url });
+          return;
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') return;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        g.hud.toast('Invite link copied. Paste it to your friends.', 'skill');
+      } catch {
+        link?.focus();
+        g.hud.toast('Copy the link under the button and send it to your friends.');
+      }
+    });
     this.el.querySelector('[data-act="reload"]')?.addEventListener('click', () => {
       g.save();
       location.reload();
@@ -512,9 +552,20 @@ export class Menu {
     const ctx = canvas.getContext('2d')!;
     const S = canvas.width;
     ctx.imageSmoothingEnabled = true;
+    // Opening the map paints in a good deal more of it at once.
+    paintMap(80, g.player.pos.x, g.player.pos.z);
     ctx.drawImage(mapImage(), 0, 0, S, S);
     ctx.fillStyle = 'rgba(10,8,6,0.15)';
     ctx.fillRect(0, 0, S, S);
+    // The outer lands' names, faint, over their regions.
+    ctx.font = 'italic 13px Cinzel, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(240,226,192,0.55)';
+    for (const [x, z, id] of REGION_LABELS) {
+      const [rx, ry] = toMap(x, z, S);
+      ctx.fillText(ZONES[id].name, rx, ry);
+    }
+    ctx.textAlign = 'start';
     const label = (x: number, z: number, text: string, color: string, r: number) => {
       const [px, py] = toMap(x, z, S);
       ctx.fillStyle = color;

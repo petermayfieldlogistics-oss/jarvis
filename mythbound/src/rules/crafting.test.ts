@@ -4,7 +4,8 @@ import { ENEMIES, ITEMS } from '../data/world';
 import { RUNES, runeItem } from '../data/defs';
 import { createCharacter, type CharacterChoice } from './character';
 import { CROPS, SEED_PACK } from '../data/goods';
-import { batches, craft, fishingPerks, hasTool, lacking, materialDrop, recipe, recipeGold, recipesAt, sellAll, sellValue } from './crafting';
+import { batches, craft, fishingPerks, hasMade, hasTool, lacking, makesName, materialDrop, recipe, recipeGold, recipesAt, sellAll, sellValue } from './crafting';
+import { DYES, GARMENTS } from '../data/goods';
 
 const hero = (over: Partial<CharacterChoice> = {}) =>
   createCharacter({ name: 'T', classId: 'warrior', subclassId: 'swordsman', raceId: 'human', roleId: 'historian', expansion: false, ...over }, () => 0.5);
@@ -29,7 +30,7 @@ describe('recipes', () => {
   });
 
   it('keeps each station to a few recipes per group (big touch buttons fit)', () => {
-    for (const station of ['cookfire', 'bench', 'anvil'] as const) {
+    for (const station of ['cookfire', 'bench', 'anvil', 'loom'] as const) {
       const groups = new Map<string, number>();
       for (const r of recipesAt(station)) groups.set(r.group, (groups.get(r.group) ?? 0) + 1);
       expect(groups.size).toBeGreaterThan(0);
@@ -131,9 +132,15 @@ describe('materials and fishing', () => {
   it('drops materials from the right foes', () => {
     expect(materialDrop('wolf', 0)).toBe('hide');
     expect(materialDrop('wolf', 0.99)).toBe(null);
-    expect(materialDrop('bandit', 0)).toBe(null);
+    // Bandits carry a little linen; legionaries, drakes and watchers the rarer cloth-makers' goods.
+    expect(materialDrop('bandit', 0)).toBe('linen');
+    expect(materialDrop('bandit', 0.5)).toBe(null);
+    expect(materialDrop('mars-legionary', 0)).toBe('bronze');
+    expect(materialDrop('drake', 0)).toBe('scale');
+    expect(materialDrop('eye-watcher', 0)).toBe('lens');
     expect(materialDrop('nobody', 0)).toBe(null);
-    for (const id of ['wolf', 'boar', 'spiderling', 'scorpion', 'drowned', 'skeleton', 'wraith', 'fire-imp', 'magma-hound']) expect(Object.hasOwn(ENEMIES, id)).toBe(true);
+    for (const id of ['wolf', 'boar', 'spiderling', 'scorpion', 'drowned', 'skeleton', 'wraith', 'fire-imp', 'magma-hound', 'bandit', 'bandit-archer', 'mars-legionary', 'drake', 'eye-watcher'])
+      expect(Object.hasOwn(ENEMIES, id)).toBe(true);
   });
 
   it('sells materials to Quill, nothing else', () => {
@@ -153,5 +160,69 @@ describe('materials and fishing', () => {
     c.items['fishing-line'] = 1;
     expect(fishingPerks(c, true)).toEqual({ zone: 36, golden: 5 });
     expect(fishingPerks(hero({ roleId: 'sailor' }), false).zone).toBe(34);
+  });
+});
+
+describe('the loom: linen, clothes and dyes', () => {
+  it('spins linen from flax, as many as the pack allows', () => {
+    const c = hero();
+    c.items.flax = 7;
+    const r = recipe('linen')!;
+    expect(r.station).toBe('loom');
+    expect(batches(c, r)).toBe(2);
+    expect(craft(c, r, 2)).toBe(2);
+    expect(c.items.linen).toBe(2);
+    expect(c.items.flax).toBe(1);
+  });
+
+  it('has a recipe for every made garment and dye, at the loom or the anvil', () => {
+    for (const g of GARMENTS.filter((x) => x.make)) {
+      const r = recipe(`sew-${g.id}`)!;
+      expect(r, g.id).toBeTruthy();
+      expect(r.station).toBe(g.make!.station);
+      expect(r.once).toBe(true);
+    }
+    for (const d of DYES.filter((x) => x.make)) expect(recipe(`dye-${d.id}`)?.station).toBe('loom');
+    // Earned looks have no recipe; the free ones need none.
+    expect(recipe('sew-crown')).toBeFalsy();
+    expect(recipe('dye-pearl')).toBeFalsy();
+    expect(recipe('sew-bare-head')).toBeFalsy();
+    // The anvil's Gear group gains the metal pieces.
+    expect(recipesAt('anvil').filter((r) => r.group === 'Gear').map((r) => r.id)).toEqual(expect.arrayContaining(['horseshoes', 'sew-circlet', 'sew-helm', 'sew-galea', 'sew-plate']));
+  });
+
+  it('makes a garment once, into the wardrobe (not the pack)', () => {
+    const c = hero();
+    c.items.linen = 5;
+    const r = recipe('sew-hood')!;
+    expect(hasMade(c, r)).toBe(false);
+    expect(batches(c, r)).toBe(1);
+    expect(craft(c, r, 3)).toBe(1);
+    expect(c.wardrobe.owned).toContain('hood');
+    expect(c.items.linen).toBe(3);
+    expect(c.items.hood).toBeUndefined();
+    expect(hasMade(c, r)).toBe(true);
+    expect(batches(c, r)).toBe(0);
+    expect(craft(c, r, 1)).toBe(0);
+    expect(c.items.linen).toBe(3);
+    expect(makesName(r.makes)).toBe('Traveller’s Hood');
+  });
+
+  it('teaches a dye colour once, for good', () => {
+    const c = hero();
+    c.items.madder = 4;
+    c.items.woad = 2;
+    const red = recipe('dye-madder')!;
+    expect(craft(c, red, 1)).toBe(1);
+    expect(c.wardrobe.dyes).toEqual(['madder']);
+    expect(c.items.madder).toBe(1);
+    expect(batches(c, red)).toBe(0);
+    expect(hasMade(c, red)).toBe(true);
+    expect(makesName(red.makes)).toBe('Madder Red dye');
+    // A mixed dye needs both plants.
+    expect(batches(c, recipe('dye-purple')!)).toBe(0);
+    c.items.madder = 2;
+    expect(craft(c, recipe('dye-purple')!, 1)).toBe(1);
+    expect(c.wardrobe.dyes).toEqual(['madder', 'purple']);
   });
 });

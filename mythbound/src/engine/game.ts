@@ -11,6 +11,7 @@ import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
 import { materialDrop } from '../rules/crafting';
 import { runeDrop } from '../rules/weapons';
+import { earnedUnlocks } from '../rules/outfit';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
@@ -35,6 +36,7 @@ import { Story } from './story';
 import { Hud } from '../ui/hud';
 import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
+import { Wardrobe } from '../ui/wardrobe';
 
 export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand';
 
@@ -126,6 +128,7 @@ export class Game {
   hud: Hud;
   dialog: Dialog;
   menu: Menu;
+  wardrobe: Wardrobe;
   story: Story;
   player!: Player;
   enemies: Enemy[] = [];
@@ -209,6 +212,7 @@ export class Game {
     this.hud = new Hud(ui, this);
     this.dialog = new Dialog(ui);
     this.menu = new Menu(ui, this);
+    this.wardrobe = new Wardrobe(ui, this);
     this.input = new Input(this.renderer.domElement);
     this.input.sensitivity = settings.sensitivity;
     this.input.invertY = settings.invertY;
@@ -248,12 +252,23 @@ export class Game {
     this.scene.add(this.player.rig.root);
     const p = this.state.pos;
     const shrine = SHRINES.find((s) => s.id === this.state.lastShrine) ?? SHRINES[0];
-    if (p) this.player.pos.set(p[0], p[1], p[2]);
+    // A saved spot is put back on the ground (the land may have changed under it since: the old edge mountains are gone);
+    // one now under the sea goes back to the shrine.
+    if (p && heightAt(p[0], p[2]) > -1) this.player.pos.set(p[0], Math.min(p[1], heightAt(p[0], p[2]) + 0.5), p[2]);
     else this.player.pos.set(shrine.x + 2, heightAt(shrine.x + 2, shrine.z + 3), shrine.z + 3);
     this.cam.yaw = Math.PI;
     this.refreshHeroes();
     this.summonLizardKin();
     this.updateTouchButtons();
+    // Heroes who earned the crown or a relic's colour before the wardrobe existed get them now.
+    this.grantEarned();
+  }
+
+  /** What deeds have earned for the wardrobe (the crown, the relics' colours): given once, with a toast. */
+  grantEarned(): boolean {
+    const got = earnedUnlocks(this.player.c, this.state.trialsDone);
+    for (const name of got) this.hud.toast(`Wardrobe: ${name} unlocked`, 'quest');
+    return got.length > 0;
   }
 
   updateTouchButtons() {
@@ -1055,6 +1070,8 @@ export class Game {
       this.state.unclaimed.push(boss.reward);
       this.placeLegendary(boss.reward);
       this.questProgress(t.elder ? 'elders' : 'trials', 1);
+      // The sixth weapon trial earns the Crown of the Six.
+      this.grantEarned();
     }
     this.save();
   }
@@ -1197,6 +1214,12 @@ export class Game {
     for (let t = 0; t < seconds; t += step) this.update(step);
   }
 
+  /** The wardrobe (from the loom, a shrine or the Hero tab). */
+  openWardrobe() {
+    if (this.menu.isOpen) this.menu.close();
+    this.wardrobe.open();
+  }
+
   setMode(m: Mode) {
     this.mode = m;
     this.input.enabled = m === 'play';
@@ -1294,7 +1317,13 @@ export class Game {
     }
 
     this.coop.update(dt);
+    this.wardrobe.update(dt);
     this.cam.update(dt, this);
+    // The host runs the monsters around every hero, so it needs the trees' colliders there too.
+    const others = this.world.others;
+    let n = 0;
+    if (this.coop.isHost) for (const r of this.coop.remotes.values()) if (r.ready) ((others[n] ??= { x: 0, z: 0 }).x = r.pos.x), (others[n++].z = r.pos.z);
+    others.length = n;
     this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer' || fedNightVision(this.player.c), this.fog);
     this.fx.update(gdt);
     this.hud.update(dt);

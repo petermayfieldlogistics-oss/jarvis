@@ -212,3 +212,14 @@ export function ripeCount(farm: FarmState): number {
   for (const p of farm.plots) if (p && stageOf(p, farm.clock) === 4) n++;
   return n;
 }
+
+/** A crop's name for a bedful: "carrots", but "wheat" and "madder" (no plural). */
+export const uncountable = (id: CropId) => CROPS[id].plural === CROPS[id].name.toLowerCase();
+
+/** One line for crops that ripened together: "Your carrots are ripe…", "Your madder is ripe…", "Your flax, woad and pumpkins are ripe…". */
+export function ripeNews(crops: readonly CropId[]): string {
+  const list = [...new Set(crops)];
+  const words = list.map((id) => CROPS[id].plural);
+  const named = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0];
+  return `Your ${named} ${list.length === 1 && uncountable(list[0]) ? 'is' : 'are'} ripe in Wren's field.`;
+}

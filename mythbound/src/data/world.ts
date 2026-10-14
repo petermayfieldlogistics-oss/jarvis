@@ -4,9 +4,20 @@
 import { ANCIENT_GLYPH, RELICS, RUNES, runeItem, type CreatureKind, type SpellId } from './defs';
 import { craftedItems, goodsItems, type GoodsItem } from './goods';
 
-export const WORLD_HALF = 450;
+/** Half the world's width: it runs from -WORLD_HALF to +WORLD_HALF on both axes. */
+export const WORLD_HALF = 900;
+/**
+ * The heartland (the first map, out to about ±430) keeps its places; the
+ * outer lands lie beyond it: mountains to the north, the Cinderwaste to the
+ * north-east, a sea of sand to the east, the Elderwood to the west, a jungle
+ * to the south-west and the open sea, with its islands, to the south.
+ */
+export const HEARTLAND = 430;
 
-export type ZoneId = 'town' | 'plains' | 'forest' | 'desert' | 'volcano' | 'coast' | 'swamp' | 'crossroads' | 'badlands';
+export type ZoneId =
+  | 'town' | 'plains' | 'forest' | 'desert' | 'volcano' | 'coast' | 'swamp' | 'crossroads' | 'badlands'
+  // The outer lands.
+  | 'peaks' | 'cinder' | 'dunes' | 'elderwood' | 'jungle' | 'ocean';
 
 export interface ZoneDef {
   id: ZoneId;
@@ -29,17 +40,46 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
   swamp: { id: 'swamp', name: 'The Weeping Mire', fog: 0x4f5a44, ground: 0x2f3324, rock: 0x3b3d33, level: 8 },
   crossroads: { id: 'crossroads', name: "Hecate's Crossroads", fog: 0x4a4466, ground: 0x3a3842, rock: 0x4a4752, level: 10 },
   badlands: { id: 'badlands', name: 'The Field of Mars', fog: 0x9c6e4e, ground: 0x6b4b36, rock: 0x5e4636, level: 11 },
+  peaks: { id: 'peaks', name: 'The Frostspine', fog: 0xb4c2d2, ground: 0x6e7660, rock: 0x6a6e76, level: 14 },
+  cinder: { id: 'cinder', name: 'The Cinderwaste', fog: 0x7a4838, ground: 0x2e2624, rock: 0x3c302c, level: 15 },
+  dunes: { id: 'dunes', name: 'The Sea of Sand', fog: 0xd8b07a, ground: 0xc9a266, rock: 0xa07a50, level: 12 },
+  elderwood: { id: 'elderwood', name: 'The Elderwood', fog: 0x56664c, ground: 0x2a3820, rock: 0x45504a, level: 12 },
+  jungle: { id: 'jungle', name: 'The Verdant Tangle', fog: 0x6a8a5c, ground: 0x34521f, rock: 0x4a5a40, level: 13 },
+  ocean: { id: 'ocean', name: 'The Wine-Dark Sea', fog: 0x7890aa, ground: 0xcdbb8e, rock: 0x6e7270, level: 14 },
 };
 
 export const TOWN = { x: 0, z: 20, radius: 62 };
 export const VOLCANO = { x: 0, z: -315, radius: 160, crater: 42, platform: 30 };
 export const ISLAND = { x: 70, z: 262, radius: 40 };
 
+/** Islands of the Wine-Dark Sea (h: how high they rise). */
+export const ISLES = [
+  { x: 360, z: 640, r: 70, h: 9 },
+  { x: -60, z: 720, r: 55, h: 7 },
+  { x: 640, z: 470, r: 60, h: 8 },
+  { x: 700, z: 790, r: 45, h: 6 },
+  { x: 150, z: 860, r: 40, h: 5 },
+];
+/** Oases in the Sea of Sand: a pool ringed with palms. */
+export const OASES = [{ x: 640, z: -150, r: 22 }, { x: 790, z: 80, r: 18 }, { x: 560, z: 60, r: 16 }];
+/** Lava pools on the Cinderwaste (hazards, like the crater's lava). */
+export const LAVA_POOLS = [
+  { x: 520, z: -560, r: 20 }, { x: 690, z: -700, r: 26 }, { x: 760, z: -480, r: 16 }, { x: 430, z: -740, r: 18 },
+];
+/** Cinder cones: small volcanoes on the Cinderwaste (r: radius at the foot, h: height). */
+export const CINDER_CONES = [
+  { x: 610, z: -620, r: 70, h: 34 }, { x: 800, z: -760, r: 60, h: 28 }, { x: 470, z: -820, r: 55, h: 22 },
+];
+/** The pass through the Frostspine: a valley floor the mountains part around. */
+export const PASS = [[-40, -470], [-150, -560], [-250, -640], [-330, -760]] as const;
+
 // --------------------------------------------------------------- monsters --
 
 export type EnemyId =
   | 'wolf' | 'boar' | 'bandit' | 'bandit-archer' | 'skeleton' | 'wraith' | 'scorpion'
-  | 'fire-imp' | 'magma-hound' | 'drowned' | 'eye-watcher' | 'mars-legionary' | 'drake' | 'spiderling';
+  | 'fire-imp' | 'magma-hound' | 'drowned' | 'eye-watcher' | 'mars-legionary' | 'drake' | 'spiderling'
+  // The outer lands.
+  | 'frost-wolf' | 'frost-troll' | 'jungle-stalker' | 'tangle-spider' | 'sand-reaver' | 'ash-revenant' | 'sea-raider';
 
 export type BodyType = 'humanoid' | 'quad' | 'floater' | 'insect' | 'imp' | 'drake';
 export type Affinity = 'fire' | 'water' | 'wind' | 'earth' | 'dark' | 'none';
@@ -82,6 +122,14 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
   drake: { id: 'drake', name: 'Ash Drake', body: 'drake', hp: 180, damage: 22, speed: 7, level: 13, affinity: 'fire', dark: false, xp: 120, gold: 40, color: 0x4a2a24, scale: 1.4, reach: 3, ranged: { projectile: 'fireball', range: 30, speed: 24 }, tame: 'drake', bleeds: true },
   // Hatched by the Giant Spider in its fights: quick and weak.
   spiderling: { id: 'spiderling', name: 'Spiderling', body: 'insect', hp: 20, damage: 5, speed: 8.5, level: 4, affinity: 'earth', dark: false, xp: 8, gold: 1, color: 0x2a221c, scale: 0.45, reach: 1.3, bleeds: true },
+  // The outer lands: harder than anything in the heartland.
+  'frost-wolf': { id: 'frost-wolf', name: 'Frostfang', body: 'quad', hp: 130, damage: 18, speed: 9.2, level: 13, affinity: 'water', dark: false, xp: 85, gold: 18, color: 0xd6dce6, scale: 1.25, reach: 2.3, bleeds: true },
+  'frost-troll': { id: 'frost-troll', name: 'Frost Troll', body: 'humanoid', hp: 280, damage: 28, speed: 5.2, level: 15, affinity: 'earth', dark: false, xp: 160, gold: 45, color: 0x8aa2b4, scale: 1.45, reach: 3.2, bleeds: true },
+  'jungle-stalker': { id: 'jungle-stalker', name: 'Jungle Stalker', body: 'quad', hp: 120, damage: 19, speed: 10, level: 13, affinity: 'earth', dark: false, xp: 85, gold: 18, color: 0x1e241a, scale: 1.2, reach: 2.4, bleeds: true },
+  'tangle-spider': { id: 'tangle-spider', name: 'Tangle Spider', body: 'insect', hp: 95, damage: 15, speed: 8, level: 12, affinity: 'earth', dark: false, xp: 70, gold: 14, color: 0x3a5224, scale: 0.95, reach: 2, bleeds: true },
+  'sand-reaver': { id: 'sand-reaver', name: 'Sand Reaver', body: 'insect', hp: 180, damage: 21, speed: 7, level: 13, affinity: 'earth', dark: false, xp: 100, gold: 24, color: 0xc49a5c, scale: 1.75, reach: 3, bleeds: true },
+  'ash-revenant': { id: 'ash-revenant', name: 'Ash Revenant', body: 'humanoid', hp: 190, damage: 24, speed: 5.6, level: 15, affinity: 'fire', dark: true, xp: 125, gold: 32, color: 0x2a2220, scale: 1.1, reach: 2.6, bleeds: false },
+  'sea-raider': { id: 'sea-raider', name: 'Sea Raider', body: 'humanoid', hp: 140, damage: 18, speed: 5.8, level: 13, affinity: 'water', dark: false, xp: 85, gold: 38, color: 0x3a4a5a, scale: 1, reach: 2.5, bleeds: true, drop: { item: 'fish', chance: 0.3 } },
 };
 
 // ------------------------------------------------------------------ bosses --
@@ -239,6 +287,13 @@ export const SHRINES: ShrineDef[] = [
   { id: 'mars', name: 'Gate of Mars', x: 230, z: -215 },
   { id: 'crossing', name: 'Moonlit Crossing', x: -215, z: -200 },
   { id: 'mire', name: 'Mire’s Edge', x: -210, z: 190 },
+  // The outer lands.
+  { id: 'frostspine', name: 'Frostspine Pass', x: -250, z: -640 },
+  { id: 'cinderwaste', name: 'Cinder Gate', x: 470, z: -560 },
+  { id: 'sandsea', name: 'Oasis of Stars', x: 615, z: -135 },
+  { id: 'elderwood', name: 'Eldest Oak', x: -640, z: -80 },
+  { id: 'tangle', name: 'Tangle Steps', x: -600, z: 560 },
+  { id: 'isles', name: 'Isle of Winds', x: 360, z: 640 },
 ];
 
 export interface NpcDef {
@@ -437,6 +492,35 @@ export const SPAWNS: SpawnDef[] = [
   { x: 300, z: -330, radius: 18, enemies: [['mars-legionary', 1], ['skeleton', 2]] },
   { x: 190, z: -170, radius: 18, enemies: [['skeleton', 3]] },
   { x: 290, z: -150, radius: 18, enemies: [['mars-legionary', 1], ['skeleton', 2]] },
+  // The Frostspine.
+  { x: -150, z: -575, radius: 22, enemies: [['frost-wolf', 3]] },
+  { x: -330, z: -720, radius: 22, enemies: [['frost-troll', 1], ['frost-wolf', 2]] },
+  { x: -520, z: -620, radius: 20, enemies: [['frost-troll', 2]] },
+  { x: 120, z: -640, radius: 20, enemies: [['frost-wolf', 2], ['frost-troll', 1]] },
+  // The Cinderwaste.
+  { x: 560, z: -480, radius: 22, enemies: [['ash-revenant', 2], ['fire-imp', 2]] },
+  { x: 700, z: -600, radius: 22, enemies: [['ash-revenant', 3]] },
+  { x: 520, z: -700, radius: 20, enemies: [['magma-hound', 2], ['ash-revenant', 1]] },
+  { x: 800, z: -560, radius: 18, enemies: [['ash-revenant', 2], ['eye-watcher', 1]] },
+  // The Sea of Sand.
+  { x: 560, z: -260, radius: 22, enemies: [['sand-reaver', 2]] },
+  { x: 720, z: -40, radius: 20, enemies: [['sand-reaver', 1], ['scorpion', 2]] },
+  { x: 600, z: 140, radius: 22, enemies: [['bandit', 3], ['bandit-archer', 2]], bonus: 10 },
+  { x: 820, z: -260, radius: 20, enemies: [['sand-reaver', 2], ['scorpion', 1]] },
+  // The Elderwood.
+  { x: -560, z: -200, radius: 22, enemies: [['tangle-spider', 4]] },
+  { x: -720, z: 40, radius: 22, enemies: [['jungle-stalker', 2], ['tangle-spider', 1]] },
+  { x: -560, z: 120, radius: 20, enemies: [['tangle-spider', 3]] },
+  { x: -780, z: -300, radius: 20, enemies: [['jungle-stalker', 1], ['tangle-spider', 2]] },
+  // The Verdant Tangle.
+  { x: -480, z: 470, radius: 22, enemies: [['jungle-stalker', 2], ['tangle-spider', 2]] },
+  { x: -700, z: 640, radius: 22, enemies: [['jungle-stalker', 3]] },
+  { x: -380, z: 700, radius: 20, enemies: [['tangle-spider', 3], ['jungle-stalker', 1]] },
+  { x: -760, z: 420, radius: 20, enemies: [['jungle-stalker', 2]] },
+  // The isles.
+  { x: 395, z: 605, radius: 16, enemies: [['sea-raider', 3]] },
+  { x: -60, z: 700, radius: 18, enemies: [['sea-raider', 2], ['drowned', 1]] },
+  { x: 640, z: 450, radius: 18, enemies: [['sea-raider', 2], ['drowned', 2]] },
 ];
 
 export interface PatrolDef {
@@ -472,6 +556,12 @@ export const AMBIENT: Partial<Record<ZoneId, { day: EnemyId[]; night: EnemyId[];
   swamp: { day: ['drowned', 'wraith'], night: ['eye-watcher', 'wraith'], pack: [1, 3] },
   crossroads: { day: ['skeleton', 'wraith'], night: ['skeleton', 'eye-watcher'], pack: [2, 3] },
   badlands: { day: ['skeleton', 'mars-legionary'], night: ['skeleton', 'eye-watcher'], pack: [1, 3] },
+  peaks: { day: ['frost-wolf', 'frost-wolf', 'frost-troll'], night: ['frost-wolf', 'wraith'], pack: [1, 3] },
+  cinder: { day: ['ash-revenant', 'magma-hound', 'fire-imp'], night: ['ash-revenant', 'eye-watcher'], pack: [1, 3] },
+  dunes: { day: ['sand-reaver', 'scorpion', 'bandit-archer'], night: ['sand-reaver', 'wraith'], pack: [1, 2] },
+  elderwood: { day: ['tangle-spider', 'tangle-spider', 'jungle-stalker'], night: ['tangle-spider', 'wraith'], pack: [1, 3] },
+  jungle: { day: ['jungle-stalker', 'tangle-spider'], night: ['jungle-stalker', 'eye-watcher'], pack: [1, 3] },
+  ocean: { day: ['sea-raider', 'drowned'], night: ['drowned', 'wraith'], pack: [1, 3] },
 };
 
 /** Ember ore veins in the volcano. */

@@ -5,14 +5,14 @@ import { BURST_COLOR, type Burst } from '../rules/power';
 import { HORSE } from '../rules/horse';
 import { foodCount } from '../rules/food';
 import { FRUITS } from '../data/goods';
-import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, ZONES, type QuestId } from '../data/world';
+import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, WORLD_HALF, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
 import { Boss } from '../engine/entities';
 import type { Game } from '../engine/game';
 import { nextQuestHint, questLines, trackedId, type QuestLine, type QuestTarget } from '../engine/questlog';
 import { saveSettings } from '../engine/state';
-import { mapImage, toMap } from './mapimage';
+import { mapImage, paintMap, toMap } from './mapimage';
 
 /** Two or three letters that tell spells apart on small touch slots. */
 const shortName = (name: string) => {
@@ -77,6 +77,7 @@ export class Hud {
   root: HTMLElement;
   numberLayer: HTMLElement;
   private hp: Bar;
+  private veiled = true;
   private mana: Bar;
   private stam: Bar;
   private status: HTMLElement;
@@ -144,6 +145,7 @@ export class Hud {
       <div class="vignette hurt"></div>
       <div class="vignette eyes"></div>
       <div class="blackout"></div>
+      <div class="veil on"></div>
       <div class="barlayer"></div>
       <div class="numbers"></div>
       <div class="crosshair"></div>
@@ -404,6 +406,8 @@ export class Hud {
     const g = this.g;
     const p = g.player;
     const c = p.c;
+    // A veil while the ground close by is still being built (arriving somewhere new).
+    if (g.world.priming !== this.veiled) this.root.querySelector('.veil')!.classList.toggle('on', (this.veiled = g.world.priming));
     const hpK = Math.max(0, p.hp / p.maxHp);
     const low = hpK < 0.3 && p.alive;
     this.setBar(this.hp, 'bar hp', hpK, dt, low ? ' low' : '', `<b>${Math.ceil(p.hp)}</b> / ${p.maxHp}`);
@@ -766,8 +770,10 @@ export class Hud {
     const S = 150;
     const p = g.player.pos;
     const img = mapImage();
+    // The map paints itself in a little at a time, around the hero first.
+    paintMap(g.settings.quality === 'low' ? 1 : 2, p.x, p.z);
     const range = 110; // world units across half the minimap
-    const scale = img.width / 900;
+    const scale = img.width / (WORLD_HALF * 2);
     const rot = g.camYaw - Math.PI;
     ctx.setTransform(this.miniScale, 0, 0, this.miniScale, 0, 0);
     ctx.clearRect(0, 0, S, S);

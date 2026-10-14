@@ -5,7 +5,7 @@
 // co-op the host's spawner does this around every hero.
 
 import * as THREE from 'three';
-import { AMBIENT, ENEMIES, PATROLS, SHRINES, SPAWNS, TOWN, TRIALS, VOLCANO, ZONES, type EnemyId } from '../data/world';
+import { AMBIENT, ENEMIES, PATROLS, SHRINES, SPAWNS, TOWN, TRIALS, VOLCANO, ZONES, type EnemyId, WORLD_HALF } from '../data/world';
 import { Boss, type Enemy } from './entities';
 import type { Hero } from './hero';
 import { heightAt, inLava, zoneAt, WATER_LEVEL } from './terrain';
@@ -319,7 +319,7 @@ export class Spawner {
 
   /** Can a wanderer appear here? Not in town, a trial arena, lava, the sea or the mountains at the edge. */
   private wild(x: number, z: number, wet: boolean) {
-    if (Math.max(Math.abs(x), Math.abs(z)) > 385) return false;
+    if (Math.max(Math.abs(x), Math.abs(z)) > WORLD_HALF - 75) return false;
     if (Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.radius + 28) return false;
     if (this.inArena(x, z, 22)) return false;
     if (Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.crater + 8) return false;

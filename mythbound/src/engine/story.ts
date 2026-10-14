@@ -13,8 +13,9 @@ import type { Interactable } from './world';
 import { CROP_IDS, CROPS, FISH_CAP, FRUITS, FRUIT_IDS, NELL, SEED_PACK, isPip, seedItem, spanText, type CropId, type FruitId } from '../data/goods';
 import { SATCHEL_IDS, buyFruit, dealOfDay, fishRoom, fruitPrice, marketDay, nellPays, sellFish, sellFruit } from '../rules/food';
 import { FARM, buySeeds, digUp, feed, harvest, isWet, plant, progress, rentPlot, rentPrice, ripeIn, sellCrop, stageOf, water, waterAll } from '../rules/farming';
-import { MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type StationId } from '../data/goods';
-import { batches, craft, fishingPerks, hasTool, lacking, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
+import { DYES, GARMENTS, MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type StationId } from '../data/goods';
+import { buyLook, knowsDye, ownsGarment } from '../rules/outfit';
+import { batches, craft, fishingPerks, hasMade, hasTool, lacking, makesName, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
 import { hours } from './farm';
 
 /** What the chronicler mutters on meeting the newer races. */
@@ -357,7 +358,7 @@ export class Story {
               ? `Embers for goods, goods for embers. And please, don't lean on the shelves. You have ${c.gold} embers.`
               : `Embers for goods, goods for embers. You have ${c.gold} embers.`,
           options: opts([
-            { label: 'Any curios? (wands, runes, instruments)', action: () => this.shop('quill') },
+            { label: 'Any curios? (wands, instruments, clothes, dyes)', action: () => this.curios() },
             this.buy('20 arrows', 30, () => (c.arrows.wood += 20)),
             this.buy('2 fish', 25, () => (c.items.fish = (c.items.fish ?? 0) + 2)),
             this.sellable().length ? { label: 'Sell… (ore, hides, bones, silk)', action: () => this.sellGoods() } : null,
@@ -727,15 +728,28 @@ export class Story {
 
   // ------------------------------------------------------------------ field --
 
-  private seedShop() {
+  /** Wren's seeds: food crops for the table, or fibre and dye plants for the loom. */
+  private seedShop(fibre?: boolean): void {
     const c = this.c;
+    if (fibre === undefined) {
+      return this.open({
+        title: 'Wren',
+        subtitle: 'Seeds',
+        text: `Seeds come ${SEED_PACK} to a pack. Food for the table, or flax and dye plants for the loom up the lane. You have ${c.gold} embers.`,
+        options: [
+          { label: 'Food crops (carrots, wheat, bluecaps, pumpkins)', action: () => this.seedShop(false) },
+          { label: 'Fibre & dye (flax, madder, woad, weld)', action: () => this.seedShop(true) },
+          { label: 'Back', action: () => this.talk('wren') },
+        ],
+      });
+    }
     this.open({
       title: 'Wren',
-      subtitle: 'Seeds',
-      text: `Seeds come ${SEED_PACK} to a pack. You have ${c.gold} embers.`,
+      subtitle: fibre ? 'Fibre & dye seeds' : 'Food crop seeds',
+      text: `${fibre ? 'The loom north of the field spins flax into linen and steeps the dye plants. ' : ''}Seeds come ${SEED_PACK} to a pack. You have ${c.gold} embers.`,
       options: [
         // Pips are not for sale: they come from eating the fruit.
-        ...CROP_IDS.filter((id) => !isPip(id)).map((id): DialogOption => {
+        ...CROP_IDS.filter((id) => !isPip(id) && !!CROPS[id].fibre === fibre).map((id): DialogOption => {
           const crop = CROPS[id];
           const cost = shopPrice(c, crop.seedPrice);
           const have = c.items[seedItem(id)] ?? 0;
@@ -744,11 +758,11 @@ export class Story {
             disabled: c.gold < cost,
             action: () => {
               if (!buySeeds(c, id)) this.g.audio.play('pickup');
-              this.seedShop();
+              this.seedShop(fibre);
             },
           };
         }),
-        { label: 'Back', action: () => this.talk('wren') },
+        { label: 'Back', action: () => this.seedShop() },
       ],
     });
   }
@@ -811,39 +825,7 @@ export class Story {
         options: [{ label: `Rent it (${price})`, disabled: c.gold < price, action: () => this.rentBed() }, { label: 'Leave it' }],
       });
     }
-    if (!p) {
-      const seeds = CROP_IDS.filter((id) => (c.items[seedItem(id)] ?? 0) > 0);
-      const empty: number[] = [];
-      for (let k = 0; k < farm.owned; k++) if (!farm.plots[k]) empty.push(k);
-      const seedRow = (id: CropId, beds: number[]): DialogOption => ({
-        label: beds.length > 1
-          ? `Plant ${CROPS[id].plural} in every empty bed (${Math.min(beds.length, c.items[seedItem(id)] ?? 0)})`
-          : `Plant ${CROPS[id].name.toLowerCase()} (${c.items[seedItem(id)]} ${(CROPS[id].seeds ?? 'seeds').slice(0, c.items[seedItem(id)] === 1 ? -1 : undefined)}) · ripe in ${hours(CROPS[id].grow)}`,
-        action: () => this.sow(beds, id),
-      });
-      // At most eight buttons: with many kinds of seed, "every empty bed" gets its own list.
-      const many = seeds.length > 3;
-      return this.open({
-        title: 'Seed bed',
-        text: seeds.length ? 'What will you plant?' : 'You have no seeds. Wren sells them, by the gate.',
-        options: [
-          ...seeds.slice(0, 6).map((id) => seedRow(id, [i])),
-          ...(empty.length > 1 && !many ? seeds.map((id) => seedRow(id, empty)) : []),
-          ...(empty.length > 1 && many
-            ? [{
-                label: `Plant every empty bed (${empty.length})…`,
-                action: () =>
-                  this.open({
-                    title: 'Every empty bed',
-                    text: 'Which seed?',
-                    options: [...seeds.slice(0, 7).map((id) => seedRow(id, empty)), { label: 'Back', action: () => this.plot(i) }],
-                  }),
-              }]
-            : []),
-          { label: 'Leave it' },
-        ],
-      });
-    }
+    if (!p) return this.sowBed(i);
     const crop = CROPS[p.crop];
     const stage = stageOf(p, farm.clock);
     // One tap does the whole row (this bed and the others beside it that need the same).
@@ -917,6 +899,61 @@ export class Story {
     });
   }
 
+  /**
+   * An empty bed: pick a seed (food or fibre first, when there are too many
+   * kinds for one list), then this bed or every empty one.
+   */
+  private sowBed(i: number, fibre?: boolean, crop?: CropId): void {
+    const c = this.c;
+    const farm = this.g.state.farm;
+    const all = CROP_IDS.filter((id) => (c.items[seedItem(id)] ?? 0) > 0);
+    const empty: number[] = [];
+    for (let k = 0; k < farm.owned; k++) if (!farm.plots[k]) empty.push(k);
+    if (!all.length) return this.open({ title: 'Seed bed', text: 'You have no seeds. Wren sells them, by the gate.', options: [{ label: 'Leave it' }] });
+    // "seeds" or "pips" (kept from eating fruit), singular for one.
+    const unit = (id: CropId, n: number) => (CROPS[id].seeds ?? 'seeds').slice(0, n === 1 ? -1 : undefined);
+    // A seed picked: here, or in every empty bed.
+    if (crop) {
+      const n = c.items[seedItem(crop)] ?? 0;
+      if (empty.length < 2) return this.sow([i], crop);
+      return this.open({
+        title: 'Seed bed',
+        subtitle: CROPS[crop].name,
+        text: `You have ${n} ${CROPS[crop].name.toLowerCase()} ${unit(crop, n)}; ${empty.length} of your beds are empty. Ripe in ${hours(CROPS[crop].grow)}.`,
+        options: [
+          { label: 'Plant this bed', action: () => this.sow([i], crop) },
+          { label: `Plant every empty bed (${Math.min(empty.length, n)})`, action: () => this.sow(empty, crop) },
+          { label: 'Back', action: () => this.sowBed(i, fibre) },
+        ],
+      });
+    }
+    // Up to seven kinds fit in one list; more are split into food and fibre.
+    const split = all.length > 7 && fibre === undefined;
+    if (split) {
+      return this.open({
+        title: 'Seed bed',
+        text: 'What will you plant?',
+        options: [
+          { label: 'Food crops', action: () => this.sowBed(i, false) },
+          { label: 'Fibre & dye', action: () => this.sowBed(i, true) },
+          { label: 'Leave it' },
+        ],
+      });
+    }
+    const seeds = fibre === undefined ? all : all.filter((id) => !!CROPS[id].fibre === fibre);
+    return this.open({
+      title: 'Seed bed',
+      text: empty.length > 1 ? `What will you plant? (${empty.length} of your beds are empty.)` : 'What will you plant?',
+      options: [
+        ...seeds.map((id): DialogOption => ({
+          label: `${CROPS[id].name} (${c.items[seedItem(id)]} ${unit(id, c.items[seedItem(id)] ?? 0)}) · ripe in ${hours(CROPS[id].grow)}`,
+          action: () => this.sowBed(i, fibre, id),
+        })),
+        fibre === undefined ? { label: 'Leave it' } : { label: 'Back', action: () => this.sowBed(i) },
+      ],
+    });
+  }
+
   private sow(beds: number[], crop: CropId) {
     const g = this.g;
     let n = 0;
@@ -955,6 +992,7 @@ export class Story {
             const ready = list.filter((r) => r.group === gname && batches(c, r) > 0).length;
             return { label: `${gname}${ready ? ` (${ready} ready)` : ''}`, action: () => this.craftAt(station, camp, gname) };
           }),
+          ...(station === 'loom' ? [{ label: 'Change outfit', action: () => this.g.openWardrobe() }] : []),
           { label: 'Done' },
         ],
       });
@@ -966,10 +1004,10 @@ export class Story {
       options: [
         ...shown.map((r): DialogOption => {
           const n = batches(c, r);
-          const owned = r.once && r.makes.kind === 'item' && hasTool(c, r.makes.id);
+          const owned = hasMade(c, r);
           const miss = lacking(c, r)[0];
           const label = owned
-            ? `${r.name} (yours)`
+            ? `${r.name} (${r.makes.kind === 'dye' ? 'known' : 'yours'})`
             : n > 0
               ? `✔ ${r.name} (${n})`
               : `${r.name} · need ${miss ? `${miss.need - miss.have} ${miss.id === 'arrows' ? 'wood arrows' : (ITEMS[miss.id]?.name ?? miss.id)}` : `${recipeGold(c, r)} embers`}`;
@@ -988,12 +1026,12 @@ export class Story {
     if (r.arrows) needs.push(`Wood arrows ${c.arrows.wood}/${r.arrows}`);
     const gold = recipeGold(c, r);
     if (gold) needs.push(`Embers ${c.gold}/${gold}${gold < (r.gold ?? 0) ? ' (blacksmith: half)' : ''}`);
-    const makes = r.makes.kind === 'arrows' ? `${r.makes.n} ${r.makes.type} arrows` : `${r.makes.n} ${ITEMS[r.makes.id]?.name ?? r.makes.id}`;
+    const makes = makesName(r.makes);
+    const look = r.makes.kind === 'garment' || r.makes.kind === 'dye';
     const make = (times: number) => () => {
       const made = craft(c, r, times);
       if (made > 0) {
-        const total = r.makes.kind === 'arrows' ? `+${r.makes.n * made} ${r.makes.type} arrows` : `+${r.makes.n * made} ${ITEMS[r.makes.id]?.name ?? r.makes.id}`;
-        g.hud.toast(total, 'quest');
+        g.hud.toast(r.makes.kind === 'garment' ? `New garment: ${makes}` : r.makes.kind === 'dye' ? `New colour: ${makes}` : `+${makesName(r.makes, made)}`, 'quest');
         g.audio.play(station === 'anvil' ? 'slam' : 'pickup');
         g.fx.emit(g.player.center(), { color: station === 'cookfire' ? 0xffa040 : station === 'anvil' ? 0xffc070 : 0xc8a070, count: 16, speed: 3, life: 0.5, size: 0.3, up: 1.5 });
         if (r.needs['ember-ore']) g.questProgress('ore', 0);
@@ -1013,7 +1051,9 @@ export class Story {
       subtitle: `Makes ${makes}`,
       text: `${r.blurb}\n\nNeeds: ${needs.join(' · ')}`,
       options: [
-        { label: 'Make 1', disabled: n < 1, action: make(1) },
+        hasMade(c, r)
+          ? { label: look ? 'Change outfit' : 'Made', disabled: !look, action: look ? () => this.g.openWardrobe() : undefined }
+          : { label: r.makes.kind === 'dye' ? 'Mix the dye' : r.once ? 'Make it' : 'Make 1', disabled: n < 1, action: make(1) },
         ...(n >= 5 && !r.once ? [{ label: 'Make 5', action: make(5) }] : []),
         ...(n > 1 && !r.once ? [{ label: `Make all (${n})`, action: make(n) }] : []),
         { label: 'Back', action: () => this.craftAt(station, camp, group) },
@@ -1117,6 +1157,7 @@ export class Story {
       options: [
         { label: night ? 'Pass time until morning' : 'Pass time until nightfall', action: () => (g.passTime(night ? 7 * 60 : 20 * 60), g.hud.toast(night ? 'Dawn breaks.' : 'Night falls.')) },
         { label: 'Cook by the flame', action: () => this.craftAt('cookfire', true) },
+        { label: 'Change outfit', action: () => g.openWardrobe() },
         { label: 'Skills', action: () => g.menu.open('skills') },
         { label: 'Travel to another shrine', action: () => g.menu.open('map') },
         { label: 'Leave' },
@@ -1246,6 +1287,58 @@ export class Story {
   }
 
   /** Brann's steel (and runes) or Quill's curios. */
+  /** Quill's curios: wands, runes and instruments, or clothes and dye colours. */
+  private curios() {
+    const c = this.c;
+    const clothes = GARMENTS.filter((x) => x.price && !ownsGarment(c.wardrobe, x.id)).length;
+    const dyes = DYES.filter((x) => x.price && !knowsDye(c.wardrobe, x.id)).length;
+    this.open({
+      title: 'Quill',
+      subtitle: 'Curios',
+      text: `What catches your eye? You have ${c.gold} embers.`,
+      options: [
+        { label: 'Wands, runes and instruments', action: () => this.shop('quill') },
+        { label: `Clothes${clothes ? ` (${clothes} to buy)` : ' (you have them all)'}`, action: () => this.lookShop('garment') },
+        { label: `Dyes${dyes ? ` (${dyes} to buy)` : ' (you have them all)'}`, action: () => this.lookShop('dye') },
+        { label: 'Back', action: () => this.talk('quill') },
+      ],
+    });
+  }
+
+  /** Quill's clothes or dye colours (each colour, once bought, is yours for good). */
+  private lookShop(kind: 'garment' | 'dye') {
+    const c = this.c;
+    const g = this.g;
+    const stock = (kind === 'garment' ? GARMENTS : DYES).filter((x) => x.price);
+    this.open({
+      title: 'Quill',
+      subtitle: kind === 'garment' ? 'Clothes' : 'Dyes',
+      text: `${kind === 'garment' ? 'Plain, well made. Try them on at any shrine, or at the loom by Wren’s field.' : 'Buy a colour once and it’s yours to dye anything with, as often as you like. Wren grows the plants, if you’d rather make your own.'} You have ${c.gold} embers.`,
+      options: [
+        ...stock.map((x): DialogOption => {
+          const owned = kind === 'garment' ? ownsGarment(c.wardrobe, x.id) : knowsDye(c.wardrobe, x.id);
+          const cost = shopPrice(c, x.price!);
+          return {
+            label: owned ? `${x.name} (yours)` : `${x.name} (${cost}) · ${x.blurb}`,
+            disabled: owned || c.gold < cost,
+            action: () => {
+              const err = buyLook(c, kind, x.id, cost);
+              if (err) g.hud.toast(err, 'warn');
+              else {
+                g.audio.play('pickup');
+                g.hud.toast(kind === 'garment' ? `New garment: ${x.name}` : `New colour: ${x.name}`, 'quest');
+                g.save();
+              }
+              this.lookShop(kind);
+            },
+          };
+        }),
+        { label: 'Change outfit', action: () => g.openWardrobe() },
+        { label: 'Back', action: () => this.curios() },
+      ],
+    });
+  }
+
   private shop(id: ShopId) {
     const c = this.c;
     const g = this.g;
@@ -1423,6 +1516,8 @@ export class Story {
       c.items[weaponId] = 1;
       // The pearl's boon: one more flask, filled at once.
       if (weaponId === 'leviathan-pearl') (c.flasksMax++, (c.flasks = c.flasksMax));
+      // Each elder relic teaches its colour for the wardrobe.
+      g.grantEarned();
       g.player.hp = Math.min(g.player.maxHp, g.player.hp);
       g.audio.play('victory');
       g.save();

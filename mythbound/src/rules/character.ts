@@ -1,6 +1,7 @@
 import { MAX_KNIVES, classWields } from './weapons';
 import { newSteed, normalizeSteed, type Steed } from './horse';
 import { fedMul, fedSwims, normalizeFed, type Fed } from './fed';
+import { newWardrobe, normalizeWardrobe, type Wardrobe } from './outfit';
 import {
   CLASSES,
   MAGE_STARTING_SPELLS,
@@ -79,6 +80,8 @@ export interface Character extends CharacterChoice {
   steed: Steed;
   /** The one Fed slot: the buff of the last fruit (or sweet) eaten, game minutes left. Death clears it. */
   fed: Fed | null;
+  /** Clothes and dye colours (for looks only), and what is worn. */
+  wardrobe: Wardrobe;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -199,6 +202,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     respecs: 0,
     steed: newSteed(rng),
     fed: null,
+    wardrobe: newWardrobe(),
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -322,6 +326,7 @@ export function normalizeCharacter(c: Character): Character {
   c.steed = normalizeSteed(c.steed);
   // Fruit buffs came later (and a junk one is dropped).
   c.fed = normalizeFed(c.fed);
+  c.wardrobe = normalizeWardrobe(c.wardrobe);
   return c;
 }
 

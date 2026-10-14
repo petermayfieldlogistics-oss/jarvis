@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CROPS, PIP_CHANCE, SEED_PACK, seedItem } from '../data/goods';
+import { CROP_IDS, CROPS, PIP_CHANCE, SEED_PACK, STATIONS, isPip, seedItem } from '../data/goods';
+import { ITEMS } from '../data/world';
 import { FIELD, NPCS, QUESTS, plotCentre } from '../data/world';
 import { createCharacter } from './character';
 import {
   FARM, buySeeds, cropYield, digUp, feed, growthAt, harvest, isWet, newFarm, normalizeFarm, plant, progress, rentPlot, rentPrice, ripeCount,
-  ripeIn, sellCrop, stageOf, water, waterAll,
+  ripeIn, ripeNews, sellCrop, stageOf, uncountable, water, waterAll,
 } from './farming';
 import { normalizeSave, newWorldState, type SaveData } from '../engine/state';
 
@@ -236,5 +237,66 @@ describe('saves', () => {
     water(w.farm, 1);
     const back = normalizeSave(JSON.parse(JSON.stringify({ character: c, world: w })) as SaveData);
     expect(back.world.farm).toEqual(w.farm);
+  });
+});
+
+describe('fibre and dye crops', () => {
+  it('grows flax, madder, woad and weld for the loom, as Wren sells them', () => {
+    const fibre = CROP_IDS.filter((id) => CROPS[id].fibre);
+    // Wren's food seeds: pips (sunberry, heartapple) come from eating Nell's fruit, not from her.
+    const food = CROP_IDS.filter((id) => !CROPS[id].fibre && !isPip(id));
+    expect(fibre).toEqual(['flax', 'madder', 'woad', 'weld']);
+    expect(food).toEqual(['carrot', 'wheat', 'bluecap', 'pumpkin']);
+    expect(CROP_IDS.filter(isPip)).toEqual(['sunberry', 'heartapple']);
+    // A seed bed's food list (with pips) still fits.
+    expect(CROP_IDS.filter((id) => !CROPS[id].fibre).length).toBeLessThanOrEqual(7);
+    // Each of Wren's seed lists (and a bed's crop list) fits on the big buttons with a Back.
+    expect(fibre.length).toBeLessThanOrEqual(7);
+    expect(food.length).toBeLessThanOrEqual(7);
+    expect(CROPS.flax).toMatchObject({ seedPrice: 16, grow: 300, yield: [3, 4], sell: 2 });
+    for (const id of ['madder', 'woad', 'weld'] as const) expect(CROPS[id]).toMatchObject({ seedPrice: 24, grow: 420, yield: [2, 3], sell: 3 });
+    for (const id of fibre) {
+      expect(ITEMS[id], id).toBeTruthy();
+      expect(ITEMS[seedItem(id)], id).toBeTruthy();
+      // Not food.
+      expect(CROPS[id].heal ?? 0).toBe(0);
+    }
+  });
+
+  it('plants, ripens and harvests madder like any crop', () => {
+    const c = hero();
+    c.gold = 100;
+    expect(buySeeds(c, 'madder')).toBe(null);
+    expect(c.items[seedItem('madder')]).toBe(SEED_PACK);
+    const farm = newFarm();
+    expect(plant(c, farm, 0, 'madder')).toBe(null);
+    water(farm, 0);
+    farm.clock += CROPS.madder.grow * 2;
+    expect(stageOf(farm.plots[0], farm.clock)).toBe(4);
+    const got = harvest(c, farm, 0, 0)!;
+    expect(got.crop).toBe('madder');
+    expect(c.items.madder).toBe(got.n);
+    expect(got.n).toBeGreaterThanOrEqual(2);
+  });
+
+  it('says a crop is ripe in good English', () => {
+    expect(uncountable('madder')).toBe(true);
+    expect(uncountable('wheat')).toBe(true);
+    expect(uncountable('carrot')).toBe(false);
+    expect(ripeNews(['madder'])).toBe("Your madder is ripe in Wren's field.");
+    expect(ripeNews(['flax'])).toBe("Your flax is ripe in Wren's field.");
+    expect(ripeNews(['carrot'])).toBe("Your carrots are ripe in Wren's field.");
+    expect(ripeNews(['carrot', 'madder', 'carrot'])).toBe("Your carrots and madder are ripe in Wren's field.");
+    expect(ripeNews(['flax', 'woad', 'pumpkin'])).toBe("Your flax, woad and pumpkins are ripe in Wren's field.");
+  });
+
+  it('puts the loom north of the field, clear of its fence, Wren and the other stations', () => {
+    const loom = STATIONS.find((s) => s.id === 'loom')!;
+    expect(loom).toMatchObject({ x: 22, z: -7.5 });
+    // The fence's north side runs at FIELD.z - 5.5, from x - 5.2 to x + 5.5.
+    expect(FIELD.z - 5.5 - loom.z).toBeGreaterThanOrEqual(3);
+    const wren = NPCS.find((n) => n.id === 'wren')!;
+    expect(Math.hypot(loom.x - wren.x, loom.z - wren.z)).toBeGreaterThan(10);
+    for (const s of STATIONS) if (s !== loom) expect(Math.hypot(loom.x - s.x, loom.z - s.z)).toBeGreaterThan(8);
   });
 });
