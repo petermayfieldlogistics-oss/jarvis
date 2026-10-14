@@ -1,5 +1,10 @@
 import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, type QuestId } from '../data/world';
+import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
+
+/** Where the world map names the outer lands. */
+const REGION_LABELS: [number, number, ZoneId][] = [
+  [-300, -720, 'peaks'], [640, -680, 'cinder'], [700, -200, 'dunes'], [-700, -150, 'elderwood'], [-620, 680, 'jungle'], [300, 760, 'ocean'],
+];
 import { rewardName } from '../engine/bosses';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treesFor, xpToNext } from '../rules/character';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
@@ -14,7 +19,7 @@ import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { inviteLink } from '../rules/invite';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
-import { mapImage, toMap } from './mapimage';
+import { mapImage, paintMap, toMap } from './mapimage';
 
 type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
 
@@ -541,9 +546,20 @@ export class Menu {
     const ctx = canvas.getContext('2d')!;
     const S = canvas.width;
     ctx.imageSmoothingEnabled = true;
+    // Opening the map paints in a good deal more of it at once.
+    paintMap(80, g.player.pos.x, g.player.pos.z);
     ctx.drawImage(mapImage(), 0, 0, S, S);
     ctx.fillStyle = 'rgba(10,8,6,0.15)';
     ctx.fillRect(0, 0, S, S);
+    // The outer lands' names, faint, over their regions.
+    ctx.font = 'italic 13px Cinzel, serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(240,226,192,0.55)';
+    for (const [x, z, id] of REGION_LABELS) {
+      const [rx, ry] = toMap(x, z, S);
+      ctx.fillText(ZONES[id].name, rx, ry);
+    }
+    ctx.textAlign = 'start';
     const label = (x: number, z: number, text: string, color: string, r: number) => {
       const [px, py] = toMap(x, z, S);
       ctx.fillStyle = color;

@@ -1,7 +1,7 @@
 # Mythbound
 
 A dark-fantasy, third-person 3D action RPG that runs in the browser on PC and phone. You pick a class (Warrior, Ranger,
-Mage, Monk, Sorcerer or Rogue), subclass, race and role, then explore a world of nine regions, take quests from the people of Hearthhold, and conquer six trials whose
+Mage, Monk, Sorcerer or Rogue), subclass, race and role, then explore a world of fifteen regions, take quests from the people of Hearthhold, and conquer six trials whose
 bosses guard the weapons of the old gods.
 
 ## Play
@@ -89,8 +89,20 @@ code; friends type it and press **Join**. Co-op needs the online version
 - **Hearthhold** (town): Orrin the Historian (main quest, spell tomes), Brann the Smith (upgrades), Sister Lumen
   (healing, light magic), Quill the merchant, Wren the farmer (seed beds), Mara the fisher (on the coast), and the
   Chronicler.
-- **Regions**: the Golden Reach, Whisperwood, the Ashen Dunes, Molten Peak, the Sunken Coast (and its island), the
-  Weeping Mire, Hecate's Crossroads and the Field of Mars.
+- **The heartland** (the middle of the map): the Golden Reach, Whisperwood, the Ashen Dunes, Molten Peak, the Sunken
+  Coast (and its island), the Weeping Mire, Hecate's Crossroads and the Field of Mars.
+- **The outer lands** (the world is 1800 m across, four times the heartland), each with a shrine to travel to, its own
+  plants, weather and harder monsters (levels 12-16):
+  - **The Frostspine** (north): snow-capped ridges parted by a pass, falling snow. Frostfangs and frost trolls.
+  - **The Cinderwaste** (north-east): black plains, cinder cones and pools of lava (they burn), drifting embers. Ash
+    revenants.
+  - **The Sea of Sand** (east): long dunes and palm-ringed oases. Sand reavers.
+  - **The Elderwood** (west): a forest of giant trees. Tangle spiders and jungle stalkers.
+  - **The Verdant Tangle** (south-west): jungle cut by streams, palms and flowers. Jungle stalkers.
+  - **The Wine-Dark Sea** (south): open water with five islands. Sea raiders. Swim or take a boat.
+- **Big world on a phone**: the ground and plants are built in tiles near the hero, a few milliseconds a frame, and
+  only what the haze lets you see is drawn, so the bigger world costs about what the heartland did. Every player's
+  trees and rocks stand in the same places, whatever their quality setting. The map paints in around you as you go.
 - **Six trials** (fog-walled boss arenas): Hunt → Bow of Artemis, Tides → Poseidon's Trident, Storms → Master Bolt,
   Forge → Hammer of Hephaestus, War → Sword of Mars, Crossroads → Staff of Hecate.
 - **Souls-like loop**: shrines restore you and respawn the world; dying drops your embers where you fell; flasks refill
