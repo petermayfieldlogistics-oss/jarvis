@@ -462,9 +462,21 @@ const BOOT = 0x2a2018;
 const LEATHER = 0x3a2a1c;
 const SLIT = 0x07060a;
 
-export function buildHumanoid(look: HumanoidLook): Rig {
+/**
+ * A humanoid model. Looks are cached (each is built once and cloned); pass
+ * `cached = false` for one-off looks (a custom outfit), which are built on
+ * their own and must be freed with disposeObject when done.
+ */
+export function buildHumanoid(look: HumanoidLook, cached = true): Rig {
   const { scale = 1, ...shape } = look;
-  return instance(JSON.stringify(shape), scale, () => makeRig(shape));
+  if (cached) return instance(JSON.stringify(shape), scale, () => makeRig(shape));
+  const rig = makeRig(shape);
+  rig.root.scale.setScalar(scale);
+  let skeleton: THREE.Skeleton | undefined;
+  rig.root.traverse((o) => (skeleton ??= (o as THREE.SkinnedMesh).isSkinnedMesh ? (o as THREE.SkinnedMesh).skeleton : undefined));
+  // Free the bone texture when the model leaves the scene for good.
+  rig.root.addEventListener('removed', () => skeleton?.dispose());
+  return rig;
 }
 
 // Each distinct look is built once; spawns clone it (shared geometry, their

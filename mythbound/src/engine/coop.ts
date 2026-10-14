@@ -17,7 +17,8 @@ import { animateHumanoid, type Rig } from './humanoid';
 import type { Hero } from './hero';
 import { buildBoat, disposeObject } from './models';
 import { DEFAULT_SERVER, Net, type ServerMsg } from './net';
-import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, limbTrail, poseBowString, RAGE_RED, RIDER_HIP, TIMING } from './player';
+import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, heroDressed, limbTrail, poseBowString, RAGE_RED, RIDER_HIP, TIMING } from './player';
+import { decodeOutfit, encodeOutfit, isPlain, outfitKey } from '../rules/outfit';
 import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
 import { COATS, HORSE } from '../rules/horse';
 import { WATER_LEVEL } from './terrain';
@@ -187,11 +188,13 @@ export class RemoteHero implements Hero {
     this.subclassId = LOOK_SUBCLASSES.has(sc) ? sc : null;
     // A zombie shambles unless its player stood it up straight.
     const hunched = num(m.hu, 1) !== 0;
-    const looks = `${c}/${this.subclassId}/${r}/${ro}/${hunched}`;
+    // Their outfit (garments and colours), if they wear one; older builds send none.
+    const dressed = decodeOutfit(m.o);
+    const looks = `${c}/${this.subclassId}/${r}/${ro}/${hunched}/${outfitKey(dressed)}`;
     if (looks !== this.looks) {
       this.looks = looks;
       this.disposeModel();
-      const rig = buildPlayerRig({ classId: c, subclassId: this.subclassId, raceId: r, roleId: ro, hunched });
+      const rig = buildPlayerRig({ classId: c, subclassId: this.subclassId, raceId: r, roleId: ro, hunched }, dressed);
       rig.root.traverse((o) => (o.castShadow = true));
       rig.root.visible = false;
       this.rig = rig;
@@ -744,7 +747,25 @@ export class Coop {
 
   private sendHello(to: number | 'all') {
     const c = this.g.player.c;
-    this.queue(to, { k: 'hi', n: this.myName, c: c.classId, sc: c.subclassId ?? '', r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '' });
+    const dressed = heroDressed(c);
+    this.queue(to, {
+      k: 'hi', n: this.myName, c: c.classId, sc: c.subclassId ?? '', r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '',
+      ...(isPlain(dressed) ? {} : { o: encodeOutfit(dressed) }),
+    });
+  }
+
+  private lookSentAt = -9;
+  private lookTimer = 0;
+
+  /** A new outfit kept in the wardrobe: friends see it (at most every 2 s; the latest one wins). */
+  announceLook() {
+    if (!this.active) return;
+    clearTimeout(this.lookTimer);
+    const wait = this.lookSentAt + 2 - now();
+    if (wait <= 0) {
+      this.lookSentAt = now();
+      this.sendHello('all');
+    } else this.lookTimer = window.setTimeout(() => this.announceLook(), wait * 1000);
   }
 
   /** Our hero's state, for everyone else to draw. */

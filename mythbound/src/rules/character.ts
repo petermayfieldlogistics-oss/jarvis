@@ -1,5 +1,7 @@
 import { MAX_KNIVES, classWields } from './weapons';
 import { newSteed, normalizeSteed, type Steed } from './horse';
+import { fedMul, fedSwims, normalizeFed, type Fed } from './fed';
+import { newWardrobe, normalizeWardrobe, type Wardrobe } from './outfit';
 import {
   CLASSES,
   MAGE_STARTING_SPELLS,
@@ -76,6 +78,10 @@ export interface Character extends CharacterChoice {
   respecs: number;
   /** The hero's horse (called with B or 🐎). */
   steed: Steed;
+  /** The one Fed slot: the buff of the last fruit (or sweet) eaten, game minutes left. Death clears it. */
+  fed: Fed | null;
+  /** Clothes and dye colours (for looks only), and what is worn. */
+  wardrobe: Wardrobe;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -195,6 +201,8 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     milestone: 0,
     respecs: 0,
     steed: newSteed(rng),
+    fed: null,
+    wardrobe: newWardrobe(),
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -316,6 +324,9 @@ export function normalizeCharacter(c: Character): Character {
   }
   if (typeof c.respecs !== 'number') c.respecs = 0;
   c.steed = normalizeSteed(c.steed);
+  // Fruit buffs came later (and a junk one is dropped).
+  c.fed = normalizeFed(c.fed);
+  c.wardrobe = normalizeWardrobe(c.wardrobe);
   return c;
 }
 
@@ -361,9 +372,9 @@ export function maxMana(c: Character): number {
   return Math.round(m);
 }
 
-/** Sailors, and whoever carries the Leviathan's pearl, swim without tiring. */
+/** Sailors, whoever carries the Leviathan's pearl, and anyone fed on tideberries swim without tiring. */
 export function swimsTireless(c: Character): boolean {
-  return c.roleId === 'sailor' || hasRelic(c, 'leviathan-pearl');
+  return c.roleId === 'sailor' || hasRelic(c, 'leviathan-pearl') || fedSwims(c);
 }
 
 export function maxStamina(c: Character): number {
@@ -373,7 +384,7 @@ export function maxStamina(c: Character): number {
 
 /** Stamina recovered per second while not spending it. */
 export function staminaRegen(c: Character): number {
-  return 38 * (1 + 0.2 * perk(c, 5)) * (rank(c, 'windrunner') ? 1.3 : 1);
+  return 38 * (1 + 0.2 * perk(c, 5)) * (rank(c, 'windrunner') ? 1.3 : 1) * fedMul(c, 'stamina');
 }
 
 export function moveSpeed(c: Character): number {
@@ -381,13 +392,13 @@ export function moveSpeed(c: Character): number {
   if (c.raceId === 'elf') s *= 1.15;
   s *= 1 + 0.06 * rank(c, 'fleet-foot') + 0.05 * (rank(c, 'zephyr') + rank(c, 'footwork'));
   if (rank(c, 'avatar-of-wind')) s *= 1.1;
-  s *= (1 + 0.06 * perk(c, 25)) * (rank(c, 'windrunner') ? 1.1 : 1);
+  s *= (1 + 0.06 * perk(c, 25)) * (rank(c, 'windrunner') ? 1.1 : 1) * fedMul(c, 'speed');
   return s;
 }
 
 export function manaRegen(c: Character): number {
   const base = GROWTH[c.classId].manaRegen;
-  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1) * (hasRelic(c, 'tide-crown') ? 1.3 : 1);
+  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1) * (hasRelic(c, 'tide-crown') ? 1.3 : 1) * fedMul(c, 'mana');
 }
 
 /** Quick Draw: rangers draw every weapon faster. Multiplies draw/ready times. */

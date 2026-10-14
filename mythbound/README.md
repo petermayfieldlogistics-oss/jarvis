@@ -1,7 +1,7 @@
 # Mythbound
 
 A dark-fantasy, third-person 3D action RPG that runs in the browser on PC and phone. You pick a class (Warrior, Ranger,
-Mage, Monk, Sorcerer or Rogue), subclass, race and role, then explore a world of nine regions, take quests from the people of Hearthhold, and conquer six trials whose
+Mage, Monk, Sorcerer or Rogue), subclass, race and role, then explore a world of fifteen regions, take quests from the people of Hearthhold, and conquer six trials whose
 bosses guard the weapons of the old gods.
 
 ## Play
@@ -36,6 +36,7 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | B (Shift gallops) | 🐎 (push stick far) | call your horse, climb on, get down |
 | Tab, middle click | ◎ | lock on |
 | H / X / T | ⚗ / 🐟 / ⇄ | flask / eat (fish, crops) / switch weapon |
+| Y | 🍎 (shown while you carry fruit or sweets) | satchel: eat a fruit or sweet for its buff |
 | F | ✋ | interact |
 | M, Esc | 🗺, ☰ | map (fast travel between shrines), menu |
 
@@ -87,10 +88,22 @@ code; friends type it and press **Join**. Co-op needs the online version
 ## The world
 
 - **Hearthhold** (town): Orrin the Historian (main quest, spell tomes), Brann the Smith (upgrades), Sister Lumen
-  (healing, light magic), Quill the merchant, Wren the farmer (seed beds), Mara the fisher (on the coast), and the
-  Chronicler.
-- **Regions**: the Golden Reach, Whisperwood, the Ashen Dunes, Molten Peak, the Sunken Coast (and its island), the
-  Weeping Mire, Hecate's Crossroads and the Field of Mars.
+  (healing, light magic), Quill the merchant, Wren the farmer (seed beds), Nell (fish and fruit, by the shrine), Mara
+  the fisher (on the coast), and the Chronicler.
+- **The heartland** (the middle of the map): the Golden Reach, Whisperwood, the Ashen Dunes, Molten Peak, the Sunken
+  Coast (and its island), the Weeping Mire, Hecate's Crossroads and the Field of Mars.
+- **The outer lands** (the world is 1800 m across, four times the heartland), each with a shrine to travel to, its own
+  plants, weather and harder monsters (levels 12-16):
+  - **The Frostspine** (north): snow-capped ridges parted by a pass, falling snow. Frostfangs and frost trolls.
+  - **The Cinderwaste** (north-east): black plains, cinder cones and pools of lava (they burn), drifting embers. Ash
+    revenants.
+  - **The Sea of Sand** (east): long dunes and palm-ringed oases. Sand reavers.
+  - **The Elderwood** (west): a forest of giant trees. Tangle spiders and jungle stalkers.
+  - **The Verdant Tangle** (south-west): jungle cut by streams, palms and flowers. Jungle stalkers.
+  - **The Wine-Dark Sea** (south): open water with five islands. Sea raiders. Swim or take a boat.
+- **Big world on a phone**: the ground and plants are built in tiles near the hero, a few milliseconds a frame, and
+  only what the haze lets you see is drawn, so the bigger world costs about what the heartland did. Every player's
+  trees and rocks stand in the same places, whatever their quality setting. The map paints in around you as you go.
 - **Six trials** (fog-walled boss arenas): Hunt → Bow of Artemis, Tides → Poseidon's Trident, Storms → Master Bolt,
   Forge → Hammer of Hephaestus, War → Sword of Mars, Crossroads → Staff of Hecate.
 - **Souls-like loop**: shrines restore you and respawn the world; dying drops your embers where you fell; flasks refill
@@ -142,14 +155,16 @@ is what was chosen; each is easy to change:
   home. Friends see you ride, in your horse's coat.
 - **Farming**: Wren the farmer keeps a fenced field of nine seed beds just east of Hearthhold's square, by the forge.
   Three beds are yours (the row by the gate); Wren rents the other six (120, then 250 embers each) and gives a first
-  pack of carrot seeds. Buy seeds from Wren in packs of four (carrots 3 h, wheat 4 h, bluecap mushrooms 5 h, pumpkins
-  12 h of play to ripen), stand at a bed and tap ✋ / F: plant, then water (one tap waters the whole row; watered soil
+  pack of carrot seeds. Buy seeds from Wren in packs of four, as food crops (carrots 3 h, wheat 4 h, bluecap mushrooms
+  5 h, pumpkins 12 h of play to ripen) or fibre & dye plants for the loom (flax 5 h, madder, woad and weld 7 h).
+  At an empty bed pick a crop (food or fibre first, once you carry more than seven kinds), then this bed or every
+  empty bed. Stand at a bed and tap ✋ / F: plant, then water (one tap waters the whole row; watered soil
   grows at full speed for 4 h, dry soil at half), and harvest the row when ripe. Nothing withers. A fish fed to a bed
   before it is half grown brings in one more crop (a golden fish, two). Crops grow while you play, not while you pass
   time at a shrine. The field shows a green dot on the minimap and says when crops ripen. Carrots and pumpkins heal,
   bluecaps restore mana; Wren buys any crop, and wheat is for bread later. Wren's quest: bring in four harvests. In
   co-op each hero tends their own crops in the same field.
-- **Crafting**: three stations, touch-friendly (tap ✋ at one; recipes you can make are ticked with how many; the rest
+- **Crafting**: four stations, touch-friendly (tap ✋ at one; recipes you can make are ticked with how many; the rest
   say what's missing; then Make 1, Make 5 or Make all). The first time you make something you learn it (+10 XP).
   - **Cookfire** (by Wren's field): Grilled Fish (+60), Hearth Bread (+40), Root Stew (+75), Fisher's Pie (+160),
     Bluecap Broth (+90 mana), Pumpkin Soup, Golden Feast (+300 HP, +100 mana). Any shrine's flame cooks the simple
@@ -158,14 +173,61 @@ is what was chosen; each is easy to change:
     crop), fishing lures (a wider catch and a better chance of gold; one per cast), a Watering Can (waters every bed
     at once, wet for 6 h) and a Silk Fishing Line (a wider catch on every cast).
   - **Anvil** ("Smith something"): the four runes from ore and monster parts for far less than Brann asks, and
-    Horseshoes (your horse gallops a third longer). A Blacksmith pays half the embers.
+    Horseshoes (your horse gallops a third longer). A Blacksmith pays half the embers. Its Gear group also smiths the
+    metal clothes (see Clothing).
+  - **Loom** (just north of Wren's field, with three dye vats): Weave (linen from 3 flax, hoods, a mask, a hat, a
+    headband), Tailor (jerkin, robe, gi, cloak), Plant dyes, Rare dyes, and Change outfit.
   - **Materials** drop from monsters (each hero rolls their own in co-op): hide (wolves, boars), silk (spiderlings; three
     from Broodmother), chitin (scorpions), kelp (the drowned, or a missed catch), bone (skeletons), wisps (wraiths),
     cinder hearts (imps, magma hounds). Quill buys them (not kelp). The Gear tab groups the pack (food, tools, materials) and has a
     recipe book.
+- **Clothing**: purely for looks, no stats. Three slots (Head, Body, Cloak) and four colours (Cloth, Leather/plate,
+  Trim, Cloak); "Class's own" is the default for each. 15 garments: free bare head and no cloak; hood, mask, hat,
+  headband, jerkin, robe, gi and cloak from the loom; circlet, great helm, legion galea and plate harness from the
+  anvil; the Crown of the Six for beating all six weapon trials. 17 colours: making a dye teaches the colour for good
+  (seven plant dyes from madder, woad, weld and flax; seven rare ones from cinder hearts, bone, kelp, chitin, drake
+  scale, golden fish and ore, watcher lens and wisp), and each elder relic teaches one (Pearl, Tidal Blue,
+  Dragonfire). Older heroes get what they already earned when they load. Quill sells some clothes and the three plant
+  dyes ("Any curios?"). New materials: linen (bandits), bronze scrap (legionaries), drake scale, watcher lens.
+  - **Wardrobe**: opens from the loom, any shrine ("Change outfit") and the Hero tab (which counts Clothes n/15 ·
+    Colours n/17). A panel down the right on a wide or sideways screen, a bottom sheet (up to 55%) in portrait; big
+    tiles and 48 px swatches; locked ones say how to get them. Each tap dresses the hero, who turns to face you;
+    Keep saves it, Undo puts back the saved outfit, Close or Esc leaves it as it was. Only somewhere safe (not
+    riding, swimming, flying, sailing, in a trial, in a fight or just hurt). Angelic heroes can't wear a cloak
+    (their wings), and the ༼ ∞ኒ keep their own hood.
+  - **Co-op**: friends see your outfit after Keep (never the previews). The hello carries seven numbers (garments by
+    index, colours as hex), so a friend on an older build with fewer dyes still sees the right colours; a hello
+    without them, or with junk, shows your class look. Each hero's wardrobe saves with their own character.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
-  button by each food.
+  button by each food. X never eats fruit or sweets (see below).
+- **Fish & fruit (Nell)**: Nell keeps a stall with a sea-blue awning beside the Hearthhold shrine, next to the
+  Chronicler. Her dialog (all big numbered buttons) has Fruit… (two shelves of four), Fish & lures… (a fish 12, a
+  golden fish 70, three lures 30), Sell your catch, Sell fruit, and "What does fruit do?". Zombies pay a quarter more,
+  as everywhere.
+  - **Fruit buffs**: eating a fruit fills your one **Fed** slot for some hours of play. Sunberry 20 (stamina back 30%
+    faster, 6 h), Heartapple 30 (heals 0.3% of max HP a second, 5 h), Moonplum 30 (mana back 40% faster, 8 h),
+    Windpear 35 (8% faster on foot, 6 h), Emberfig / Tideberry / Duskcherry 40–45 (fire / water / dark hurts 35% less,
+    8 h; tideberries also let you swim without tiring, duskcherries give a Dark Slayer's night vision), Blood Orange 60
+    (weapons and spells hit 12% harder, 5 h). Each also restores a little health or mana. No fruit gives XP or embers.
+  - **One slot**: the same fruit again tops the timer up to a full serving; a different fruit replaces the buff (the
+    satchel and the Gear tab ask first, then say "Emberfig replaces Windpear"). The buff counts down only while you
+    play (never at a shrine's "Pass time", never by a co-op host's clock), says when it wears off, and is lost when
+    you die. It multiplies with everything else (a Song of Valor and a blood orange: ×1.40 damage; an emberfig and
+    the Heart of the Elder Dragon: fire at ×0.325). A chip under the health bars shows it ("Fed: Emberfig 7h 40m", in
+    the fruit's colour).
+  - **Eating it**: Y or 🍎 opens the satchel (the button shows only while you carry fruit or sweets): one big row per
+    fruit with what it does and for how long; tap (or press 1–8) to eat. The Gear tab has Eat buttons too, and Nell
+    offers "Buy and eat now".
+  - **Fresh today**: one fruit a day is a quarter off (Nell's day is 24 minutes of your own play time).
+  - **Selling**: Nell buys fish for 5 and golden fish for 30, at most 10 a day all told (a cast takes seconds, so more
+    would out-earn fighting), and fruit at a quarter of her price. She always pays less than she charges.
+  - **Pips**: a raw sunberry or heartapple keeps a pip about one time in three. Plant it in Wren's field (Wren sells no
+    pips): sunberries ripen in 9 h (2–3 a bed), heartapples in 14 h (1–2); Nell buys the fruit, or eat it for its buff.
+  - **Sweets** (cookfire, "Sweets"): Sunberry Tart (2 sunberries, 1 wheat: the sunberry buff for 9 h, +40 HP) and
+    Heartapple Pie (2 heartapples, 1 wheat: the heartapple buff for 7½ h, +60 HP).
+  - In co-op each hero's buff, fish count and fresh fruit are their own; friends see the sparkle in the fruit's colour
+    when you eat.
 - **Deal with the Devil**: lock on to one-shot a single foe (bosses too, as written), otherwise it takes every level
   1–5 foe nearby. You black out, and light magic is sealed for 1, 2, then 3 game hours; the 4th deal seals it forever.
 - **Expansion** (toggle in the creator): Bowman (level 2 copper bow, 50 steel arrows, Power Shot: 6x damage plus 0.5 NDP

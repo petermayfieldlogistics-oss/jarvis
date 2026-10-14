@@ -8,9 +8,9 @@
 // checked twice a second without allocating.
 
 import * as THREE from 'three';
-import { CROP_IDS, CROPS } from '../data/goods';
+import { CROP_IDS, CROPS, type CropId } from '../data/goods';
 import { FIELD, plotCentre } from '../data/world';
-import { FARM, isWet, progress, rentPrice, ripeIn, stageOf, type FarmState } from '../rules/farming';
+import { FARM, isWet, progress, rentPrice, ripeIn, ripeNews, stageOf, type FarmState } from '../rules/farming';
 import { mat } from './models';
 import { heightAt } from './terrain';
 import type { Interactable } from './world';
@@ -41,6 +41,8 @@ export class FarmView {
   /** What each bed showed last (stage, wet, owned), to redraw only on change. */
   private shown = new Int16Array(FARM.plots).fill(-1);
   private ripe = new Uint8Array(FARM.plots);
+  /** Crops that ripened since the last look (kept, not reallocated). */
+  private ripened: CropId[] = [];
   private beds: (Interactable | undefined)[] = [];
   private tick = 0;
   private primed = false;
@@ -85,7 +87,8 @@ export class FarmView {
     const rent = rentPrice(g.player.c, farm);
     let dirty = false;
     let ripeBeds = 0;
-    let ripened = '';
+    const ripened = this.ripened;
+    ripened.length = 0;
     for (let i = 0; i < FARM.plots; i++) {
       const plot = farm.plots[i];
       const owned = i < farm.owned;
@@ -100,13 +103,13 @@ export class FarmView {
       this.drawBed(i, farm, owned, stage, wet);
       // Ripe since last look: say so (not for crops found ripe on loading).
       const ripe = stage === 4 ? 1 : 0;
-      if (ripe && !this.ripe[i] && this.primed && plot && !ripened.includes(CROPS[plot.crop].plural)) ripened += (ripened ? ' and ' : '') + CROPS[plot.crop].plural;
+      if (ripe && !this.ripe[i] && this.primed && plot && !ripened.includes(plot.crop)) ripened.push(plot.crop);
       this.ripe[i] = ripe;
     }
     this.primed = true;
     this.ripeBeds = ripeBeds;
     // One word for everything that ripened together.
-    if (ripened) g.hud.toast(`Your ${ripened} ${ripened.includes(' and ') || !ripened.endsWith('wheat') ? 'are' : 'is'} ripe in Wren's field.`, 'quest');
+    if (ripened.length) g.hud.toast(ripeNews(ripened), 'quest');
     if (dirty) {
       for (const m of [this.soil, this.leaves, this.produce, this.stalks]) {
         m.instanceMatrix.needsUpdate = true;
@@ -154,8 +157,9 @@ export class FarmView {
         this.leaves.setColorAt(n, C.setHex(0x6a7a32));
       } else if (crop && stage > 0) {
         const grow = [0, 0.25, 0.55, 0.85, 1][stage];
-        const tall = crop.shape === 'caps' ? 0.35 : crop.shape === 'stalks' ? 0.5 : 1;
-        M.compose(P.set(px, y + 0.12 + 0.25 * grow * tall, pz), Q.setFromEuler(E.set(0, turn, 0)), S.set(grow * 1.1, grow * tall, grow * 1.1));
+        const tall = crop.shape === 'caps' ? 0.35 : crop.shape === 'stalks' ? 0.5 : crop.shape === 'bush' ? 1.5 : 1;
+        const wide = crop.shape === 'bush' ? 1.6 : 1.1;
+        M.compose(P.set(px, y + 0.12 + 0.25 * grow * tall, pz), Q.setFromEuler(E.set(0, turn, 0)), S.set(grow * wide, grow * tall, grow * wide));
         this.leaves.setMatrixAt(n, M);
         this.leaves.setColorAt(n, C.setHex(crop.shape === 'caps' ? crop.leaf : stage === 4 && crop.shape === 'stalks' ? crop.fruit : crop.leaf));
       } else this.leaves.setMatrixAt(n, HIDE);
@@ -165,6 +169,8 @@ export class FarmView {
         const ripe = stage === 4 ? 1 : 0.6;
         let sy = 0.5, s = 0.6, h = 0.05;
         if (crop.shape === 'caps') (s = 1.2 * ripe), (sy = 0.45 * ripe), (h = 0.32 * ripe);
+        // Fruit hangs on the bush, partway up.
+        else if (crop.shape === 'bush') (s = 0.55 * ripe), (sy = 0.55 * ripe), (h = 0.42 + 0.12 * (k % 2));
         else if (crop.shape === 'gourd') (s = 2.6 * ripe), (sy = 2 * ripe), (h = 0.35 * ripe);
         else (s = 0.75 * ripe), (sy = 0.55), (h = 0.1);
         M.compose(P.set(px, y + 0.12 + h, pz), Q.setFromEuler(E.set(0, turn, 0)), S.set(s, sy, s));

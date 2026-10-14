@@ -2,6 +2,8 @@ import './styles.css';
 import { Game } from './engine/game';
 import { heightAt } from './engine/terrain';
 import { Cloud, SlotSync } from './engine/cloud';
+import { DEFAULT_SERVER } from './engine/net';
+import { inviteCode } from './rules/invite';
 import { deleteSave, loadSave, loadSettings, loadUnlocks, newWorldState, writeSave, type WorldState } from './engine/state';
 import type { Character } from './rules/character';
 import { showFront } from './ui/account';
@@ -12,6 +14,8 @@ let game: Game | null = null;
 /** Uploads the hero's saves when playing from an account slot. */
 let sync: SlotSync | null = null;
 const cloud = new Cloud(() => loadSettings().coopServer);
+/** A co-op room from an invite link (`?join=CODE`), joined as soon as a hero is picked. */
+let invite = inviteCode(location.search);
 
 function stopGame() {
   sync?.dispose();
@@ -26,6 +30,7 @@ function title() {
   app.innerHTML = '';
   showFront(app, {
     cloud,
+    invite,
     offline: offlineTitle,
     play: (slot, save, version) => start(save.character, save.world, false, { slot, version }),
     create: (slot) => {
@@ -79,7 +84,20 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
     g.audio.unlock();
     g.start();
     if (fresh) g.story.intro();
+    if (invite) joinInvite(g, invite);
   }, 50);
+}
+
+/** Takes the hero into the room an invite link named (once: quitting to the title doesn't rejoin). */
+function joinInvite(g: Game, room: string) {
+  invite = null;
+  history.replaceState(history.state, '', location.pathname + location.hash);
+  g.hud.toast(`Joining co-op room ${room}…`, 'skill');
+  const name = g.settings.coopName || g.accountName || g.player.c.name;
+  void g.coop.join(g.settings.coopServer || DEFAULT_SERVER, room, name).then(() => {
+    // A server that can't be reached says so only in the co-op menu; say it here too.
+    if (game === g && !g.coop.active && !g.coop.busy && g.coop.status) g.hud.toast(g.coop.status, 'warn');
+  });
 }
 
 // Audio needs a user gesture (iOS only counts touchend and click for touch).

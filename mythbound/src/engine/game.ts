@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
+import { satchelCount } from '../rules/food';
+import { clearFed, fedNightVision } from '../rules/fed';
 import { bossHealthScale } from '../rules/boss';
 import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
@@ -9,6 +11,7 @@ import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
 import { materialDrop } from '../rules/crafting';
 import { runeDrop } from '../rules/weapons';
+import { earnedUnlocks } from '../rules/outfit';
 import { Audio } from './audio';
 import { CameraRig } from './camera';
 import { createPost, type Post } from './post';
@@ -33,6 +36,7 @@ import { Story } from './story';
 import { Hud } from '../ui/hud';
 import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
+import { Wardrobe } from '../ui/wardrobe';
 
 export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand';
 
@@ -124,6 +128,7 @@ export class Game {
   hud: Hud;
   dialog: Dialog;
   menu: Menu;
+  wardrobe: Wardrobe;
   story: Story;
   player!: Player;
   enemies: Enemy[] = [];
@@ -207,6 +212,7 @@ export class Game {
     this.hud = new Hud(ui, this);
     this.dialog = new Dialog(ui);
     this.menu = new Menu(ui, this);
+    this.wardrobe = new Wardrobe(ui, this);
     this.input = new Input(this.renderer.domElement);
     this.input.sensitivity = settings.sensitivity;
     this.input.invertY = settings.invertY;
@@ -246,12 +252,23 @@ export class Game {
     this.scene.add(this.player.rig.root);
     const p = this.state.pos;
     const shrine = SHRINES.find((s) => s.id === this.state.lastShrine) ?? SHRINES[0];
-    if (p) this.player.pos.set(p[0], p[1], p[2]);
+    // A saved spot is put back on the ground (the land may have changed under it since: the old edge mountains are gone);
+    // one now under the sea goes back to the shrine.
+    if (p && heightAt(p[0], p[2]) > -1) this.player.pos.set(p[0], Math.min(p[1], heightAt(p[0], p[2]) + 0.5), p[2]);
     else this.player.pos.set(shrine.x + 2, heightAt(shrine.x + 2, shrine.z + 3), shrine.z + 3);
     this.cam.yaw = Math.PI;
     this.refreshHeroes();
     this.summonLizardKin();
     this.updateTouchButtons();
+    // Heroes who earned the crown or a relic's colour before the wardrobe existed get them now.
+    this.grantEarned();
+  }
+
+  /** What deeds have earned for the wardrobe (the crown, the relics' colours): given once, with a toast. */
+  grantEarned(): boolean {
+    const got = earnedUnlocks(this.player.c, this.state.trialsDone);
+    for (const name of got) this.hud.toast(`Wardrobe: ${name} unlocked`, 'quest');
+    return got.length > 0;
   }
 
   updateTouchButtons() {
@@ -262,6 +279,8 @@ export class Game {
       cast: c.knownSpells.length > 0,
       nextSpell: c.knownSpells.length > 1,
       eat: true,
+      // The satchel (fruit and sweets) only while there are some to eat.
+      satchel: satchelCount(c.items) > 0,
     });
   }
 
@@ -275,6 +294,7 @@ export class Game {
         mara: { armor: 0x2a4a6a, cloth: 0x223a50, accent: 0x8a8a6a, build: 'light' as const, head: 'bare' as const },
         chronicler: { armor: 0x1e1e22, cloth: 0x161618, accent: 0x6a6a6a, build: 'robe' as const, head: 'hood' as const },
         wren: { armor: 0x4a3a24, cloth: 0x7a6a3a, accent: 0xc8a050, build: 'light' as const, head: 'hat' as const },
+        nell: { armor: 0x2a4a5a, cloth: 0x3a6a7a, accent: 0x2f8a86, build: 'light' as const, head: 'bare' as const, headband: 0x2f8a86 },
       }[n.id as 'orrin'] ?? { armor: n.color, cloth: n.color, accent: 0x888888, build: 'light' as const, head: 'bare' as const };
       const rig = buildHumanoid({ skin: 0xc89a78, ...look, cape: n.id === 'lumen' ? 0xe8e0c8 : undefined });
       if (n.id === 'brann') rig.handR.add(buildWeapon('hammer'));
@@ -922,6 +942,8 @@ export class Game {
     this.mode = 'dead';
     this.audio.play('death');
     const c = p.c;
+    // Death clears the Fed slot (resting and saving keep it).
+    clearFed(c);
     if (c.gold > 0) {
       this.state.lostEmbers = { x: p.pos.x, y: Math.max(p.pos.y, WATER_LEVEL), z: p.pos.z, amount: c.gold };
       c.gold = 0;
@@ -1048,6 +1070,8 @@ export class Game {
       this.state.unclaimed.push(boss.reward);
       this.placeLegendary(boss.reward);
       this.questProgress(t.elder ? 'elders' : 'trials', 1);
+      // The sixth weapon trial earns the Crown of the Six.
+      this.grantEarned();
     }
     this.save();
   }
@@ -1190,6 +1214,12 @@ export class Game {
     for (let t = 0; t < seconds; t += step) this.update(step);
   }
 
+  /** The wardrobe (from the loom, a shrine or the Hero tab). */
+  openWardrobe() {
+    if (this.menu.isOpen) this.menu.close();
+    this.wardrobe.open();
+  }
+
   setMode(m: Mode) {
     this.mode = m;
     this.input.enabled = m === 'play';
@@ -1287,8 +1317,14 @@ export class Game {
     }
 
     this.coop.update(dt);
+    this.wardrobe.update(dt);
     this.cam.update(dt, this);
-    this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer', this.fog);
+    // The host runs the monsters around every hero, so it needs the trees' colliders there too.
+    const others = this.world.others;
+    let n = 0;
+    if (this.coop.isHost) for (const r of this.coop.remotes.values()) if (r.ready) ((others[n] ??= { x: 0, z: 0 }).x = r.pos.x), (others[n++].z = r.pos.z);
+    others.length = n;
+    this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer' || fedNightVision(this.player.c), this.fog);
     this.fx.update(gdt);
     this.hud.update(dt);
     input.endFrame();
