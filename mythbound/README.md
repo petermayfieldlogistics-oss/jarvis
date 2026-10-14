@@ -36,6 +36,7 @@ Progress saves automatically (at shrines, every minute, and on quit) in the brow
 | B (Shift gallops) | 🐎 (push stick far) | call your horse, climb on, get down |
 | Tab, middle click | ◎ | lock on |
 | H / X / T | ⚗ / 🐟 / ⇄ | flask / eat (fish, crops) / switch weapon |
+| Y | 🍎 (shown while you carry fruit or sweets) | satchel: eat a fruit or sweet for its buff |
 | F | ✋ | interact |
 | M, Esc | 🗺, ☰ | map (fast travel between shrines), menu |
 
@@ -87,8 +88,8 @@ code; friends type it and press **Join**. Co-op needs the online version
 ## The world
 
 - **Hearthhold** (town): Orrin the Historian (main quest, spell tomes), Brann the Smith (upgrades), Sister Lumen
-  (healing, light magic), Quill the merchant, Wren the farmer (seed beds), Mara the fisher (on the coast), and the
-  Chronicler.
+  (healing, light magic), Quill the merchant, Wren the farmer (seed beds), Nell (fish and fruit, by the shrine), Mara
+  the fisher (on the coast), and the Chronicler.
 - **Regions**: the Golden Reach, Whisperwood, the Ashen Dunes, Molten Peak, the Sunken Coast (and its island), the
   Weeping Mire, Hecate's Crossroads and the Field of Mars.
 - **Six trials** (fog-walled boss arenas): Hunt → Bow of Artemis, Tides → Poseidon's Trident, Storms → Master Bolt,
@@ -165,7 +166,34 @@ is what was chosen; each is easy to change:
     recipe book.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
-  button by each food.
+  button by each food. X never eats fruit or sweets (see below).
+- **Fish & fruit (Nell)**: Nell keeps a stall with a sea-blue awning beside the Hearthhold shrine, next to the
+  Chronicler. Her dialog (all big numbered buttons) has Fruit… (two shelves of four), Fish & lures… (a fish 12, a
+  golden fish 70, three lures 30), Sell your catch, Sell fruit, and "What does fruit do?". Zombies pay a quarter more,
+  as everywhere.
+  - **Fruit buffs**: eating a fruit fills your one **Fed** slot for some hours of play. Sunberry 20 (stamina back 30%
+    faster, 6 h), Heartapple 30 (heals 0.3% of max HP a second, 5 h), Moonplum 30 (mana back 40% faster, 8 h),
+    Windpear 35 (8% faster on foot, 6 h), Emberfig / Tideberry / Duskcherry 40–45 (fire / water / dark hurts 35% less,
+    8 h; tideberries also let you swim without tiring, duskcherries give a Dark Slayer's night vision), Blood Orange 60
+    (weapons and spells hit 12% harder, 5 h). Each also restores a little health or mana. No fruit gives XP or embers.
+  - **One slot**: the same fruit again tops the timer up to a full serving; a different fruit replaces the buff (the
+    satchel and the Gear tab ask first, then say "Emberfig replaces Windpear"). The buff counts down only while you
+    play (never at a shrine's "Pass time", never by a co-op host's clock), says when it wears off, and is lost when
+    you die. It multiplies with everything else (a Song of Valor and a blood orange: ×1.40 damage; an emberfig and
+    the Heart of the Elder Dragon: fire at ×0.325). A chip under the health bars shows it ("Fed: Emberfig 7h 40m", in
+    the fruit's colour).
+  - **Eating it**: Y or 🍎 opens the satchel (the button shows only while you carry fruit or sweets): one big row per
+    fruit with what it does and for how long; tap (or press 1–8) to eat. The Gear tab has Eat buttons too, and Nell
+    offers "Buy and eat now".
+  - **Fresh today**: one fruit a day is a quarter off (Nell's day is 24 minutes of your own play time).
+  - **Selling**: Nell buys fish for 5 and golden fish for 30, at most 10 a day all told (a cast takes seconds, so more
+    would out-earn fighting), and fruit at a quarter of her price. She always pays less than she charges.
+  - **Pips**: a raw sunberry or heartapple keeps a pip about one time in three. Plant it in Wren's field (Wren sells no
+    pips): sunberries ripen in 9 h (2–3 a bed), heartapples in 14 h (1–2); Nell buys the fruit, or eat it for its buff.
+  - **Sweets** (cookfire, "Sweets"): Sunberry Tart (2 sunberries, 1 wheat: the sunberry buff for 9 h, +40 HP) and
+    Heartapple Pie (2 heartapples, 1 wheat: the heartapple buff for 7½ h, +60 HP).
+  - In co-op each hero's buff, fish count and fresh fruit are their own; friends see the sparkle in the fruit's colour
+    when you eat.
 - **Deal with the Devil**: lock on to one-shot a single foe (bosses too, as written), otherwise it takes every level
   1–5 foe nearby. You black out, and light magic is sealed for 1, 2, then 3 game hours; the 4th deal seals it forever.
 - **Expansion** (toggle in the creator): Bowman (level 2 copper bow, 50 steel arrows, Power Shot: 6x damage plus 0.5 NDP

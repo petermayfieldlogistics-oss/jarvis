@@ -2340,7 +2340,7 @@ export class Player {
       if (!flags['first-pip']) {
         flags['first-pip'] = true;
         g.hud.toast("You kept the pip. Plant it in Wren's field!", 'quest');
-      } else g.hud.toast(`+1 ${ITEMS[got.pip]?.name.toLowerCase() ?? 'pip'}`, 'quest');
+      } else g.hud.toast(`+1 ${ITEMS[id].name.toLowerCase()} pip`, 'quest');
     }
     g.audio.play('drink');
     g.updateTouchButtons();

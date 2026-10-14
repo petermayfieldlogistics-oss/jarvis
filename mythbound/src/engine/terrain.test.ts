@@ -55,7 +55,10 @@ describe('terrain', () => {
       expect(Math.hypot(s.x - NELL_STALL.x, s.z - NELL_STALL.z)).toBeGreaterThan(10);
     }
     // Clear of the lamps, the Chronicler (and his desk) and the shrine; on dry land.
-    for (const [lx, lz] of [[-20, 46], [-6, 52]]) expect(Math.hypot(NELL_STALL.x - TOWN.x - lx, NELL_STALL.z - TOWN.z - lz)).toBeGreaterThan(4.5);
+    // The two lamps nearest (buildTown puts them at these offsets from the town's centre: world (-20, 46) and (-6, 52)).
+    for (const [lx, lz] of [[-20, 26], [-6, 32]]) expect(Math.hypot(NELL_STALL.x - (TOWN.x + lx), NELL_STALL.z - (TOWN.z + lz))).toBeGreaterThan(4.5);
+    // The Chronicler's desk.
+    expect(Math.hypot(NELL_STALL.x + 12, NELL_STALL.z - 37)).toBeGreaterThan(6);
     const chron = NPCS.find((n) => n.id === 'chronicler')!;
     expect(Math.hypot(nell.x - chron.x, nell.z - chron.z)).toBeGreaterThan(4);
     expect(Math.hypot(NELL_STALL.x - chron.x, NELL_STALL.z - chron.z)).toBeGreaterThan(6);
