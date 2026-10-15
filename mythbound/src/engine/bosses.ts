@@ -11,6 +11,7 @@ import { BOSSES, LAIRS, TRIALS, type BossAttack, type BossDef, type BossId, type
 import { RELICS, type RelicId } from '../data/defs';
 import { bossHealthScale, inCone, inLine, lairOpen, LAIR_RESPAWN, nextSurface, surfaceAngles, waveHits, wrapAngle, yawTo, type WaveSpec } from '../rules/boss';
 import { BREATH_SPAN, breathSweep, FLIGHT, LANDS } from './anim';
+import { DRAGON_GOLD } from './creatures';
 import { Boss, elementOf, type Enemy } from './entities';
 import { compact, glowSprite, mat } from './models';
 import { heightAt, WATER_LEVEL, waterDepth } from './terrain';
@@ -32,6 +33,8 @@ const CURVED = new Set<BossAttack>(['bite', 'claw', 'gust']);
 export const SERPENT = { ring: 30.5, sink: 1.6, body: 11, strike: 21, lies: 0.7, tailX: 7, tailZ: 14, tailR: 6 };
 /** The Elder Dragon's flight: altitude and circle. */
 const SKY = { alt: 15, circle: 13, spin: 0.55 };
+/** The Elder Dragon's fire is molten gold: its body, its white-hot core and its deep amber edge. */
+const GOLD = DRAGON_GOLD, GOLD_HOT = 0xfff0b0, GOLD_DEEP = 0xe08a00;
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -178,6 +181,11 @@ export class GreatBoss extends Boss {
 
   get bleeds() {
     return this.bdef.model !== 'reaper';
+  }
+
+  /** The Elder Dragon's aura, roar and shockwaves burn gold, like its breath. */
+  get color() {
+    return this.bdef.id === 'elder-dragon' ? GOLD : super.color;
   }
 
   /**
@@ -400,7 +408,7 @@ export class GreatBoss extends Boss {
       }
       case 'breath': {
         const o = this.breathOrigin(this.lock, _v);
-        this.telegraphs.push(g.sfx.telegraphShape('cone', o.x, o.z, this.lock, this.breathRange(), BREATH_SPAN + 0.25, w, water ? 0x40b0ff : 0xff6a20));
+        this.telegraphs.push(g.sfx.telegraphShape('cone', o.x, o.z, this.lock, this.breathRange(), BREATH_SPAN + 0.25, w, water ? 0x40b0ff : GOLD));
         break;
       }
       case 'wave': {
@@ -798,12 +806,12 @@ export class GreatBoss extends Boss {
           const ra = Math.random() * Math.PI * 2, rr = Math.random() * 4.5;
           const x = h.pos.x + Math.cos(ra) * rr + h.vel.x * 0.6, z = h.pos.z + Math.sin(ra) * rr + h.vel.z * 0.6;
           const delay = 1.1;
-          g.sfx.telegraph(x, z, 3.4, delay, 0xff6020, () => {
+          g.sfx.telegraph(x, z, 3.4, delay, GOLD, () => {
             if (!this.alive) return;
             for (const f of this.foes(g)) if (Math.hypot(f.pos.x - x, f.pos.z - z) < 3.4 + f.radius) g.damageHero(f, this.damage(), 'fire', this);
-            g.sfx.ring(_w.set(x, heightAt(x, z) + 0.2, z), 3.4, 0xff6020, 0.45);
+            g.sfx.ring(_w.set(x, heightAt(x, z) + 0.2, z), 3.4, GOLD, 0.45);
           });
-          g.sfx.meteor(this.center(_v).add(_q.set(0, 1, 0)), _w.set(x, heightAt(x, z) + 0.2, z), delay, 0xff6a20);
+          g.sfx.meteor(this.center(_v).add(_q.set(0, 1, 0)), _w.set(x, heightAt(x, z) + 0.2, z), delay, GOLD);
         }
       }
       if (k >= FLIGHT.dive - 0.08 && this.hits === 0 && this.tick > -50) {
@@ -811,7 +819,7 @@ export class GreatBoss extends Boss {
         this.tick = -100;
         this.spot.set(p.pos.x, 0, p.pos.z);
         this.clampIn(this.spot);
-        g.sfx.telegraph(this.spot.x, this.spot.z, 7, (FLIGHT.land - k) * s, 0xff3010);
+        g.sfx.telegraph(this.spot.x, this.spot.z, 7, (FLIGHT.land - k) * s, GOLD_DEEP);
         this.flyFrom.set(this.pos.x, 0, this.pos.z);
         g.sfx.sound('roar', this.pos, 90);
       }
@@ -836,8 +844,8 @@ export class GreatBoss extends Boss {
         g.knockHero(h, _q.set(h.pos.x - x, 0, h.pos.z - z).normalize(), 15);
       }
       const at = _w.set(x, heightAt(x, z) + 0.3, z);
-      g.sfx.ring(at, 7.5, 0xff5010, 0.7);
-      g.sfx.impact(at, 0xff8030, 1);
+      g.sfx.ring(at, 7.5, GOLD, 0.7);
+      g.sfx.impact(at, GOLD_HOT, 1);
       g.sfx.dust(at, 36, 0x3a2a24);
       g.sfx.shake(at, 0.9);
       g.sfx.sound('slam', at, 90);
@@ -961,8 +969,18 @@ export class GreatBoss extends Boss {
       const n = low ? 4 : 9;
       for (let i = 0; i < n; i++) {
         const sp = len * (1.4 + Math.random() * 0.5);
-        _col.setHex(water ? (Math.random() < 0.4 ? 0xe8f8ff : 0x50b8f0) : Math.random() < 0.4 ? 0xffe070 : 0xff5a14);
+        // The dragon's: a white-hot core in molten gold.
+        _col.setHex(water ? (Math.random() < 0.4 ? 0xe8f8ff : 0x50b8f0) : Math.random() < 0.2 ? GOLD_HOT : Math.random() < 0.6 ? GOLD : GOLD_DEEP);
         ps.spawn(mouth.x, mouth.y, mouth.z, _q.x * sp + (Math.random() - 0.5) * 3, _q.y * sp + (Math.random() - 0.5) * 3, _q.z * sp + (Math.random() - 0.5) * 3, 0.55 + Math.random() * 0.2, 0.9 + Math.random() * 0.9, _col, water ? 3 : -1, 1.6, 0.4, 0.9);
+      }
+      if (!water) {
+        // Molten gold has body: opaque gold gouts in the stream, so it stays gold on a bright sky.
+        const m = low ? 2 : 4;
+        for (let i = 0; i < m; i++) {
+          const sp = len * (1.2 + Math.random() * 0.5);
+          _col.setHex(Math.random() < 0.5 ? GOLD : GOLD_DEEP);
+          g.fx.soft.spawn(mouth.x, mouth.y, mouth.z, _q.x * sp + (Math.random() - 0.5) * 2, _q.y * sp + (Math.random() - 0.5) * 2, _q.z * sp + (Math.random() - 0.5) * 2, 0.5 + Math.random() * 0.25, 0.6 + Math.random() * 0.6, _col, 1, 1.4, 0.4, 0.85);
+        }
       }
       if (Math.random() < 0.5) g.fx.dust(_w.set(tx, heightAt(tx, tz), tz), 2, water ? 0xd8eef8 : 0x3a3030);
     }
@@ -982,7 +1000,7 @@ export class GreatBoss extends Boss {
       while (this.fxAcc >= 1) {
         this.fxAcc -= 1;
         const c = rig.body.getWorldPosition(_v);
-        _col.setHex(Math.random() < 0.5 ? 0xff7020 : 0xffb040);
+        _col.setHex(Math.random() < 0.5 ? GOLD : GOLD_DEEP);
         ps.spawn(c.x + (Math.random() - 0.5) * 4, c.y + Math.random() * 2, c.z + (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 0.6, 1 + Math.random() * 1.5, (Math.random() - 0.5) * 0.6, 1 + Math.random(), 0.2 + Math.random() * 0.2, _col, -0.4, -0.4, 0.3, 1);
       }
       if (this.alt > 1 && this.alt < 9) g.fx.dust(_w.set(this.pos.x, heightAt(this.pos.x, this.pos.z), this.pos.z), 2, 0x3a2a24);
@@ -1001,9 +1019,9 @@ export class GreatBoss extends Boss {
         fx.emit(c, { color: 0xd8f4ff, count: 90, speed: 9, life: 1.4, size: 1.2, gravity: 8, up: 8 });
         break;
       case 'dragon':
-        fx.ring(_w.copy(this.pos).add(_q.set(0, 0.4, 0)), 12, 0xff5010, 1);
-        fx.emit(c, { color: 0xff7020, count: 120, speed: 8, life: 1.6, size: 0.9, up: 5 });
-        fx.flash(c, 0xff6020, 80, 50);
+        fx.ring(_w.copy(this.pos).add(_q.set(0, 0.4, 0)), 12, GOLD, 1);
+        fx.emit(c, { color: GOLD, count: 120, speed: 8, life: 1.6, size: 0.9, up: 5 });
+        fx.flash(c, GOLD, 80, 50);
         break;
       case 'siren':
         fx.pillar(_w.copy(this.pos), 0x80e8ff, 2.2);
@@ -1028,7 +1046,7 @@ export class GreatBoss extends Boss {
 /** Glow colours for each foe's minor effects. */
 const AFFINITY: Record<BossId, number> = {
   cernunna: 0x60ffb0, thalassor: 0x40c0ff, zephyron: 0x80b0ff, ignaroth: 0xff6a20, champion: 0xff4030, 'hecate-shade': 0xa070ff,
-  leviathan: 0x40c0ff, 'sea-queen': 0x60e0ff, 'elder-dragon': 0xff6020, reaper: 0x60ffa0, 'giant-spider': 0x9aff40,
+  leviathan: 0x40c0ff, 'sea-queen': 0x60e0ff, 'elder-dragon': DRAGON_GOLD, reaper: 0x60ffa0, 'giant-spider': 0x9aff40,
 };
 
 /** The boss for a trial or lair: the great foes get their own moves. */

@@ -204,7 +204,7 @@ export const BOSSES: Record<BossId, BossDef> = {
   },
   'elder-dragon': {
     id: 'elder-dragon', name: 'Pyrrhax', title: 'the Elder Dragon', model: 'dragon', hp: 3200, damage: 34, level: 15, affinity: 'fire', dark: false,
-    xp: 2400, gold: 900, scale: 2.3, color: 0x5a1a12, speed: 5.5, attacks: ['bite', 'claw', 'breath', 'gust', 'ring', 'flight'], projectile: 'fireball', reward: 'dragon-heart',
+    xp: 2400, gold: 900, scale: 2.3, color: 0x2b2a2e, speed: 5.5, attacks: ['bite', 'claw', 'breath', 'gust', 'ring', 'flight'], projectile: 'fireball', reward: 'dragon-heart',
     rage: 'Pyrrhax roars, and the mountain answers with fire!',
   },
   // The hunted: no trial, they haunt their lairs.
