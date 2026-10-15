@@ -2051,7 +2051,7 @@ export function buildDragon(color: number, scale: number): CreatureRig {
     const hc = new THREE.CatmullRomCurve3([V(s * 0.11, hy + 0.12, 2.06), V(s * 0.19, hy + 0.36, 1.94), V(s * 0.3, hy + 0.56, 1.76), V(s * 0.45, hy + 0.67, 1.57), V(s * 0.6, hy + 0.64, 1.47), V(s * 0.69, hy + 0.53, 1.52), V(s * 0.7, hy + 0.43, 1.65)]).getPoints(15);
     const hr = hc.map((_, i) => {
       const u = i / (hc.length - 1);
-      return i === hc.length - 1 ? 0 : 0.095 * Math.pow(1 - u, 0.75) * (i % 2 ? 0.86 : 1);
+      return i === hc.length - 1 ? 0 : 0.11 * Math.pow(1 - u, 0.8) * (i % 2 ? 0.86 : 1);
     });
     sk.add('horn', hornC(hc), tube(hc, hr, 6), head);
     const lc = bez(V(s * 0.21, hy + 0.04, 2.02), V(s * 0.36, hy + 0.1, 1.82), V(s * 0.46, hy + 0.0, 1.56), 5);
