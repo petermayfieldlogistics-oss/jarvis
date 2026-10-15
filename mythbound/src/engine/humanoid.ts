@@ -419,6 +419,33 @@ function sections(secs: number[][][], tip?: number[]): THREE.BufferGeometry {
   return g;
 }
 
+/**
+ * A faceted lock (of hair, a fin): a diamond cross-section along a path, `w` wide across and `t`
+ * thick away from `from` (the head's middle), ending in a point.
+ */
+function ribbon(path: number[][], w: number[], t: number[], from: number[]): THREE.BufferGeometry {
+  const P = path.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+  const o = new THREE.Vector3(from[0], from[1], from[2]);
+  const tan = new THREE.Vector3();
+  const out = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  const secs: number[][][] = [];
+  for (let i = 0; i < P.length - 1; i++) {
+    tan.subVectors(P[Math.min(i + 1, P.length - 1)], P[Math.max(i - 1, 0)]).normalize();
+    out.subVectors(P[i], o);
+    out.addScaledVector(tan, -out.dot(tan)).normalize();
+    side.crossVectors(tan, out).normalize();
+    const p = P[i];
+    secs.push([
+      [p.x + side.x * w[i], p.y + side.y * w[i], p.z + side.z * w[i]],
+      [p.x + out.x * t[i], p.y + out.y * t[i], p.z + out.z * t[i]],
+      [p.x - side.x * w[i], p.y - side.y * w[i], p.z - side.z * w[i]],
+      [p.x - out.x * t[i] * 0.3, p.y - out.y * t[i] * 0.3, p.z - out.z * t[i] * 0.3],
+    ]);
+  }
+  return sections(secs, path[path.length - 1]);
+}
+
 /** A rounded box (a superellipsoid): p = 2 is an ellipsoid, higher is boxier. */
 function rbox(rx: number, ry: number, rz: number, p = 3, cols = 12, rows = 8): THREE.BufferGeometry {
   const e = 2 / p;
@@ -730,6 +757,9 @@ function makeRig(look: Omit<HumanoidLook, 'scale'>, o: BuildOpts = {}): Rig {
   else if (look.wings) buildWings(k, j, look.skin);
   o.extras?.(k, j, d);
   k.finish(root, 2.6);
+  // An orc's or a dragon's head is a size bigger than a man's (everything worn on it grows with it).
+  const headScale = o.noHead ? 1 : look.tusks ? 1.08 : look.horns ? 1.05 : 1;
+  j.head.scale.setScalar(headScale);
 
   const prof: Profile = {
     robe: look.build === 'robe' ? 1 : 0, heavy: (look.build === 'heavy' ? 0.4 : 0) + (brawn - 1) * 2, hunch: look.hunch ?? 0, shamble: look.hunch ? 1 : 0, capeLift: look.tail ? 0.3 : 0,
@@ -1236,18 +1266,7 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     k.add(new THREE.TorusGeometry(1, 0.08, 4, 20), METAL, look.circlet, H, 0, 1.808, 0.006, PI / 2 + 0.2, 0, 0, 0.108, 0.122, 0.12);
     k.add(shard(), GLOW, 0xfff0b0, H, 0, 1.79, 0.124, 0, 0, 0, 0.016, 0.022, 0.008);
   }
-  if (look.halo !== undefined) {
-    // Floating clear of whatever is on the head, its back tipped up toward the camera; a wizard's
-    // hat wears it round the crown (above the tip it would leave the frame).
-    const hat = look.head === 'hat';
-    const y = hat ? 1.99 : look.head === 'bare' || look.head === 'skull' ? 1.93 : look.head === 'hood' || look.head === 'plume' ? 2.0 : 1.97;
-    const z = hat ? -0.04 : -0.03;
-    const r = hat ? 0.15 : 0.115;
-    const halo = pivot(H, 0, y - 1.6, z);
-    halo.userData.y = halo.position.y;
-    j.halo = halo;
-    k.add(new THREE.TorusGeometry(1, 0.085, 4, 24), GLOW, look.halo, halo, 0, y, z, PI / 2 + 0.2, 0, 0, r, r, r);
-  }
+  if (look.halo !== undefined) buildHalo(k, j, look);
 }
 
 // ---------------------------------------------------------- race heads --
@@ -1293,6 +1312,8 @@ interface Skull {
   socket: number;
   cheek: number;
   back: number;
+  /** Hollows under the cheekbones (gaunt faces). */
+  hollow?: number;
 }
 
 const bumpA = (a: number, a0: number, w: number) => Math.exp(-((wrap(a - a0) / w) ** 2));
@@ -1310,7 +1331,8 @@ function skullAt(o: Skull): (a: number, v: number) => number[] {
     const out =
       o.brow * bumpY(Y, 0.3, 0.1) * bumpA(a, 0, 0.75) -
       o.socket * bumpY(Y, 0.1, 0.13) * (bumpA(a, 0.42, 0.28) + bumpA(a, -0.42, 0.28)) +
-      o.cheek * bumpY(Y, -0.12, 0.16) * (bumpA(a, 1, 0.35) + bumpA(a, -1, 0.35));
+      o.cheek * bumpY(Y, -0.12, 0.16) * (bumpA(a, 1, 0.35) + bumpA(a, -1, 0.35)) -
+      (o.hollow ?? 0) * bumpY(Y, -0.4, 0.16) * (bumpA(a, 0.8, 0.35) + bumpA(a, -0.8, 0.35));
     return [Math.sin(a) * (rx * s + out), HY + Y * o.ry * (Y > 0 ? 0.97 : 1), HZ + Math.cos(a) * (rz * s + out)];
   };
 }
@@ -1372,7 +1394,7 @@ const shadeFor = (c: HeadCtx, tone: number) => (c.cover === 'hood' || c.cover ==
  * A face on a skull: nose, eyes (glowing for some), brows and mouth. `brows` is
  * the brow hair's colour; `scowl` tilts them; sunken eyes sit in dark sockets.
  */
-function features(c: HeadCtx, o: Skull, skin: number, f: { brows: number; scowl?: number; nose?: number; sunken?: boolean; lips?: number }) {
+function features(c: HeadCtx, o: Skull, skin: number, f: { brows: number; scowl?: number; nose?: number; sunken?: boolean; lips?: number; iris?: number }) {
   const { k, H, look } = c;
   const z = (x: number, y: number) => faceZ(o, x, y);
   const n = f.nose ?? 1;
@@ -1392,7 +1414,7 @@ function features(c: HeadCtx, o: Skull, skin: number, f: { brows: number; scowl?
     if (look.glowEyes !== undefined) k.add(ball(6, 4), GLOW, look.glowEyes, H, ex, ey, ez - 0.001, 0, turn, s * -0.15, 0.017, 0.01, 0.006);
     else {
       k.add(ball(7, 4), MATTE, c.cover === 'open' ? 0xf4f0e6 : 0x9a948a, H, ex, ey, ez, 0, turn, s * -0.1, 0.019, 0.0105, 0.005);
-      k.add(ball(6, 4), MATTE, 0x2a1a10, H, ex - s * 0.0015, ey + 0.0008, ez + 0.0038, 0, turn, 0, 0.0098, 0.011, 0.003);
+      k.add(ball(6, 4), MATTE, f.iris ?? 0x2a1a10, H, ex - s * 0.0015, ey + 0.0008, ez + 0.0038, 0, turn, 0, 0.0098, 0.011, 0.003);
     }
     // The upper lid's dark line over the top of the iris, and the brow over it.
     k.add(cube(0.036, 0.0065, 0.008), MATTE, shade(skin, 0.3), H, ex + s * 0.001, ey + 0.0075, ez + 0.002, 0, turn, s * (0.08 + (f.scowl ?? 0.12) * 0.8));
@@ -1411,6 +1433,9 @@ function raceHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims)
   const c: HeadCtx = { k, H: j.head, look, d, cover };
   if (look.horns) return dracoHead(c);
   if (look.tusks) return orcHead(c);
+  if (look.voidFace) return voidHead(c);
+  if (look.stitches) return zombieHead(c);
+  if (look.halo !== undefined || look.featherWings !== undefined) return angelHead(c);
   return humanHead(c);
 }
 
@@ -1630,6 +1655,187 @@ function orcHead(c: HeadCtx): RaceHead {
   };
 }
 
+const ANGEL: Skull = { rx: 0.093, ry: 0.124, rz: 0.108, jaw: 0.3, chin: 0.05, brow: 0.004, socket: 0.008, cheek: 0.007, back: 0.06 };
+
+/**
+ * An angel (after the owner's sketch): a fine, calm face with pale eyes and
+ * golden hair falling in loose locks to the shoulders.
+ */
+function angelHead(c: HeadCtx): RaceHead {
+  const { k, H, look } = c;
+  const o = ANGEL;
+  const skin = shadeFor(c, look.skin);
+  const hair = look.hair ?? 0xf2d27a;
+  const at = skullAt(o);
+  const mid = [0, HY + 0.01, HZ - 0.01];
+  /** A lock from (a, v) on the skull, falling `drop` and swinging out by `flare`. */
+  const fall = (a: number, v: number, drop: number, flare: number, w: number, curl: number) => {
+    const p = at(a, v);
+    const ox = Math.sin(a), oz = Math.cos(a);
+    const path: number[][] = [];
+    for (let i = 0; i <= 4; i++) {
+      const t = i / 4;
+      const r = 1.08 + flare * t * t + 0.02 * Math.sin(t * PI * 2 + curl);
+      path.push([p[0] * r + ox * 0.012 * Math.sin(t * PI * 1.5 + curl), p[1] - drop * t, HZ + (p[2] - HZ) * r + oz * 0.01 * t]);
+    }
+    k.add(paint(ribbon(path, [w, w * 1.1, w * 0.95, w * 0.7], [0.016, 0.016, 0.013, 0.01], mid), (_x, y) => lerp(0.68, 1.12, smooth(p[1] - drop, p[1], y))), MATTE, hair, H);
+  };
+  return {
+    chin: [0, 1.63, faceZ(o, 0, 1.63)],
+    face() {
+      k.add(paint(soften(shell(22, 14, at), 0, 1.64, -0.03, 0.55), fill), MATTE, skin, H);
+      features(c, o, skin, { brows: shade(hair, 0.62), scowl: 0.02, nose: 0.85, iris: 0x3a6aa0, lips: shade(skin, 0.82) });
+    },
+    ears() {
+      for (const s of [-1, 1]) k.add(ball(7, 5), MATTE, shade(look.skin, 0.95), H, s * 0.091, 1.737, -0.006, 0, s * 0.35, 0, 0.012, 0.028, 0.019);
+    },
+    hair() {
+      // A cap of loose waves, parted in the middle and swept back off the brow.
+      hairCap(c, o, hair, hairline(0.66, 0.6, 0.5, 0.36, 0.26), 0.05);
+      for (const [a, v, drop, flare, w, curl] of [
+        [0.75, 0.62, 0.17, 0.25, 0.024, 0], [-0.75, 0.62, 0.17, 0.25, 0.024, 1],
+        [1.25, 0.6, 0.21, 0.3, 0.03, 2], [-1.25, 0.6, 0.21, 0.3, 0.03, 0.5],
+        [1.8, 0.6, 0.25, 0.34, 0.034, 1.5], [-1.8, 0.6, 0.25, 0.34, 0.034, 2.5],
+        [2.4, 0.6, 0.27, 0.32, 0.036, 0.2], [-2.4, 0.6, 0.27, 0.32, 0.036, 1.2],
+        [PI, 0.62, 0.28, 0.3, 0.04, 0.8],
+      ]) fall(a, v, drop, flare, w, curl);
+      // Two loose locks over the brow.
+      for (const s of [-1, 1]) {
+        const p = at(s * 0.3, 0.74);
+        const path = [[p[0] * 1.08, p[1], HZ + (p[2] - HZ) * 1.08], [s * 0.06, 1.8, 0.115], [s * 0.085, 1.77, 0.112], [s * 0.098, 1.75, 0.09]];
+        k.add(paint(ribbon(path, [0.022, 0.02, 0.012], [0.012, 0.012, 0.008], mid), () => 1.05), MATTE, hair, H);
+      }
+    },
+    always() {},
+  };
+}
+
+/**
+ * A halo as a sun disc behind the head: a glowing ring with a finer ring inside
+ * it and rays between; it bobs and sways (see secondary).
+ */
+function buildHalo(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>) {
+  const color = look.halo ?? 0xffe28a;
+  // Behind whatever is worn on the head, clear of a hat's brim.
+  const hat = look.head === 'hat';
+  const hood = look.head === 'hood' || look.head === 'mask';
+  const y = hat ? 1.86 : 1.8;
+  const z = hat ? -0.3 : hood ? -0.27 : -0.19;
+  const r = hat ? 0.24 : 0.2;
+  const halo = pivot(j.head, 0, y - 1.6, z);
+  halo.userData.y = halo.position.y;
+  j.halo = halo;
+  const tilt = -0.2;
+  k.add(new THREE.TorusGeometry(1, 0.06, 4, 32), GLOW, color, halo, 0, y, z, tilt, 0, 0, r, r, r);
+  k.add(new THREE.TorusGeometry(1, 0.04, 3, 28), GLOW, shade(color, 0.85), halo, 0, y, z, tilt, 0, 0, r * 0.78, r * 0.78, r);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * TAU;
+    const long = i % 2 === 0;
+    const rr = r * (long ? 1.04 : 1.0);
+    k.add(spike(0.011, long ? r * 0.22 : r * 0.13, 3), GLOW, color, halo, Math.sin(a) * rr, y + Math.cos(a) * rr * Math.cos(tilt), z + Math.cos(a) * rr * Math.sin(tilt), tilt, 0, -a);
+  }
+}
+
+const ZOMBIE: Skull = { rx: 0.095, ry: 0.122, rz: 0.108, jaw: 0.36, chin: 0.03, brow: 0.009, socket: 0.016, cheek: 0.012, back: 0.05, hollow: 0.012 };
+const BONE = 0xd8cca6;
+const STITCH = 0x16120e;
+
+/** Grave-mottled skin: blotches of bruise and rot. */
+const mottle = (x: number, y: number, z: number) => 1 - 0.32 * Math.max(0, Math.sin(x * 61 + 1.3) * Math.sin(y * 47 + 2.1) * Math.sin(z * 53 + 0.4)) ** 0.6;
+
+/**
+ * A zombie: a gaunt, mottled face with sunken sockets round glowing eyes, a lip
+ * torn away from the teeth, scars sewn shut, a torn ear and lank, patchy hair.
+ */
+function zombieHead(c: HeadCtx): RaceHead {
+  const { k, H, look } = c;
+  const o = ZOMBIE;
+  const skin = shadeFor(c, look.skin);
+  const hair = look.hair ?? shade(look.skin, 0.36);
+  const at = skullAt(o);
+  const z = (x: number, y: number) => faceZ(o, x, y);
+  /** A scar from (x0, y0) to (x1, y1) across the face, sewn shut with n stitches. */
+  const scar = (x0: number, y0: number, x1: number, y1: number, n: number) => {
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    const rz = Math.atan2(y1 - y0, x1 - x0);
+    k.add(cube(Math.hypot(x1 - x0, y1 - y0), 0.008, 0.006), MATTE, shade(skin, 0.45), H, mx, my, z(mx, my) + 0.002, 0, turnAt(mx, o.rx), rz);
+    for (let i = 0; i < n; i++) {
+      const x = lerp(x0, x1, (i + 0.5) / n), y = lerp(y0, y1, (i + 0.5) / n);
+      k.add(cube(0.005, 0.026, 0.005), MATTE, STITCH, H, x, y, z(x, y) + 0.003, 0, turnAt(x, o.rx), rz);
+    }
+  };
+  return {
+    chin: [0, 1.632, z(0, 1.632)],
+    face() {
+      k.add(paint(soften(shell(22, 14, at), 0, 1.64, -0.03, 0.5), (x, y, zz) => fill(x, y, zz) * mottle(x, y, zz)), MATTE, skin, H);
+      features(c, o, skin, { brows: shade(skin, 0.5), scowl: 0.2, nose: 0.8, sunken: true, lips: shade(skin, 0.6) });
+      if (c.cover === 'mask') return;
+      // The lip torn back on one side over a grimace of teeth.
+      k.add(cube(0.036, 0.016, 0.008), MATTE, 0x2a0e0a, H, -0.018, 1.671, z(-0.018, 1.671) - 0.001, 0, turnAt(-0.018, o.rx), 0.06);
+      for (let i = 0; i < 5; i++) {
+        const x = -0.034 + i * 0.0085;
+        k.add(cube(0.0072, 0.011, 0.006), MATTE, shade(BONE, 1 - (i % 2) * 0.1), H, x, 1.671 + (i % 2) * 0.001, z(x, 1.671) + 0.001, 0, turnAt(x, o.rx), 0);
+      }
+      if (c.cover === 'open') {
+        scar(-0.075, 1.81, 0.035, 1.795, 5);
+        scar(0.05, 1.735, 0.07, 1.675, 3);
+      }
+    },
+    ears() {
+      // One ear whole, the other torn to a ragged stub.
+      k.add(ball(7, 5), MATTE, shade(look.skin, 0.9), H, 0.093, 1.737, -0.006, 0, 0.35, 0, 0.013, 0.03, 0.021);
+      k.add(ball(6, 4), MATTE, shade(look.skin, 0.8), H, -0.091, 1.73, -0.006, 0.4, -0.35, 0, 0.012, 0.016, 0.015);
+    },
+    hair() {
+      // Thin hair to a ragged line, sewn across the crown, lank strands hanging from it.
+      hairCap(c, o, hair, (a) => 0.64 + 0.06 * Math.sin(a * 5 + 1) - 0.1 * Math.max(0, -Math.cos(a)), 0.01, 1.045);
+      const mid = [0, HY, HZ];
+      for (const [a, len, w] of [[1.9, 0.14, 0.02], [2.4, 0.17, 0.024], [2.9, 0.15, 0.02], [1.4, 0.11, 0.016], [-2.6, 0.1, 0.015]]) {
+        const p = at(a, 0.66);
+        const ox = Math.sin(a), oz = Math.cos(a);
+        const path = [[p[0] * 1.05, p[1], HZ + (p[2] - HZ) * 1.05], [p[0] * 1.1 + ox * 0.01, p[1] - len * 0.5, HZ + (p[2] - HZ) * 1.1 + oz * 0.01], [p[0] * 1.12 + ox * 0.02, p[1] - len, HZ + (p[2] - HZ) * 1.12]];
+        k.add(ribbon(path, [w, w * 0.8], [0.01, 0.008], mid), MATTE, hair, H);
+      }
+      // A seam across the bald crown.
+      for (let i = 0; i < 6; i++) {
+        const a = -0.9 + i * 0.32;
+        const p = at(a, 0.86);
+        k.add(cube(0.005, 0.024, 0.005), MATTE, STITCH, H, p[0] * 1.02, p[1] + 0.002, HZ + (p[2] - HZ) * 1.02, 0.6, a, PI / 2);
+      }
+    },
+    always() {},
+  };
+}
+
+/**
+ * An ancient: no face in the hood at all, only a dark void where two eyes burn
+ * and old runes glow: a mark on the brow, lines down the cheeks.
+ */
+function voidHead(c: HeadCtx): RaceHead {
+  const { k, H, look } = c;
+  const glow = look.glowEyes ?? 0x40ff80;
+  return {
+    chin: null,
+    face() {
+      k.add(ball(12, 8), MATTE, 0x040406, H, 0, HY - 0.005, HZ - 0.012, 0, 0, 0, 0.1, 0.122, 0.11);
+      for (const s of [-1, 1]) {
+        // Slanted eyes with a dim halo of light round each.
+        k.add(ball(6, 4), GLOW, shade(glow, 0.32), H, s * 0.04, 1.75, 0.093, 0, s * 0.35, s * -0.3, 0.03, 0.017, 0.006);
+        k.add(ball(6, 4), GLOW, glow, H, s * 0.04, 1.75, 0.097, 0, s * 0.35, s * -0.3, 0.019, 0.008, 0.006);
+        // Runes down the cheeks.
+        k.add(cube(0.004, 0.04, 0.004), GLOW, shade(glow, 0.55), H, s * 0.046, 1.709, 0.094, 0, s * 0.4, s * 0.12);
+        k.add(cube(0.004, 0.016, 0.004), GLOW, shade(glow, 0.55), H, s * 0.056, 1.684, 0.086, 0, s * 0.5, s * -0.6);
+      }
+      // A mark on the brow: a diamond over a line.
+      k.add(shard(), GLOW, shade(glow, 0.8), H, 0, 1.8, 0.096, 0, 0, 0, 0.009, 0.013, 0.004);
+      k.add(cube(0.004, 0.03, 0.004), GLOW, shade(glow, 0.55), H, 0, 1.776, 0.1);
+    },
+    ears() {},
+    hair() {},
+    always() {},
+  };
+}
+
 /**
  * What a race shows below the head, over any clothes: a dragon's scaled throat
  * and clawed hands, an orc's bull neck.
@@ -1777,12 +1983,14 @@ function buildWings(k: Kit, j: Joints, skin: number) {
   }
 }
 
+const _featherM = new THREE.Matrix4();
+const _featherE = new THREE.Euler();
+
 function buildFeatherWings(k: Kit, j: Joints, color: number) {
   // The same joints as membrane wings (so they fold, open and beat the same way), dressed in feathers.
   const wings = pivot(j.chest, 0, 0.12, -0.15);
   wings.userData.feather = true;
   j.wings = wings;
-  const edge = shade(color, 0.9);
   for (const s of [1, -1]) {
     const root = pivot(wings, s * 0.07, 0, -0.02);
     const tip = pivot(root, s * 0.55, 0.32, -0.08);
@@ -1795,35 +2003,43 @@ function buildFeatherWings(k: Kit, j: Joints, color: number) {
     };
     // Bind pose (spread), model space: the leading edge from the shoulder up to the wrist and out to the tip.
     const R = [s * 0.07, 1.44, -0.17];
-    const M = [s * 0.34, 1.66, -0.21];
-    const E = [s * 0.62, 1.78, -0.25];
-    const T = [s * 1.16, 1.84, -0.3];
-    k.add(tube([R, M, E], [0.042, 0.036, 0.03], 6), MATTE, edge, ww);
-    k.add(tube([E, [s * 0.9, 1.83, -0.28], T], [0.03, 0.022, 0.008], 5), MATTE, edge, ww);
-    /** A feather from (x, y) pointing at angle a (0 = straight out from the body, -PI/2 = down). */
+    const M = [s * 0.36, 1.68, -0.21];
+    const E = [s * 0.64, 1.8, -0.25];
+    const T = [s * 1.3, 1.9, -0.3];
+    k.add(facets(tube([R, M, E], [0.05, 0.042, 0.034], 6)), MATTE, shade(color, 0.95), ww);
+    k.add(facets(tube([E, [s * 0.98, 1.88, -0.28], T], [0.034, 0.024, 0.006], 5)), MATTE, shade(color, 0.95), ww);
+    /**
+     * A feather from (x, y) at angle a (0 straight out from the body, -PI/2 down), long and
+     * clean, lit from above on both faces; `dz` lays the rows over each other.
+     */
     const feather = (x: number, y: number, a: number, len: number, w: number, tone: number, dz: number) => {
       const dx = s * Math.cos(a), dy = Math.sin(a);
-      const cx = x + dx * len * 0.5, cy = y + dy * len * 0.5;
-      k.add(shard(), MATTE, shade(color, tone), ww, cx, cy, -0.17 - 0.1 * Math.abs(cx) + dz, 0, 0, Math.atan2(dy, dx) - PI / 2, w * 0.5, len * 0.5, 0.012);
+      const z = -0.17 - 0.1 * Math.abs(x) + dz;
+      const g = paint(blade(len, w, 0.014, 0.66), (_x, yy) => tone * lerp(0.78, 1.06, smooth(0, len * 0.7, yy)));
+      const [rx, ry, rz] = aim([dx, dy, 0], [0, 0, -1]);
+      g.applyMatrix4(_featherM.makeRotationFromEuler(_featherE.set(rx, ry, rz)).setPosition(x, y, z));
+      k.add(soften(g, x, -4, z, 0.7), MATTE, color, ww);
     };
     const along = (a: number[], b: number[], t: number) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
     // Primaries fan from the hand, longest at the tip.
-    for (let i = 0; i < 6; i++) {
-      const t = i / 5;
-      const [x, y] = along(E, T, t);
-      feather(x, y - 0.02, lerp(-1.25, -0.32, t), lerp(0.6, 0.7, t), 0.11, lerp(0.95, 0.88, t), 0.004);
-    }
-    // Secondaries hang from the arm.
     for (let i = 0; i < 7; i++) {
       const t = i / 6;
-      const [x, y] = along(t < 0.5 ? R : M, t < 0.5 ? M : E, t < 0.5 ? t * 2 : t * 2 - 1);
-      feather(x, y - 0.02, lerp(-1.7, -1.35, t), lerp(0.42, 0.62, t), 0.12, 0.97, 0);
+      const [x, y] = along(E, T, t);
+      feather(x, y - 0.02, lerp(-1.3, -0.3, t), lerp(0.66, 0.8, t), 0.15, lerp(0.92, 1, t), 0.006 + i * 0.002);
     }
-    // Coverts: a shorter layer over the roots, on the back of the wing.
-    for (let i = 0; i < 9; i++) {
-      const t = i / 8;
-      const [x, y] = t < 0.6 ? along(R, E, t / 0.6) : along(E, T, (t - 0.6) / 0.4);
-      feather(x, y - 0.015, lerp(-1.6, -0.75, t), lerp(0.24, 0.3, t), 0.11, 1.04, -0.014);
+    // Secondaries hang from the arm.
+    for (let i = 0; i < 8; i++) {
+      const t = i / 7;
+      const [x, y] = along(t < 0.5 ? R : M, t < 0.5 ? M : E, t < 0.5 ? t * 2 : t * 2 - 1);
+      feather(x, y - 0.02, lerp(-1.72, -1.38, t), lerp(0.48, 0.66, t), 0.16, 0.94, 0);
+    }
+    // Coverts: two shorter rows over the roots, on the back of the wing.
+    for (let row = 0; row < 2; row++) {
+      for (let i = 0; i < 9; i++) {
+        const t = i / 8;
+        const [x, y] = t < 0.6 ? along(R, E, t / 0.6) : along(E, T, (t - 0.6) / 0.4);
+        feather(x, y - 0.012, lerp(-1.62, -0.8, t), lerp(0.28, 0.34, t) * (row ? 0.62 : 1), 0.14, row ? 1.08 : 1.02, -0.014 - row * 0.012);
+      }
     }
   }
 }
