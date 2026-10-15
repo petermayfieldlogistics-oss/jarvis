@@ -3174,17 +3174,15 @@ function buildHat(k: Kit, j: Joints, look: LookIn) {
 }
 
 /**
- * A sorcerer's hood: tall, pointed and swept back (lower under a halo), over a mantle
+ * A sorcerer's hood: tall, pointed and swept back (the halo sits behind it), over a mantle
  * across the shoulders. The face in its shadow wears a long beard (races with a human
  * face); under a dark hood only the eyes show, glowing with the robe's runes.
  */
 function buildTallHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
   const H = j.head;
   const hood = look.armor;
-  const tall = look.halo === undefined ? 1 : 0.55;
-  const up = (y: number) => 1.56 + (y - 1.56) * (y > 1.8 ? tall : 1);
-  const rings = [[1.56, 0.192, 0.205, -0.02, 1.0], [1.65, 0.17, 0.205, -0.02, 0.82], [1.75, 0.162, 0.205, -0.024, 0.74], [1.85, 0.146, 0.19, -0.042, 0.6], [1.94, 0.112, 0.158, -0.07, 0.42], [2.02, 0.07, 0.112, -0.105, 0.22], [2.08, 0.034, 0.062, -0.135, 0.0]].map(([y, ...r]) => [up(y), ...r]);
-  const peak = [0, up(2.2), -0.215];
+  const rings = [[1.56, 0.192, 0.205, -0.02, 1.0], [1.65, 0.17, 0.205, -0.02, 0.82], [1.75, 0.162, 0.205, -0.024, 0.74], [1.85, 0.146, 0.19, -0.042, 0.6], [1.94, 0.112, 0.158, -0.07, 0.42], [2.02, 0.07, 0.112, -0.105, 0.22], [2.08, 0.034, 0.062, -0.135, 0.0]];
+  const peak = [0, 2.2, -0.215];
   k.add(lining(cowlShell(rings, peak, 14, 0.94)), MATTE, shade(hood, 0.2), H);
   k.add(facet(cowlShell(rings, peak, 14)), MATTE, hood, H);
   const edge = cowlEdge(rings);
