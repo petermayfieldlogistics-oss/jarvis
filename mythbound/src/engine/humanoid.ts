@@ -1429,6 +1429,8 @@ function humanHead(c: HeadCtx): RaceHead {
       }
     },
     hair() {
+      // A shaven head (hair the colour of the skin) is bare scalp.
+      if (look.hair === look.skin) return;
       // Short at the back and sides, swept up and back off the brow.
       hairCap(c, o, hair, hairline(0.64, 0.6, 0.55, 0.42, 0.3), 0.06);
       const at = skullAt(o);
@@ -1770,10 +1772,11 @@ function zombieHead(c: HeadCtx): RaceHead {
       k.add(ball(6, 4), MATTE, shade(look.skin, 0.8), H, -0.091, 1.73, -0.006, 0.4, -0.35, 0, 0.012, 0.016, 0.015);
     },
     hair() {
-      // Thin hair to a ragged line, sewn across the crown, lank strands hanging from it.
-      hairCap(c, o, hair, (a) => 0.64 + 0.06 * Math.sin(a * 5 + 1) - 0.1 * Math.max(0, -Math.cos(a)), 0.01, 1.045);
+      // Thin hair to a ragged line (none on a shaven head), sewn across the crown, lank strands hanging from it.
+      const shaven = look.hair === look.skin;
+      if (!shaven) hairCap(c, o, hair, (a) => 0.64 + 0.06 * Math.sin(a * 5 + 1) - 0.1 * Math.max(0, -Math.cos(a)), 0.01, 1.045);
       const mid = [0, HY, HZ];
-      for (const [a, len, w] of [[1.9, 0.14, 0.02], [2.4, 0.17, 0.024], [2.9, 0.15, 0.02], [1.4, 0.11, 0.016], [-2.6, 0.1, 0.015]]) {
+      for (const [a, len, w] of shaven ? [] : [[1.9, 0.14, 0.02], [2.4, 0.17, 0.024], [2.9, 0.15, 0.02], [1.4, 0.11, 0.016], [-2.6, 0.1, 0.015]]) {
         const p = at(a, 0.66);
         const ox = Math.sin(a), oz = Math.cos(a);
         const path = [[p[0] * 1.05, p[1], HZ + (p[2] - HZ) * 1.05], [p[0] * 1.1 + ox * 0.01, p[1] - len * 0.5, HZ + (p[2] - HZ) * 1.1 + oz * 0.01], [p[0] * 1.12 + ox * 0.02, p[1] - len, HZ + (p[2] - HZ) * 1.12]];
@@ -1783,7 +1786,8 @@ function zombieHead(c: HeadCtx): RaceHead {
       for (let i = 0; i < 6; i++) {
         const a = -0.9 + i * 0.32;
         const p = at(a, 0.86);
-        k.add(cube(0.005, 0.024, 0.005), MATTE, STITCH, H, p[0] * 1.02, p[1] + 0.002, HZ + (p[2] - HZ) * 1.02, 0.6, a, PI / 2);
+        const f = shaven ? 1.004 : 1.05;
+        k.add(cube(0.005, 0.024, 0.005), MATTE, STITCH, H, p[0] * f, HY + (p[1] - HY) * f, HZ + (p[2] - HZ) * f, 0.6, a, PI / 2);
       }
     },
     always() {},
