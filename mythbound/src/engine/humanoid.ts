@@ -1695,6 +1695,19 @@ function angelHead(c: HeadCtx): RaceHead {
     face() {
       k.add(paint(soften(shell(22, 14, at), 0, 1.64, -0.03, 0.55), fill), MATTE, skin, H);
       features(c, o, skin, { brows: shade(hair, 0.62), scowl: 0.02, nose: 0.85, iris: 0x3a6aa0, lips: shade(skin, 0.82) });
+      if (c.cover === 'hood') {
+        // Loose waves spill out of the hood beside the face.
+        for (const s of [-1, 1]) {
+          for (const [dx, dz, len, w] of [[0, 0, 0.2, 0.026], [0.018, -0.022, 0.16, 0.022]]) {
+            const path: number[][] = [];
+            for (let i = 0; i <= 4; i++) {
+              const t = i / 4;
+              path.push([s * (0.088 + dx + 0.03 * t + 0.012 * Math.sin(t * 5.5)), 1.76 - len * t, 0.04 + dz + 0.03 * t]);
+            }
+            k.add(paint(ribbon(path, [w, w * 1.15, w, w * 0.7], [0.014, 0.014, 0.012, 0.01], [0, 1.68, -0.03]), (_x, y) => lerp(0.62, 1.05, smooth(1.76, 1.62, y))), MATTE, hair, H);
+          }
+        }
+      }
     },
     ears() {
       for (const s of [-1, 1]) k.add(ball(7, 5), MATTE, shade(look.skin, 0.95), H, s * 0.091, 1.737, -0.006, 0, s * 0.35, 0, 0.012, 0.028, 0.019);
