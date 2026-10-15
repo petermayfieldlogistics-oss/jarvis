@@ -198,6 +198,14 @@ is what was chosen; each is easy to change:
   - **Co-op**: friends see your outfit after Keep (never the previews). The hello carries seven numbers (garments by
     index, colours as hex), so a friend on an older build with fewer dyes still sees the right colours; a hello
     without them, or with junk, shows your class look. Each hero's wardrobe saves with their own character.
+  - **Class looks**: each class's own clothes are cut for it. Warriors wear plate under a great helm (visor slit and
+    comb), big rounded pauldrons, mail at the joints, a tattered tabard and scarf, a fur mantle and a ragged cloak;
+    monks a robe draped over one shoulder, prayer beads, tattoos and a mark on a shaven brow; sorcerers a tall pointed
+    hood, a long beard (on races with a human face) and a flowing robe with bell sleeves; rangers a hood and leaf-cut
+    cape over leathers, with a quiver; mages a pointed hat, a stand-up collar and a split robe; rogues sleek leathers,
+    crossed straps with throwing knives, a peaked hood and a mask. A body garment keeps the class's cut where it can.
+    Heroes are drawn with a thin ink outline, and every humanoid catches the sky's light on its edges and shadowed
+    side, so dark clothes keep their shape.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
   button by each food. X never eats fruit or sweets (see below).
