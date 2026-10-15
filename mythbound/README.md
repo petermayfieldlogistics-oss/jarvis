@@ -239,6 +239,13 @@ is what was chosen; each is easy to change:
   half fire damage; at level 10, lava heals 10 HP a second.
 - **༼ ∞ኒ**: locked until you find the eye carvings in the world. Playable afterwards, with the Gaze, Thunderheart and
   lizard-kin.
+- **Race looks**: every race but the elf has a head of its own, crisp and faceted. Draco: a dragon's head (long
+  ridged snout, toothed jaw, burning eyes, a crest of horns swept back, spined frills), a plated throat, claws, a
+  spined tail with belly plates and scalloped wings. Orcs: an underbite jaw with big tusks, a heavy brow, pointed ears,
+  a black mohawk, a bull neck, a bigger frame (and spikes through a plate wearer's pauldrons). Angelic: a fine face,
+  golden hair in loose locks, a sun-disc halo behind the head and big feathered wings. Humans: a sculpted face with
+  brows and eyes that read, swept faceted hair. Zombies: gaunt and mottled, sunken glowing eyes, a lip torn back
+  from the teeth, sewn scars. The ༼ ∞ኒ: no face in the hood at all, only glowing eyes and runes.
 - **Legendaries**: Sword of Mars needs a Warrior; Bow of Artemis a Ranger (full power for an Elf ranger); the Master Bolt
   can be thrown by anyone but only a Ranger avoids half damage and the shock; Staff of Hecate needs a Mage; Hammer of
   Hephaestus a Blacksmith; Poseidon's Trident a Sailor (it also lets you walk on water).
