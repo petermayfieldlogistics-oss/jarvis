@@ -1971,7 +1971,7 @@ export function buildDragon(color: number, scale: number): CreatureRig {
   sk.add('hide', grad(tint(color, 1.0), tint(belly, 0.75), hy - 0.27, hy - 0.13, 0.04), jawGeo, jaw);
   // Molten gold welling in the maw, spilling over the lip and dripping from the jaw.
   sk.add('glow', GOLD, ell(V(0, lip(2.42) - 0.012, 2.42), 0.12, 0.035, 0.3, 7, 3, [-0.1, 0, 0]), jaw, undefined, 1.5);
-  sk.add('glow', GOLD_DEEP, ell(V(0, lip(2.42) + 0.006, 2.4), 0.11, 0.02, 0.26, 7, 3, [-0.1, 0, 0]), head, undefined, 1.2);
+  sk.add('glow', GOLD, ell(V(0, lip(2.42) + 0.006, 2.42), 0.1, 0.02, 0.24, 7, 3, [-0.1, 0, 0]), head, undefined, 1.1);
   const drips: [number, number, number, number][] = [[-0.04, 2.66, 0.52, 0.011], [0.1, 2.52, 0.22, 0.014], [-0.15, 2.34, 0.11, 0.016]];
   for (const [x, z, len, r] of drips) {
     const y = lip(z) - 0.035;
@@ -2025,7 +2025,7 @@ export function buildDragon(color: number, scale: number): CreatureRig {
     const brow = [V(s * 0.03, hy + 0.1, 2.37), V(s * 0.14, hy + 0.15, 2.27), V(s * 0.26, hy + 0.19, 2.1), V(s * 0.38, hy + 0.26, 1.88)];
     sk.add('hide', tint(color, 1.0), spine(brow, [0.05, 0.065, 0.05], [0.06, 0.075, 0.055], V(0, 0.4, 1)), head);
     sk.add('hide', 0x050405, ell(V(s * 0.16, hy + 0.075, 2.235), 0.058, 0.04, 0.045, 6, 4, [0.2, -s * 0.5, 0]), head);
-    sk.add('glow', 0xffc21a, ell(V(s * 0.17, hy + 0.076, 2.255), 0.034, 0.012, 0.018, 6, 3, [0.15, -s * 0.5, s * 0.32]), head, undefined, 1.9);
+    sk.add('glow', 0xffc21a, ell(V(s * 0.17, hy + 0.076, 2.257), 0.04, 0.014, 0.02, 6, 3, [0.15, -s * 0.5, s * 0.32]), head, undefined, 2.2);
     // Frills off the cheeks and jaw hinge, overlapping the face's edge.
     for (let i = 0; i < 5; i++) {
       const u = i / 4;
