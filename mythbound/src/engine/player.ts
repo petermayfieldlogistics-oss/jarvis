@@ -3346,7 +3346,7 @@ export function poseBowString(rig: Rig, bow: THREE.Object3D, a: AnimState, arrow
 }
 
 const SKIN: Record<RaceId, number> = {
-  human: 0xc89a78, elf: 0xe0c8a8, draco: 0x5a6a4a, ancient: 0x3a3a44, zombie: 0x86967a, angelic: 0xf4e0c6, orc: 0x6c8c48,
+  human: 0xd6a882, elf: 0xe0c8a8, draco: 0x4e7a4a, ancient: 0x3a3a44, zombie: 0x86967a, angelic: 0xf4e0c6, orc: 0x6c8c48,
 };
 const GRAVE_DUST = new THREE.Color(0x5e5a4a);
 /** A colour faded with grave dust. */
