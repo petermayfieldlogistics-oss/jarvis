@@ -368,9 +368,9 @@ function surfaceMaterial(s: number): THREE.MeshStandardMaterial {
       };
       m.customProgramCacheKey = () => 'humanoid-glow';
     } else {
-      // Readability: the sky's light wraps round the edges (strongest on metal) and lifts the
-      // shadowed side a little, so dark clothes keep their shapes instead of going to black.
-      // It follows the sky light, so it dims at night with everything else.
+      // Readability: the sky's light wraps round the edges (strongest on metal) and fills the
+      // shadowed side (near-black colours a little more), so dark clothes keep their shapes
+      // instead of going to black. It follows the sky light, so it dims at night with the rest.
       const rim = s === METAL ? '0.95' : '0.6';
       m.onBeforeCompile = (sh) => {
         sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', /* glsl */ `#include <emissivemap_fragment>
@@ -379,7 +379,8 @@ function surfaceMaterial(s: number): THREE.MeshStandardMaterial {
           #if NUM_HEMI_LIGHTS > 0
             rimSky += hemisphereLights[0].skyColor;
           #endif
-          totalEmissiveRadiance += rimSky * (diffuseColor.rgb * 0.22 + (diffuseColor.rgb + 0.05) * (${rim} * rimK * rimK * rimK));`);
+          vec3 rimDark = max(vec3(0.0), 0.05 - diffuseColor.rgb);
+          totalEmissiveRadiance += rimSky * (diffuseColor.rgb * 0.42 + rimDark * 0.7 + (diffuseColor.rgb + 0.05) * (${rim} * rimK * rimK * rimK));`);
       };
       m.customProgramCacheKey = () => `humanoid-rim-${s}`;
     }
@@ -1105,7 +1106,7 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
     }
     case 'hood': {
       // A deep hood: the face sits in shadow, a cowl drapes the shoulders.
-      face(shade(skin, 0.3), false, 8, 6);
+      face(shade(skin, hoodShadow(look)), false, 8, 6);
       eyes(0.106, 0x050404);
       buildHood(k, j, look, d);
       if (look.ears) ears(skin);
@@ -1600,6 +1601,9 @@ function buildGarb(k: Kit, j: Joints, look: LookIn, d: Dims): boolean {
     case 'robe':
       buildCasterRobe(k, j, look, d, garb !== 'sorcerer');
       return true;
+    case 'light':
+      buildLeathers(k, j, look, d, garb === 'rogue');
+      return true;
     default:
       return false;
   }
@@ -1993,10 +1997,10 @@ function buildCasterRobe(k: Kit, j: Joints, look: LookIn, d: Dims, mage: boolean
     k.add(collar, MATTE, cloth, j.chest);
     k.add(tube([[Math.sin(1.05) * 0.19, 1.74, -0.06 + Math.cos(1.05) * 0.17], [0, 1.79, -0.23], [-Math.sin(1.05) * 0.19, 1.74, -0.06 + Math.cos(1.05) * 0.17]], [0.01, 0.012, 0.01], 4), METAL, accent, j.chest);
     // A shoulder cape cut into points.
-    const cape = lofted(R([[1.33, 0.3, 0.21, -0.008], [1.42, 0.285, 0.198, -0.006], [1.5, 0.25, 0.172, -0.004], [1.56, 0.19, 0.142, -0.008], [1.6, 0.13, 0.11, -0.012]]), 20, { wave: (a, i) => (i === 0 ? -0.07 * zig(a + PI / 20, 10) : 0) });
+    const cape = lofted(R([[1.39, 0.296, 0.206, -0.008], [1.45, 0.282, 0.194, -0.006], [1.51, 0.25, 0.172, -0.004], [1.565, 0.19, 0.142, -0.008], [1.605, 0.13, 0.11, -0.012]]), 20, { wave: (a, i) => (i === 0 ? -0.07 * zig(a + PI / 20, 10) : 0) });
     k.add(lining(cape), MATTE, inner, mantleSkin(j));
     k.add(facet(cape), MATTE, armor, mantleSkin(j));
-    k.add(lofted(R([[1.33, 0.302, 0.212, -0.008], [1.35, 0.298, 0.21, -0.008]]), 20, { wave: (a, i) => -0.07 * zig(a + PI / 20, 10) + (i ? 0 : 0) }), MATTE, accent, mantleSkin(j));
+    k.add(lofted(R([[1.39, 0.298, 0.208, -0.008], [1.41, 0.294, 0.204, -0.008]]), 20, { wave: (a) => -0.07 * zig(a + PI / 20, 10) }), MATTE, accent, mantleSkin(j));
     // A belt with a square buckle and a pouch.
     k.add(facet(lofted(R([[0.97, 0.198, 0.14, 0.0], [1.02, 0.195, 0.138, 0.0]]), 14)), MATTE, 0x3a2a1e, j.hips);
     k.add(cube(0.05, 0.05, 0.016), METAL, accent, j.hips, 0, 0.995, 0.146 * BZ);
@@ -2078,6 +2082,165 @@ function buildCasterRobe(k: Kit, j: Joints, look: LookIn, d: Dims, mage: boolean
   }
 }
 
+// ------------------------------------------------------------- leathers --
+
+/**
+ * Leathers. A ranger's: a jerkin laced at the neck over a shirt, coat tails split for
+ * striding, a quiver of arrows on the back (on the hip under wings or a cloak), an archer's
+ * shoulder guard, long laced bracers, tall boots with turned cuffs. A rogue's are sleek:
+ * a fitted jerkin closed on a slant, crossed straps with throwing knives, a sash, a
+ * layered left pauldron, wrapped bracers, a dagger on the thigh and soft wrapped boots.
+ */
+function buildLeathers(k: Kit, j: Joints, look: LookIn, d: Dims, rogue: boolean) {
+  const { B, BZ, L, F, SX, HX } = d;
+  const { skin, armor, cloth, accent } = look;
+  const R = (rings: Ring[]) => bodyRings(d, rings);
+  const tw = torsoSkin(j);
+  const torn = !!look.stitches;
+  const orc = !!look.tusks;
+  const strap = mixHex(armor, rogue ? 0x9a8c7a : 0x2a1a10, rogue ? 0.4 : 0.45);
+  const steel = rogue ? accent : 0xb8bcc4;
+  garbNeck(k, j, look, d);
+
+  // The jerkin.
+  const body = R(rogue
+    ? [[0.96, 0.178, 0.122, -0.006], [1.05, 0.165, 0.114, 0.002], [1.15, 0.17, 0.118, 0.01], [1.27, 0.194, 0.132, 0.02], [1.38, 0.206, 0.132, 0.018], [1.46, 0.202, 0.118, 0.008], [1.53, 0.168, 0.1, 0], [1.6, 0.104, 0.082, -0.004]]
+    : [[0.96, 0.184, 0.127, -0.006], [1.05, 0.172, 0.12, 0.002], [1.15, 0.176, 0.124, 0.01], [1.27, 0.2, 0.138, 0.02], [1.38, 0.212, 0.137, 0.018], [1.46, 0.208, 0.122, 0.008], [1.53, 0.172, 0.102, 0], [1.585, 0.11, 0.08, -0.004]]);
+  k.add(lofted(body, 14, { shape: (a, i) => (i >= 3 && i <= 5 ? ridgeAt(a, 0, 0.3, -0.03) : 0) }), MATTE, armor, tw);
+  const onBody = (x: number, y: number, out = 0.004, back = false): number[] => {
+    const [rx, rz, cz] = ringAt(body, y);
+    const z = rz * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2)) + out;
+    return [x, y, back ? cz - z : cz + z];
+  };
+  const along = (pts: number[][], r: number, color: number, skinTo: O3 | Skin, surf = MATTE) => k.add(tube(pts, pts.map(() => r), 4), surf, color, skinTo);
+
+  if (rogue) {
+    // Closed on a slant from the left shoulder, crossed straps, knives on the left one.
+    along([onBody(0.11 * B, 1.55), onBody(0.06 * B, 1.42), onBody(0.0, 1.28), onBody(-0.06 * B, 1.14), onBody(-0.09 * B, 1.0)], 0.009, shade(armor, 1.35), tw);
+    for (const t of [-1, 1]) {
+      for (const back of [false, true]) {
+        const pts = [0, 1, 2, 3, 4].map((i) => {
+          const y = lerp(1.54, 1.0, i / 4);
+          return onBody(t * lerp(0.15, -0.12, i / 4) * B, y, 0.012, back);
+        });
+        k.add(tube(pts, pts.map(() => 0.016), 4).scale(1, 1, 1), MATTE, strap, tw);
+      }
+    }
+    k.add(facet(cube(0.04, 0.04, 0.016)), METAL, steel, tw, 0, onBody(0, 1.27)[1], onBody(0, 1.27, 0.02)[2]);
+    for (let i = 0; i < 3; i++) {
+      const y = 1.44 - i * 0.07;
+      const [x, , z] = onBody(lerp(0.12, 0.05, i / 2) * B, y, 0.02);
+      k.add(shard(), METAL, steel, tw, x, y - 0.01, z, 0, 0, -0.55, 0.012, 0.045, 0.004);
+      k.add(cube(0.012, 0.03, 0.012), MATTE, 0x2a2018, tw, x - 0.012, y + 0.035, z, 0, 0, -0.55);
+    }
+    // A sash wound round the waist, its tail hanging at the left hip; a belt over it.
+    k.add(lofted(R([[0.955, 0.194, 0.138, -0.002], [1.03, 0.186, 0.132, 0.0]]), 14, { shape: (a) => 0.025 * Math.sin(a * 5) }), MATTE, cloth, j.hips);
+    k.add(facet(lofted(R([[0.99, 0.198, 0.141, -0.002], [1.015, 0.197, 0.14, -0.002]]), 14)), MATTE, strap, j.hips);
+    k.add(facet(cube(0.04, 0.034, 0.014)), METAL, steel, j.hips, 0, 1.0, 0.142 * BZ);
+    const tail = skirt(j.hips, j.legL, j.legR, 1.0, 0.6, 0.6);
+    k.add(cube(0.06, 0.34, 0.012), MATTE, cloth, tail, 0.15 * B, 0.8, 0.1 * BZ, -0.05, 0.7, 0.1);
+    k.add(cube(0.05, 0.26, 0.012), MATTE, shade(cloth, 0.8), tail, 0.17 * B, 0.84, 0.06 * BZ, -0.03, 1.1, 0.16);
+    // Two narrow tails behind.
+    for (const { s, leg } of limbsOf(j)) {
+      const [a, b] = sheet(4, 3, (r, c) => {
+        const t = r / 3;
+        const u = c / 2;
+        // Laid out left to right on both sides, so both faces keep their winding.
+        const w = s > 0 ? u : 1 - u;
+        return [s * lerp(0.03, 0.15, w) * B, lerp(0.98, 0.52, t) + (t === 1 ? 0.06 * w : 0), -(0.142 + 0.04 * t) * BZ];
+      }, 0.01);
+      k.add(a, MATTE, shade(armor, 0.85), thighSkin(j.hips, leg, 0.98, 0.55, 0.75));
+      k.add(b, MATTE, shade(armor, 0.85), thighSkin(j.hips, leg, 0.98, 0.55, 0.75));
+    }
+  } else {
+    // Laced at the neck over the shirt, a strap across the chest, a belt with pouches.
+    k.add(new THREE.CylinderGeometry(1, 1, 1, 3), MATTE, shade(cloth, 1.2), tw, 0, 1.47, onBody(0, 1.47)[2] - 0.004, PI / 2 - 0.1, 0, 0, 0.07 * B, 0.006, 0.12);
+    for (const sd of [-1, 1]) along([onBody(sd * 0.06 * B, 1.55, 0.006), onBody(sd * 0.012, 1.4, 0.006)], 0.008, shade(armor, 0.6), tw);
+    for (const y of [1.44, 1.48, 1.52]) for (const t of [-1, 1]) k.add(cube(0.05 * (y - 1.38) * 8, 0.005, 0.005), MATTE, 0xd8c8a0, tw, 0, y, onBody(0, y)[2] + 0.006, 0, 0, t * 0.5);
+    along([onBody(-0.14 * B, 1.56, 0.01), onBody(-0.06 * B, 1.42, 0.012), onBody(0.06 * B, 1.24, 0.012), onBody(0.15 * B, 1.06, 0.01)], 0.018, strap, tw);
+    k.add(facet(cube(0.036, 0.036, 0.014)), METAL, accent, tw, ...onBody(-0.06 * B, 1.42, 0.03));
+    k.add(facet(lofted(R([[0.975, 0.198, 0.14, -0.002], [1.025, 0.196, 0.139, -0.002]]), 14)), MATTE, strap, j.hips);
+    k.add(facet(cube(0.05, 0.044, 0.016)), METAL, accent, j.hips, 0, 1.0, 0.144 * BZ);
+    for (const [x, w, ry] of [[-0.17, 0.08, -0.5], [0.16, 0.065, 0.55]]) {
+      k.add(facet(cube(w, 0.085, 0.05)), MATTE, shade(strap, 1.25), j.hips, x * B, 0.94, 0.08 * BZ, 0, ry, 0);
+      k.add(facet(cube(w + 0.006, 0.03, 0.056)), MATTE, strap, j.hips, x * B, 0.978, 0.08 * BZ, 0, ry, 0);
+    }
+    // Coat tails split at the front and back.
+    for (const { s, leg } of limbsOf(j)) {
+      const half = lofted(R([[0.6, 0.222, 0.176, -0.012], [0.78, 0.204, 0.158, -0.008], [0.93, 0.188, 0.136, -0.006], [1.0, 0.184, 0.13, -0.005]]), 7, {
+        arc: s > 0 ? [0.32, PI - 0.4] : [PI + 0.08, PI - 0.4],
+        wave: (a, i) => (i === 0 ? 0.025 * Math.sin(a * 5) : 0),
+      });
+      const ts = thighSkin(j.hips, leg, 0.96, 0.62, 0.7);
+      k.add(lining(half), MATTE, shade(armor, 0.5), ts);
+      k.add(half, MATTE, shade(armor, 0.9), ts);
+    }
+    // An archer's guard on the left shoulder.
+    k.add(facet(dome(9, 4)), MATTE, shade(armor, 0.78), shoulderSkin(j.chest, j.armL), SX * 1.04, 1.49, 0, 0, 0, -0.4, 0.105 * B, 0.08, 0.105 * BZ);
+    for (const da of [-0.6, 0, 0.6]) k.add(ball(4, 3), METAL, accent, j.armL, SX * 1.04 + Math.cos(da) * 0.088 * B, 1.49 + 0.03, Math.sin(da) * 0.08 * BZ, 0, 0, 0, 0.01, 0.01, 0.01);
+    // A quiver of arrows on the back, or at the right hip when wings or a cloak are there.
+    const back = !look.wings && look.featherWings === undefined && look.cape === undefined;
+    const qx = back ? -0.07 : -0.21 * B, qy = back ? 1.36 : 0.86, qz = back ? -0.27 * BZ : -0.04;
+    const qr = back ? -0.42 : 0.25, qt = back ? 0.12 : 0.35;
+    const qs = back ? j.chest : j.hips;
+    k.add(lofted([[-0.25, 0.04, 0.034], [0.2, 0.048, 0.04], [0.25, 0.05, 0.042]], 8, { bottom: true }), MATTE, shade(strap, 1.2), qs, qx, qy, qz, qt, 0, qr);
+    k.add(lofted([[0.17, 0.05, 0.043], [0.21, 0.05, 0.043]], 8), METAL, accent, qs, qx, qy, qz, qt, 0, qr);
+    const tip = (u: number, v: number, h: number) => {
+      const lx = u * 0.028, ly = h, lz = v * 0.024;
+      const c = Math.cos(qr), sn = Math.sin(qr), ct = Math.cos(qt), st = Math.sin(qt);
+      const y1 = ly * ct - lz * st, z1 = ly * st + lz * ct;
+      return [qx + lx * c - y1 * sn, qy + lx * sn + y1 * c, qz + z1];
+    };
+    for (const [u, v, h] of [[-0.6, 0.3, 0.33], [0.5, 0.5, 0.31], [0.1, -0.5, 0.35], [0.7, -0.3, 0.3], [-0.5, -0.6, 0.32]]) {
+      const [x, y, z] = tip(u, v, h);
+      for (const fy of [0, PI / 2]) k.add(cube(0.004, 0.07, 0.03), MATTE, h > 0.32 ? 0xe8e0d0 : 0x9a2a20, qs, x, y, z, qt, fy, qr);
+    }
+  }
+
+  // Arms: shirt sleeves (bare for orcs), long bracers, gloves.
+  for (const { s, arm, fore, hand } of limbsOf(j)) {
+    const aw = armSkin(arm, fore);
+    const x = s * SX;
+    const bare = orc || (torn && s < 0);
+    k.add(loft([[0.95, 0.036 * L, 0.033 * L, 0.004], [1.1, 0.047 * L, 0.044 * L, 0.006], [1.205, 0.046 * L, 0.044 * L], [1.32, 0.054 * L, 0.052 * L], [1.44, 0.064 * L, 0.06 * L], [1.51, 0.06 * L, 0.056 * L], [1.555, 0.03 * L, 0.03 * L]], 8, { top: true }).translate(x, 0, 0), MATTE, bare ? skin : rogue ? shade(cloth, 1.1) : shade(cloth, 1.05), aw);
+    if (!bare) k.add(ball(7, 5), MATTE, rogue ? shade(cloth, 1.1) : shade(cloth, 1.05), arm, x, 1.485, 0, 0, 0, 0, 0.068 * L, 0.068 * L, 0.064 * L);
+    if (bare && torn) seamAt(k, arm, x, 1.36, 0.054 * L, skin);
+    if (rogue && s > 0) {
+      // A layered pauldron on the left shoulder.
+      for (let i = 0; i < 3; i++) k.add(facet(dome(9, 3)), MATTE, i === 1 ? strap : shade(armor, 0.9), shoulderSkin(j.chest, arm), SX * (1.04 + i * 0.03), 1.5 - i * 0.04, 0, 0, 0, -0.42 - i * 0.12, (0.105 - i * 0.008) * B, 0.07, (0.1 - i * 0.008) * BZ);
+    }
+    k.add(facet(lofted([[0.955, 0.048 * L, 0.045 * L, 0.004], [1.06, 0.054 * L, 0.051 * L, 0.006], [1.16, 0.058 * L, 0.055 * L, 0.006], [1.19, 0.064 * L, 0.06 * L, 0.006]], 9)).translate(x, 0, 0), MATTE, shade(armor, 0.82), fore);
+    for (const y of rogue ? [0.99, 1.05, 1.11] : [1.0, 1.1]) k.add(loft([[y, 0.056 * L, 0.053 * L, 0.006], [y + 0.016, 0.056 * L, 0.053 * L, 0.006]], 9).translate(x, 0, 0), MATTE, rogue ? strap : 0xd0c098, fore);
+    garbFist(k, x, hand, rogue ? 0x2a2428 : 0x4a3626, MATTE, F);
+  }
+
+  // Legs: trousers into boots.
+  for (const { s, leg, shin, foot } of limbsOf(j)) {
+    const x = s * HX;
+    k.add(loft(LEG_RINGS(rogue ? 0.94 * L : L), 8).translate(x, 0, 0), MATTE, rogue ? cloth : shade(cloth, 0.72), legSkin(j.hips, leg, shin, foot));
+    const boot = rogue ? shade(armor, 0.75) : 0x3a2818;
+    if (rogue) {
+      k.add(loft([[0.05, 0.048 * L, 0.054 * L, 0], [0.2, 0.056 * L, 0.063 * L, -0.008], [0.33, 0.059 * L, 0.066 * L, -0.008], [0.38, 0.062 * L, 0.068 * L, -0.006]], 8).translate(x, 0, 0), MATTE, boot, chain([shin, foot], [-0.11], 0.04, down));
+      for (const [y, t] of [[0.14, 0.4], [0.22, -0.4], [0.3, 0.4]]) k.add(loft([[y, 0.06 * L, 0.067 * L, -0.008], [y + 0.016, 0.06 * L, 0.067 * L, -0.008]], 8).translate(x, 0, 0), MATTE, strap, shin, 0, 0, 0, 0, 0, t * 0.1);
+      garbBoot(k, x, foot, boot, MATTE, L, { s: 0.92, toe: 0.22 });
+      // Straps round the thighs, a dagger sheathed on the right.
+      for (const y of [0.62, 0.78]) k.add(facet(loft([[y, 0.074 * L, 0.078 * L], [y + 0.022, 0.078 * L, 0.082 * L]], 9)).translate(x, 0, 0), MATTE, strap, leg);
+      if (s < 0) {
+        k.add(facet(cube(0.03, 0.2, 0.022)), MATTE, 0x221c1c, leg, x - 0.075 * L, 0.68, 0.01, 0, 0, 0.06);
+        k.add(facet(cube(0.022, 0.08, 0.02)), MATTE, 0x3a2a20, leg, x - 0.078 * L, 0.82, 0.01, 0, 0, 0.06);
+        k.add(facet(cube(0.05, 0.012, 0.024)), METAL, steel, leg, x - 0.077 * L, 0.78, 0.01, 0, 0, 0.06);
+      }
+    } else {
+      const cuff = 0.42;
+      k.add(loft([[0.05, 0.05 * L, 0.056 * L, 0], [0.2, 0.059 * L, 0.066 * L, -0.008], [cuff - 0.04, 0.061 * L, 0.067 * L, -0.008], [cuff, 0.074 * L, 0.08 * L, -0.004], [cuff + 0.05, 0.072 * L, 0.078 * L, 0.0]], 8).translate(x, 0, 0), MATTE, boot, chain([shin, foot], [-0.11], 0.04, down));
+      k.add(facet(loft([[cuff - 0.005, 0.077 * L, 0.083 * L, -0.004], [cuff + 0.055, 0.075 * L, 0.081 * L, 0.0]], 9)).translate(x, 0, 0), MATTE, shade(boot, 1.35), shin);
+      k.add(loft([[0.24, 0.0625 * L, 0.0695 * L, -0.008], [0.26, 0.0625 * L, 0.0695 * L, -0.008]], 8).translate(x, 0, 0), MATTE, strap, shin);
+      k.add(cube(0.012, 0.026, 0.024), METAL, accent, shin, x + s * 0.064 * L, 0.25, -0.008);
+      garbBoot(k, x, foot, shade(boot, 0.9), MATTE, L);
+    }
+  }
+}
+
 // ------------------------------------------------------------ head gear --
 
 /**
@@ -2147,9 +2310,17 @@ function cowlEdge(rings: number[][]): number[][] {
   return [...side(-1), ...side(1).reverse().slice(1)];
 }
 
-/** A hood (the 'hood' head): a sorcerer's tall and pointed, a ranger's with a cape, or a plain one. */
+/** How dark a face is in a hood's shadow: a hero's still reads at play distance, but under a dark caster's hood only the eyes show. */
+function hoodShadow(look: LookIn): number {
+  if (!look.garb) return 0.3;
+  return look.garb === 'sorcerer' && look.glow !== undefined && luma(look.armor) < 0.25 ? 0.3 : 0.58;
+}
+
+/** A hood (the 'hood' head): a sorcerer's tall and pointed, a ranger's with a cape, a rogue's close, or a plain one. */
 function buildHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
   if (look.garb === 'sorcerer') return buildTallHood(k, j, look, d);
+  if (look.garb === 'ranger') return buildRangerHood(k, j, look, d);
+  if (look.garb === 'rogue') return buildRogueHood(k, j, look, d, false);
   const H = j.head;
   const shell = hoodShell(1);
   k.add(lining(hoodShell(0.94)), MATTE, shade(look.cloth, 0.22), H);
@@ -2159,8 +2330,9 @@ function buildHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
   k.add(ball(5, 4), METAL, shade(look.accent, 0.6), j.chest, 0, 1.5, 0.161, 0, 0, 0, 0.011, 0.011, 0.007);
 }
 
-/** The 'mask' head: a hood over a cloth mask; only a band of face round the eyes shows. */
+/** The 'mask' head: a hood over a cloth mask; only a band of face round the eyes shows (a hero's is a rogue's). */
 function buildMaskHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
+  if (look.garb) return buildRogueHood(k, j, look, d, true);
   const H = j.head;
   k.add(ball(10, 6), MATTE, shade(look.cloth, 1.15), H, 0, 1.69, 0.03, 0.12, 0, 0, 0.106, 0.078, 0.104);
   k.add(cube(0.2, 0.012, 0.02), MATTE, shade(look.cloth, 0.8), H, 0, 1.727, 0.1, 0.25);
@@ -2170,8 +2342,9 @@ function buildMaskHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
   k.add(loft([[1.38, 0.25 * d.B, 0.17 * d.BZ, -0.008], [1.47, 0.24 * d.B, 0.156 * d.BZ, -0.002], [1.55, 0.19 * d.B, 0.15 * d.BZ, -0.01], [1.6, 0.16, 0.17, -0.02]], 12), MATTE, shade(look.cloth, 0.9), j.chest);
 }
 
-/** The 'hat' head: a tall wide-brimmed hat with a bent tip and a band. */
+/** The 'hat' head: a tall wide-brimmed hat with a bent tip and a band (a hero's is a wizard's). */
 function buildHat(k: Kit, j: Joints, look: LookIn) {
+  if (look.garb) return buildWizardHat(k, j, look);
   const H = j.head;
   const brim = loft([[1.79, 0.31, 0.31], [1.808, 0.22, 0.22], [1.82, 0.13, 0.13]], 14);
   k.add(lining(brim), MATTE, shade(look.cloth, 0.6), H, 0, 0, 0.0);
@@ -2219,6 +2392,72 @@ function buildTallHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
   if (look.glow !== undefined && look.glowEyes === undefined && luma(hood) < 0.25) {
     for (const s of [-1, 1]) k.add(ball(5, 3), GLOW, look.glow, H, s * 0.038, 1.748, 0.112, 0, 0, 0, 0.014, 0.008, 0.006);
   }
+}
+
+/**
+ * A ranger's hood: its tip drooping down the back, over a short cape cut into leaf points
+ * that covers the shoulders.
+ */
+function buildRangerHood(k: Kit, j: Joints, look: LookIn, d: Dims) {
+  const H = j.head;
+  const hood = look.cloth;
+  const rings = [[1.56, 0.178, 0.198, -0.02, 0.95], [1.645, 0.166, 0.202, -0.018, 0.8], [1.745, 0.158, 0.2, -0.02, 0.72], [1.835, 0.14, 0.184, -0.038, 0.56], [1.895, 0.1, 0.148, -0.07, 0.3], [1.925, 0.05, 0.09, -0.11, 0.0]];
+  const peak = [0, 1.82, -0.33];
+  k.add(lining(cowlShell(rings, peak, 12, 0.94)), MATTE, shade(hood, 0.22), H);
+  k.add(facet(cowlShell(rings, peak, 12)), MATTE, hood, H);
+  const edge = cowlEdge(rings);
+  k.add(tube(edge, edge.map(() => 0.01), 4), MATTE, shade(hood, 0.75), H);
+  const R = (r: Ring[]) => bodyRings(d, r);
+  const cape = lofted(R([[1.3, 0.296, 0.212, -0.01], [1.4, 0.294, 0.208, -0.008], [1.48, 0.264, 0.186, -0.006], [1.55, 0.2, 0.156, -0.012], [1.6, 0.16, 0.166, -0.02]]), 20, {
+    shape: (a, i) => (i === 0 ? 0.03 * zig(a, 20) : 0),
+    wave: (a, i) => (i === 0 ? -0.075 * zig(a, 20) - 0.03 * Math.cos(a) ** 2 : 0),
+  });
+  k.add(lining(cape), MATTE, shade(hood, 0.4), mantleSkin(j));
+  k.add(facet(cape), MATTE, shade(hood, 0.92), mantleSkin(j));
+  k.add(facet(ball(6, 4)), METAL, look.accent, j.chest, 0, 1.5, 0.19 * d.BZ, 0, 0, 0, 0.024, 0.024, 0.014);
+}
+
+/**
+ * A rogue's hood: close, peaked over the brow and pointed behind, over a cowl that ends
+ * in points at the chest and back; with `mask`, a cloth mask hides the face below the eyes.
+ */
+function buildRogueHood(k: Kit, j: Joints, look: LookIn, d: Dims, mask: boolean) {
+  const H = j.head;
+  const hood = look.cloth;
+  if (mask) {
+    const m = mixHex(look.armor, 0x000000, 0.25);
+    k.add(ball(10, 6), MATTE, m, H, 0, 1.69, 0.03, 0.12, 0, 0, 0.107, 0.08, 0.106);
+    k.add(facet(cube(0.21, 0.014, 0.022)), MATTE, shade(m, 1.5), H, 0, 1.728, 0.1, 0.25);
+  }
+  const rings = [[1.56, 0.162, 0.175, -0.02, 0.95], [1.645, 0.145, 0.17, -0.012, 0.78], [1.745, 0.138, 0.166, -0.012, 0.68], [1.83, 0.124, 0.152, -0.026, 0.48], [1.885, 0.09, 0.118, -0.05, 0.2], [1.915, 0.044, 0.064, -0.07, 0.0]];
+  const peak = [0, 1.92, -0.2];
+  k.add(lining(cowlShell(rings, peak, 12, 0.94)), MATTE, shade(hood, 0.18), H);
+  k.add(facet(cowlShell(rings, peak, 12)), MATTE, hood, H);
+  const edge = cowlEdge(rings);
+  k.add(tube(edge, edge.map(() => 0.009), 4), MATTE, shade(hood, 1.6), H);
+  // The peak over the brow.
+  k.add(facet(spike(0.03, 0.08, 4)), MATTE, hood, H, 0, 1.87, 0.15, PI / 2 + 0.75, 0, 0, 1, 1, 0.5);
+  const R = (r: Ring[]) => bodyRings(d, r);
+  const cowl = lofted(R([[1.36, 0.262, 0.186, -0.008], [1.44, 0.256, 0.178, -0.004], [1.52, 0.21, 0.156, -0.01], [1.6, 0.158, 0.16, -0.02]]), 16, { wave: (a, i) => (i === 0 ? -0.1 * Math.cos(a) ** 8 - 0.02 * zig(a, 16) : 0) });
+  k.add(lining(cowl), MATTE, shade(hood, 0.4), mantleSkin(j));
+  k.add(facet(cowl), MATTE, shade(hood, 0.95), mantleSkin(j));
+}
+
+/**
+ * A wizard's hat: a broad crisp brim, a tall crown with a crease and a bent tip, a band
+ * with a buckle and a glowing stone.
+ */
+function buildWizardHat(k: Kit, j: Joints, look: LookIn) {
+  const H = j.head;
+  const hat = look.cloth;
+  const brim = lofted([[1.785, 0.34, 0.33, -0.01], [1.8, 0.25, 0.245, -0.006], [1.815, 0.14, 0.138]], 18, { wave: (a, i) => (i === 0 ? 0.03 * Math.cos(a) - 0.015 * Math.cos(2 * a) : 0) });
+  k.add(lining(brim), MATTE, shade(hat, 0.5), H);
+  k.add(facet(brim), MATTE, hat, H);
+  const crown = lofted([[1.805, 0.14, 0.138], [1.86, 0.132, 0.13, -0.005], [1.96, 0.1, 0.098, -0.02], [2.06, 0.068, 0.066, -0.05], [2.15, 0.04, 0.04, -0.1], [2.2, 0.02, 0.02, -0.16], [2.215, 0.004, 0.004, -0.22]], 10, { shape: (a, i) => (i > 0 && i < 4 ? ridgeAt(a, PI, 0.7, -0.12) : 0) });
+  k.add(facet(crown), MATTE, hat, H);
+  k.add(facet(lofted([[1.815, 0.143, 0.141], [1.855, 0.137, 0.135, -0.004]], 14)), MATTE, look.accent, H);
+  k.add(facet(cube(0.05, 0.05, 0.012)), METAL, shade(look.accent, 1.15), H, 0, 1.835, 0.14, -0.08);
+  k.add(shard(), GLOW, look.glow ?? 0x8fd0ff, H, 0, 1.835, 0.149, -0.08, 0, 0, 0.013, 0.019, 0.007);
 }
 
 /** A long beard from the jaw over the chest, bending with the head; a drooping moustache. */
