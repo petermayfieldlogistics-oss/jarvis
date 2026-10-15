@@ -446,6 +446,16 @@ function ribbon(path: number[][], w: number[], t: number[], from: number[]): THR
   return sections(secs, path[path.length - 1]);
 }
 
+/** A feather along +y: a quill ridge down both faces, straight sides and a rounded tip. */
+function plume(len: number, w: number, thick: number): THREE.BufferGeometry {
+  const h = w / 2;
+  const out = [[0, 0, 0], [h * 0.8, len * 0.25, 0], [h, len * 0.7, 0], [h * 0.62, len * 0.93, 0], [0, len, 0], [-h * 0.62, len * 0.93, 0], [-h, len * 0.7, 0], [-h * 0.8, len * 0.25, 0]];
+  const pts = [...out, [0, len * 0.5, thick / 2], [0, len * 0.5, -thick / 2]];
+  const tris: number[] = [];
+  for (let i = 0; i < 8; i++) tris.push(8, i, (i + 1) % 8, 9, i, (i + 1) % 8);
+  return poly(pts, tris, [0, len * 0.5, 0]);
+}
+
 /** A rounded box (a superellipsoid): p = 2 is an ellipsoid, higher is boxier. */
 function rbox(rx: number, ry: number, rz: number, p = 3, cols = 12, rows = 8): THREE.BufferGeometry {
   const e = 2 / p;
@@ -1846,6 +1856,25 @@ function raceBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims)
   if (look.tusks) {
     // A neck as thick as the head, sloping into the shoulders.
     k.add(loft([[1.47, 0.12 * B, 0.09, -0.012], [1.53, 0.1 * B, 0.084, -0.006], [1.6, 0.084, 0.078, 0], [1.66, 0.074, 0.072, 0.008], [1.7, 0.062, 0.062, 0.012]], 12), MATTE, look.skin, neck);
+    if (look.build === 'heavy') {
+      // Spikes up through the pauldrons (over the plate's shoulder domes, see buildBody).
+      for (const [s, arm] of [[1, j.armL], [-1, j.armR]] as const) {
+        const pw: Skin = (_x, y) => {
+          const t = smooth(1.46, 1.6, y) * 0.35;
+          put(j.chest, t);
+          put(arm, 1 - t);
+        };
+        const tilt = -s * 0.32;
+        const r = [0.135 * B, 0.1, 0.13 * d.BZ];
+        for (const [lx, ly, lz, h] of [[0.2, 0.98, 0, 0.11], [0.62, 0.78, 0, 0.085], [0.1, 0.9, 0.42, 0.075], [0.1, 0.9, -0.42, 0.075]]) {
+          const x0 = s * lx * r[0], y0 = ly * r[1], z0 = lz * r[2];
+          const nx = (s * lx) / r[0], ny = ly / r[1], nz = lz / r[2];
+          const c = Math.cos(tilt), sn = Math.sin(tilt);
+          const [rx, ry, rz] = aim([nx * c - ny * sn, nx * sn + ny * c, nz], [0, 0, 1]);
+          k.add(facets(spike(0.028, h * 1.2, 5)), METAL, shade(look.armor, 0.8), pw, s * d.SX * 1.03 + x0 * c - y0 * sn, 1.5 + x0 * sn + y0 * c, z0, rx, ry, rz);
+        }
+      }
+    }
   }
   if (look.horns) {
     // A thick neck, plated in belly scales down the throat.
@@ -2015,7 +2044,7 @@ function buildFeatherWings(k: Kit, j: Joints, color: number) {
     const feather = (x: number, y: number, a: number, len: number, w: number, tone: number, dz: number) => {
       const dx = s * Math.cos(a), dy = Math.sin(a);
       const z = -0.17 - 0.1 * Math.abs(x) + dz;
-      const g = paint(blade(len, w, 0.014, 0.66), (_x, yy) => tone * lerp(0.78, 1.06, smooth(0, len * 0.7, yy)));
+      const g = paint(plume(len, w, 0.014), (_x, yy) => tone * lerp(0.78, 1.06, smooth(0, len * 0.6, yy)) * (yy > len * 0.9 ? 0.92 : 1));
       const [rx, ry, rz] = aim([dx, dy, 0], [0, 0, -1]);
       g.applyMatrix4(_featherM.makeRotationFromEuler(_featherE.set(rx, ry, rz)).setPosition(x, y, z));
       k.add(soften(g, x, -4, z, 0.7), MATTE, color, ww);
