@@ -69,7 +69,9 @@ export interface HumanoidLook {
   headband?: number;
   /** A thin metal circlet with a gem on the brow. */
   circlet?: number;
+  /** Long pointed ears: the elf's own head (every other race's head is built by raceHead). */
   ears?: boolean;
+  /** A dragon's head: snout and jaw, burning eyes, a swept crest of horns, frills; a plated throat and claws (draco). */
   horns?: boolean;
   tail?: boolean;
   wings?: boolean;
@@ -78,7 +80,7 @@ export interface HumanoidLook {
   scale?: number;
   /** Hair colour (otherwise picked from the other race cues). */
   hair?: number;
-  /** Lower tusks, a heavy brow and jaw, short pointed ears, bare arms (orcs). */
+  /** An orc's head: an underbite jaw with big tusks, a heavy brow, pointed ears, a mohawk; a bull neck, bare arms. */
   tusks?: boolean;
   /** Colour of a glowing halo floating over the head. */
   halo?: number;
@@ -1103,23 +1105,9 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
   const hz = 0.012;
   const skin = look.skin;
   const metalS = look.build === 'heavy' ? METAL : MATTE;
-  const elfHair = 0xd8c8a0;
-  const hairColor = look.hair ?? (look.ears ? elfHair : look.glowEyes !== undefined ? shade(skin, 0.45) : 0x2a1e14);
-  /** Depth of the face's surface at (x, y), so scars lie on it. */
-  const onFace = (x: number, y: number) => hz + 0.112 * Math.sqrt(Math.max(0, 1 - (x / 0.1) ** 2 - ((y - hy) / 0.122) ** 2));
-  const turnAt = (x: number) => Math.asin(clamp(x / 0.1, -1, 1)) * 0.85;
-  /** A scar from (x0, y0) to (x1, y1) across the face, sewn shut with n stitches. */
-  const scar = (x0: number, y0: number, x1: number, y1: number, n: number, tone: number) => {
-    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    const rz = Math.atan2(y1 - y0, x1 - x0);
-    k.add(cube(Math.hypot(x1 - x0, y1 - y0), 0.007, 0.006), MATTE, shade(tone, 0.5), H, mx, my, onFace(mx, my) + 0.001, 0, turnAt(mx), rz);
-    for (let i = 0; i < n; i++) {
-      const x = lerp(x0, x1, (i + 0.5) / n), y = lerp(y0, y1, (i + 0.5) / n);
-      k.add(cube(0.005, 0.026, 0.005), MATTE, 0x16120e, H, x, y, onFace(x, y) + 0.002, 0, turnAt(x), rz);
-    }
-  };
   // Every race but the elf has a head of its own (see raceHead); the garments below dress it.
   const race = raceHead(k, j, look, d);
+  const hairColor = look.hair ?? 0xd8c8a0;
   const eyes = (z: number, dark: number) => {
     if (race) return;
     for (const s of [-1, 1]) {
@@ -1127,49 +1115,21 @@ function buildHead(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
       else k.add(cube(0.024, 0.013, 0.012), MATTE, dark, H, s * 0.038, 1.745, z);
     }
   };
+  // The elf's own face, long pointed ears and hair.
   const face = (tone: number, withEyes = true, w = 12, h = 9) => {
     if (race) return race.face();
     k.add(ball(w, h), MATTE, tone, H, 0, hy, hz, 0, 0, 0, 0.1, 0.122, 0.112);
-    if (look.tusks) {
-      // A heavy brow, a broad flat nose and an underbite jaw for the tusks.
-      k.add(cube(0.12, 0.026, 0.034), MATTE, shade(tone, 0.78), H, 0, 1.768, 0.098, 0.15);
-      k.add(cube(0.046, 0.03, 0.034), MATTE, shade(tone, 0.92), H, 0, 1.716, 0.112, -0.25);
-      k.add(cube(0.124, 0.054, 0.08), MATTE, shade(tone, 0.94), H, 0, 1.663, 0.064);
-      k.add(cube(0.07, 0.01, 0.02), MATTE, shade(tone, 0.45), H, 0, 1.684, 0.1);
-    } else {
-      k.add(cube(0.024, 0.044, 0.03), MATTE, shade(tone, 0.95), H, 0, 1.722, 0.118, -0.35);
-      k.add(cube(0.095, 0.018, 0.024), MATTE, shade(tone, 0.86), H, 0, 1.763, 0.104);
-      k.add(cube(0.048, 0.012, 0.02), MATTE, shade(tone, 0.7), H, 0, 1.68, 0.105);
-    }
-    if (look.stitches) {
-      // Sunken sockets, a grimace of teeth, scars sewn shut (too dark to see in a hood).
-      for (const s of [-1, 1]) k.add(cube(0.038, 0.028, 0.01), MATTE, shade(tone, 0.45), H, s * 0.038, 1.745, 0.099);
-      for (const x of [-0.015, 0, 0.015]) k.add(cube(0.01, 0.012, 0.006), MATTE, 0xd2c8a2, H, x, 1.681, 0.113);
-      if (withEyes) {
-        scar(-0.07, 1.802, 0.035, 1.79, 5, tone);
-        scar(0.05, 1.735, 0.068, 1.678, 3, tone);
-      }
-    }
+    k.add(cube(0.024, 0.044, 0.03), MATTE, shade(tone, 0.95), H, 0, 1.722, 0.118, -0.35);
+    k.add(cube(0.095, 0.018, 0.024), MATTE, shade(tone, 0.86), H, 0, 1.763, 0.104);
+    k.add(cube(0.048, 0.012, 0.02), MATTE, shade(tone, 0.7), H, 0, 1.68, 0.105);
     if (withEyes) eyes(0.104, 0x16100c);
   };
   const ears = (tone: number) => {
     if (race) return race.ears();
-    for (const s of [-1, 1]) {
-      if (look.ears) k.add(spike(0.026, 0.2, 4), MATTE, tone, H, s * 0.13, 1.765, -0.02, -0.35, 0, -s * 1.2);
-      else if (look.tusks) k.add(spike(0.024, 0.09, 4), MATTE, tone, H, s * 0.108, 1.752, -0.012, -0.55, 0, -s * 1.3);
-      else k.add(ball(6, 5), MATTE, tone, H, s * 0.1, 1.735, 0.0, 0, 0, 0, 0.016, 0.03, 0.022);
-    }
+    for (const s of [-1, 1]) k.add(spike(0.026, 0.2, 4), MATTE, tone, H, s * 0.13, 1.765, -0.02, -0.35, 0, -s * 1.2);
   };
   const hair = () => {
     if (race) return race.hair();
-    if (look.horns) return;
-    if (look.tusks) {
-      // A shaved head with a warrior's topknot (a braid under a hat).
-      k.add(dome(12, 6, 0.5), MATTE, shade(skin, 0.7), H, 0, hy + 0.01, hz - 0.01, -0.3, 0, 0, 0.104, 0.126, 0.118);
-      if (look.head !== 'hat') k.add(ball(7, 5), MATTE, hairColor, H, 0, 1.862, -0.05, 0, 0, 0, 0.036, 0.03, 0.036);
-      k.add(tube([[0, 1.85, -0.07], [0, 1.78, -0.13], [0, 1.67, -0.145], [0, 1.57, -0.13]], [0.024, 0.021, 0.017, 0.006], 5), MATTE, hairColor, H);
-      return;
-    }
     k.add(dome(12, 6, 0.56), MATTE, hairColor, H, 0, hy + 0.014, hz - 0.016, -0.42, 0, 0, 0.108, 0.13, 0.122);
     k.add(ball(8, 6), MATTE, hairColor, H, 0, 1.7, -0.062, 0, 0, 0, 0.095, 0.085, 0.06);
   };
