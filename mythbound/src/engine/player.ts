@@ -3346,7 +3346,7 @@ export function poseBowString(rig: Rig, bow: THREE.Object3D, a: AnimState, arrow
 }
 
 const SKIN: Record<RaceId, number> = {
-  human: 0xc89a78, elf: 0xe0c8a8, draco: 0x5a6a4a, ancient: 0x3a3a44, zombie: 0x86967a, angelic: 0xf4e0c6, orc: 0x6c8c48,
+  human: 0xd6a882, elf: 0xe0c8a8, draco: 0x4e7a4a, ancient: 0x3a3a44, zombie: 0x86967a, angelic: 0xf4e0c6, orc: 0x6c8c48,
 };
 const GRAVE_DUST = new THREE.Color(0x5e5a4a);
 /** A colour faded with grave dust. */
@@ -3374,6 +3374,11 @@ export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId
     if (worn.trim === null) look.accent = 0xffd36a;
     look.cape = undefined;
   }
+  if (c.raceId === 'ancient') {
+    // Nothing worn on the brow shows in the hood's void.
+    look.headband = undefined;
+    look.circlet = undefined;
+  }
   const orc = c.raceId === 'orc';
   // Race cues left undefined stay out of the model's cache key.
   return buildHumanoid({
@@ -3387,11 +3392,12 @@ export function buildPlayerRig(c: Pick<Character, 'classId' | 'raceId' | 'roleId
     glowEyes: c.raceId === 'ancient' ? 0x40ff80 : c.raceId === 'zombie' ? 0xc8ff52 : undefined,
     hair: c.raceId === 'angelic' ? 0xf2d27a : orc ? 0x1c1814 : undefined,
     tusks: orc || undefined,
-    brawn: orc ? 1.14 : undefined,
-    scale: orc ? 1.05 : undefined,
+    brawn: orc ? 1.22 : c.raceId === 'draco' ? 1.06 : c.raceId === 'angelic' ? 0.95 : undefined,
+    scale: orc ? 1.07 : c.raceId === 'draco' ? 1.03 : c.raceId === 'angelic' ? 1.03 : undefined,
     halo: c.raceId === 'angelic' ? 0xffe28a : undefined,
     featherWings: c.raceId === 'angelic' ? 0xfaf6ee : undefined,
     stitches: c.raceId === 'zombie' || undefined,
+    voidFace: c.raceId === 'ancient' || undefined,
     hunch: c.raceId === 'zombie' && c.hunched !== false ? 0.36 : undefined,
     // A hero in their own clothes shares the cached model; a custom outfit is built (and freed) on its own.
   }, isPlain(worn));

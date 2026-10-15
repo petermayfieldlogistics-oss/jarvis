@@ -12,33 +12,59 @@ import {
   type Build, type DyeChannel, type GarmentDef, type HeadLook, type Slot,
 } from '../data/goods';
 import { WEAPON_TRIALS } from '../data/world';
-export type Look = { armor: number; cloth: number; accent: number; build: Build; head: HeadLook; cape?: number; headband?: number; circlet?: number };
+export type Look = {
+  armor: number;
+  cloth: number;
+  accent: number;
+  build: Build;
+  head: HeadLook;
+  cape?: number;
+  headband?: number;
+  circlet?: number;
+  /** The class the clothes are cut for (heroes only). */
+  garb?: ClassId;
+  /** Glowing runes in a caster's clothes. */
+  glow?: number;
+  /** A sorcerer's beard (on races with a human face). */
+  beard?: number;
+};
 
 /** Each class's clothes; the newer classes dress for their subclass. */
 export function classLook(classId: ClassId, subclassId: SubclassId | null | undefined): Look {
   switch (classId) {
     case 'warrior':
-      return { armor: 0x7a7468, cloth: 0x4a3a2a, accent: 0xb0904a, build: 'heavy', head: 'helmet', cape: 0x5a1a14 };
+      // Bright plate, a tattered tabard and scarf in the cloth colour; an axeman's steel is darker.
+      return subclassId === 'axeman'
+        ? { armor: 0x77736c, cloth: 0x6e2a16, accent: 0x9a7444, build: 'heavy', head: 'helmet', cape: 0x5c4028, garb: 'warrior' }
+        : { armor: 0x8c8c8e, cloth: 0x8a1c18, accent: 0xb0904a, build: 'heavy', head: 'helmet', cape: 0x7a1c16, garb: 'warrior' };
     case 'ranger':
-      return { armor: 0x4a5a3a, cloth: 0x2e3a26, accent: 0x8a7a4a, build: 'light', head: 'hood', cape: 0x2a3a22 };
+      // Leathers under a hood and leaf-cut cape (a quiver on the back, so no cloak): a bowman's
+      // forest green, a beast trainer's tan.
+      return subclassId === 'trainer'
+        ? { armor: 0x5a3e26, cloth: 0x8a6a3c, accent: 0xa08a5a, build: 'light', head: 'hood', garb: 'ranger' }
+        : { armor: 0x6a4a2c, cloth: 0x3e6030, accent: 0xb09050, build: 'light', head: 'hood', garb: 'ranger' };
     case 'mage':
-      return { armor: 0x3a2e5a, cloth: 0x2a2244, accent: 0xc0a050, build: 'robe', head: 'hat' };
+      // Royal blue under a pointed hat, a navy shoulder cape and underrobe, gold, a glowing stone.
+      return { armor: 0x232c5e, cloth: 0x34479a, accent: 0xd8b04a, build: 'robe', head: 'hat', garb: 'mage', glow: 0x7fd8ff };
     case 'monk':
-      // A gi (its trousers take `armor`), a sash and a headband in the sash's colour.
+      // A robe draped over one shoulder (its trousers take `armor`), a sash, a shaven head
+      // with a mark on the brow in the sash's colour; a windwalker binds a band round it.
       return subclassId === 'windwalker'
-        ? { armor: 0x4a5a64, cloth: 0xd6d2c2, accent: 0x2f8a86, build: 'gi', head: 'bare', headband: 0x2f8a86 }
+        ? { armor: 0x4e6670, cloth: 0xdcd6c0, accent: 0x2f8a86, build: 'gi', head: 'bare', headband: 0x2f8a86, garb: 'monk' }
         : subclassId === 'ironfist'
-          ? { armor: 0x3a2a20, cloth: 0x8a4420, accent: 0x161412, build: 'gi', head: 'bare', headband: 0x161412 }
-          : { armor: 0x4a3424, cloth: 0xc0702a, accent: 0x8a1c18, build: 'gi', head: 'bare', headband: 0x8a1c18 };
+          ? { armor: 0x3e2c22, cloth: 0x9a3a1a, accent: 0x2a2220, build: 'gi', head: 'bare', garb: 'monk' }
+          : { armor: 0x9a5420, cloth: 0xd8781c, accent: 0x9a2018, build: 'gi', head: 'bare', garb: 'monk' };
     case 'sorcerer':
+      // A tall hood and mantle (`armor`) over a flowing robe, a long beard: a lightmage's pale
+      // and gold with a circlet under the hood, a darkmage's deep violet, eyes glowing in the dark.
       return subclassId === 'lightmage'
-        ? { armor: 0xd8cfa8, cloth: 0xe6dec8, accent: 0xe0b84a, build: 'robe', head: 'bare', circlet: 0xe0b84a }
-        : { armor: 0x2a1c3a, cloth: 0x1c1426, accent: 0x8a4ad8, build: 'robe', head: 'hood' };
+        ? { armor: 0xd6ccae, cloth: 0xece4cf, accent: 0xd8ac3e, build: 'robe', head: 'hood', circlet: 0xe0b84a, garb: 'sorcerer', glow: 0xffe6a0, beard: 0xf0ece2 }
+        : { armor: 0x33283f, cloth: 0x4a3466, accent: 0x9a6ae0, build: 'robe', head: 'hood', garb: 'sorcerer', glow: 0xb07cff, beard: 0x9a96a2 };
     case 'rogue':
-      // Dark leathers, a hood and a mask; a duelist shows a little more colour.
+      // Dark leathers with lighter straps, a hood and a mask; a duelist shows oxblood, gold and a cloak.
       return subclassId === 'duelist'
-        ? { armor: 0x3a2622, cloth: 0x241a1a, accent: 0xb08a4a, build: 'light', head: 'mask', cape: 0x5a1418 }
-        : { armor: 0x262224, cloth: 0x161418, accent: 0x6a5e50, build: 'light', head: 'mask' };
+        ? { armor: 0x5a2a26, cloth: 0x2e2224, accent: 0xc8a050, build: 'light', head: 'mask', cape: 0x7a1a1c, garb: 'rogue' }
+        : { armor: 0x58546e, cloth: 0x363444, accent: 0xb4b8c4, build: 'light', head: 'mask', garb: 'rogue' };
   }
 }
 

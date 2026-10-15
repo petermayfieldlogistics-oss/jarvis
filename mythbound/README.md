@@ -198,6 +198,14 @@ is what was chosen; each is easy to change:
   - **Co-op**: friends see your outfit after Keep (never the previews). The hello carries seven numbers (garments by
     index, colours as hex), so a friend on an older build with fewer dyes still sees the right colours; a hello
     without them, or with junk, shows your class look. Each hero's wardrobe saves with their own character.
+  - **Class looks**: each class's own clothes are cut for it. Warriors wear plate under a great helm (visor slit and
+    comb), big rounded pauldrons, mail at the joints, a tattered tabard and scarf, a fur mantle and a ragged cloak;
+    monks a robe draped over one shoulder, prayer beads, tattoos and a mark on a shaven brow; sorcerers a tall pointed
+    hood, a long beard (on races with a human face) and a flowing robe with bell sleeves; rangers a hood and leaf-cut
+    cape over leathers, with a quiver; mages a pointed hat, a stand-up collar and a split robe; rogues sleek leathers,
+    crossed straps with throwing knives, a peaked hood and a mask. A body garment keeps the class's cut where it can.
+    Heroes are drawn with a thin ink outline, and every humanoid catches the sky's light on its edges and shadowed
+    side, so dark clothes keep their shape.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
   button by each food. X never eats fruit or sweets (see below).
@@ -239,6 +247,13 @@ is what was chosen; each is easy to change:
   half fire damage; at level 10, lava heals 10 HP a second.
 - **༼ ∞ኒ**: locked until you find the eye carvings in the world. Playable afterwards, with the Gaze, Thunderheart and
   lizard-kin.
+- **Race looks**: every race but the elf has a head of its own, crisp and faceted. Draco: a dragon's head (long
+  ridged snout, toothed jaw, burning eyes, a crest of horns swept back, spined frills), a plated throat, claws, a
+  spined tail with belly plates and scalloped wings. Orcs: an underbite jaw with big tusks, a heavy brow, pointed ears,
+  a black mohawk, a bull neck, a bigger frame (and spikes through a plate wearer's pauldrons). Angelic: a fine face,
+  golden hair in loose locks, a sun-disc halo behind the head and big feathered wings. Humans: a sculpted face with
+  brows and eyes that read, swept faceted hair. Zombies: gaunt and mottled, sunken glowing eyes, a lip torn back
+  from the teeth, sewn scars. The ༼ ∞ኒ: no face in the hood at all, only glowing eyes and runes.
 - **Legendaries**: Sword of Mars needs a Warrior; Bow of Artemis a Ranger (full power for an Elf ranger); the Master Bolt
   can be thrown by anyone but only a Ranger avoids half damage and the shock; Staff of Hecate needs a Mage; Hammer of
   Hephaestus a Blacksmith; Poseidon's Trident a Sailor (it also lets you walk on water).
