@@ -1085,8 +1085,11 @@ function nearest(bones: THREE.Object3D[]): (p: V3) => Weights {
   };
 }
 
-/** Wing membrane: fans between finger spars, plus the inner panel from the last finger back to the flank. */
-function membrane(s: number, W: V3, tips: V3[], fingers: THREE.Object3D[], arm: V3[], armBones: THREE.Object3D[], hand: THREE.Object3D, hip: V3, hips: THREE.Object3D, chest: THREE.Object3D) {
+/**
+ * Wing membrane: fans between finger spars, plus the inner panel from the last finger back to the flank.
+ * `notch` cuts a deep scallop into the trailing edge between each pair of fingers (the Elder Dragon's).
+ */
+function membrane(s: number, W: V3, tips: V3[], fingers: THREE.Object3D[], arm: V3[], armBones: THREE.Object3D[], hand: THREE.Object3D, hip: V3, hips: THREE.Object3D, chest: THREE.Object3D, notch = 0) {
   const pos: number[] = [];
   const idx: number[] = [];
   const wts: Weights[] = [];
@@ -1106,14 +1109,19 @@ function membrane(s: number, W: V3, tips: V3[], fingers: THREE.Object3D[], arm: 
   const spars = tips.map((_, k) => spar(k));
   for (let k = 0; k < tips.length - 1; k++) {
     const A = spars[k], B = spars[k + 1];
-    const mid = tips[k].clone().lerp(tips[k + 1], 0.5).lerp(W, 0.22);
+    const mid = tips[k].clone().lerp(tips[k + 1], 0.5).lerp(W, notch || 0.22);
     const m = vert(mid, [[fingers[k], 0.5], [fingers[k + 1], 0.5]]);
     tri(A[0], A[1], B[1]);
-    for (let i = 1; i < n; i++) {
+    const top = notch ? n - 1 : n;
+    for (let i = 1; i < top; i++) {
       tri(A[i], A[i + 1], B[i]);
       tri(B[i], A[i + 1], B[i + 1]);
     }
-    tri(A[n], m, B[n]);
+    if (notch) {
+      tri(A[n - 1], A[n], m);
+      tri(A[n - 1], m, B[n - 1]);
+      tri(B[n - 1], m, B[n]);
+    } else tri(A[n], m, B[n]);
   }
   // Inner panel: shoulder S, elbow E, wrist, last finger tip, scallop, hip.
   const [S, E] = arm;
@@ -1831,7 +1839,7 @@ const jit = (i: number) => {
  */
 export function buildDragon(color: number, scale: number): CreatureRig {
   const sk = new Skin();
-  const back = tint(color, 0.85), flank = tint(color, 1.3), belly = tint(color, 1.75, 0x5a524a, 0.3);
+  const back = tint(color, 0.85), flank = tint(color, 1.3), belly = tint(color, 2.05, 0x5a524a, 0.3);
   const hide = grad(back, flank, 0.9, 1.8, 0.07);
   const legHide = grad(tint(color, 1.05), tint(color, 0.6), 0.0, 1.3, 0.06);
   const plateC = belly;
@@ -1948,10 +1956,10 @@ export function buildDragon(color: number, scale: number): CreatureRig {
     headRing(1.98, 0.25, hy + 0.19, hy - 0.17),
     headRing(2.12, 0.27, hy + 0.18, lip(2.12)),
     headRing(2.27, 0.215, hy + 0.1, lip(2.27)),
-    headRing(2.43, 0.18, hy + 0.05, lip(2.43)),
-    headRing(2.6, 0.16, hy + 0.025, lip(2.6)),
-    headRing(2.74, 0.13, hy + 0.0, lip(2.74)),
-  ], V(0, hy - 0.045, 2.83));
+    headRing(2.43, 0.18, hy + 0.04, lip(2.43)),
+    headRing(2.6, 0.16, hy + 0.0, lip(2.6)),
+    headRing(2.74, 0.13, hy - 0.03, lip(2.74)),
+  ], V(0, hy - 0.065, 2.83));
   sk.add('hide', grad(tint(color, 1.35), tint(color, 0.8), hy - 0.1, hy + 0.15, 0.04), skull, head);
   const jaw = sk.joint(head, 0, hy - 0.1, 2.12);
   const jawGeo = sections([
@@ -1964,38 +1972,38 @@ export function buildDragon(color: number, scale: number): CreatureRig {
   // Molten gold welling in the maw, spilling over the lip and dripping from the jaw.
   sk.add('glow', GOLD, ell(V(0, lip(2.42) - 0.012, 2.42), 0.12, 0.035, 0.3, 7, 3, [-0.1, 0, 0]), jaw, undefined, 1.5);
   sk.add('glow', GOLD_DEEP, ell(V(0, lip(2.42) + 0.006, 2.4), 0.11, 0.02, 0.26, 7, 3, [-0.1, 0, 0]), head, undefined, 1.2);
-  const drips: [number, number, number, number][] = [[-0.05, 2.68, 0.34, 0.016], [0.035, 2.6, 0.56, 0.013], [0.12, 2.5, 0.18, 0.016], [-0.15, 2.34, 0.12, 0.018]];
+  const drips: [number, number, number, number][] = [[-0.04, 2.66, 0.52, 0.011], [0.1, 2.52, 0.22, 0.014], [-0.15, 2.34, 0.11, 0.016]];
   for (const [x, z, len, r] of drips) {
     const y = lip(z) - 0.035;
     const top = V(x, y, z);
     // A strand that wavers as it falls, thinning to a bead.
     const path = [0, 0.15, 0.35, 0.55, 0.78, 1].map((u, i) => V(x * (1 + 0.1 * u) + 0.012 * Math.sin(i * 2.1 + x * 40) * u, y - len * u, z + 0.01 * Math.sin(i * 1.7) * u));
     sk.add('glow', GOLD, tube(path, [r * 1.4, r * 0.9, r * 0.6, r * 0.45, r * 0.4, r * 0.35], 4), jaw, undefined, 1.15);
-    sk.add('glow', GOLD, ell(path[5].clone().add(V(0, -r * 0.8, 0)), r * 1.25, r * 1.7, r * 1.25, 5, 3), jaw, undefined, 1.15);
+    sk.add('glow', GOLD, ell(path[5].clone().add(V(0, -r * 0.6, 0)), r * 1.2, r * 1.5, r * 1.2, 6, 4), jaw, undefined, 1.15);
     sk.add('glow', GOLD, ell(top.clone().add(V(0, 0.012, 0)), r * 2.2, r * 1.1, r * 2.6, 5, 3), jaw, undefined, 1.1);
   }
   // Jagged teeth: ragged rows, a fang or two longer than the rest.
   const jawW = (z: number) => 0.27 + (0.13 - 0.27) * clamp01((z - 2.12) / 0.62);
-  const teeth = 0xb2a896;
+  const teeth = 0x9e9688;
   for (const s of [-1, 1]) {
     for (let i = 0; i < 8; i++) {
       const z = 2.24 + i * 0.07;
       const x = s * jawW(z) * 0.8;
-      const len = i === 2 || i === 6 ? 0.13 : 0.035 + 0.06 * jit(i * 3 + (s > 0 ? 1 : 2));
+      const len = i === 5 ? 0.095 : i === 1 ? 0.075 : 0.03 + 0.045 * jit(i * 3 + (s > 0 ? 1 : 2));
       sk.add('horn', teeth, spike(V(x, lip(z) + 0.015, z), V(x * 1.03, lip(z) - len, z + 0.01), 0.018, 3), head);
     }
     for (let i = 0; i < 7; i++) {
       const z = 2.28 + i * 0.065;
       const x = s * (0.175 + (0.118 - 0.175) * clamp01((z - 2.2) / 0.46)) * 0.82;
-      const len = i === 6 ? 0.11 : 0.03 + 0.055 * jit(i * 5 + (s > 0 ? 7 : 9));
+      const len = i === 6 ? 0.09 : 0.025 + 0.045 * jit(i * 5 + (s > 0 ? 7 : 9));
       sk.add('horn', teeth, spike(V(x, lip(z) - 0.02, z), V(x * 1.02, lip(z) - 0.005 + len, z + 0.012), 0.016, 3), jaw);
     }
   }
   for (const x of [-0.05, 0, 0.05]) sk.add('horn', teeth, spike(V(x, hy - 0.09, 2.77), V(x * 1.1, hy - 0.16, 2.79), 0.015, 3), head);
   // Nostrils, and a jagged ridge down the snout.
-  for (const s of [-1, 1]) sk.add('hide', 0x0a090b, ell(V(s * 0.06, hy + 0.005, 2.75), 0.03, 0.016, 0.022, 5, 3, [0.3, 0, s * 0.4]), head);
+  for (const s of [-1, 1]) sk.add('hide', 0x0a090b, ell(V(s * 0.06, hy - 0.025, 2.75), 0.03, 0.016, 0.022, 5, 3, [0.5, 0, s * 0.4]), head);
   for (let i = 0; i < 3; i++) {
-    const z = 2.6 - i * 0.13, y = hy + 0.015 + i * 0.03;
+    const z = 2.6 - i * 0.13, y = hy - 0.01 + i * 0.035;
     const b = V(0, y, z), t = V(0, y + 0.035 + i * 0.01, z - 0.1);
     sk.add('horn', spikeC([b, t]), blade(b, t, 0.06, V(1, 0, 0), 0.03), head);
   }
@@ -2026,6 +2034,12 @@ export function buildDragon(color: number, scale: number): CreatureRig {
       const len = 0.2 + 0.08 * jit(i + 200 + (s > 0 ? 7 : 0));
       const path = [b, b.clone().addScaledVector(dir, len * 0.5), b.clone().addScaledVector(dir, len).add(V(0, 0, -0.04))];
       sk.add('horn', spikeC(path), spine(path, [0.045, 0.028], [0.014, 0.01], V(s * 0.3, 0, 1)), head);
+    }
+    // Small spurs along the top of the brow, raking back.
+    for (let i = 0; i < 3; i++) {
+      const b = brow[0].clone().lerp(brow[2], 0.2 + i * 0.3).add(V(0, 0.05, -0.02));
+      const t = b.clone().add(V(s * 0.04, 0.07 + 0.02 * i, -0.1));
+      sk.add('horn', spikeC([b, t]), blade(b, t, 0.05, V(s * 0.3, 0.2, 1), 0.02), head);
     }
     // Cheekbones, jutting and sharp.
     const cheek = [V(s * 0.2, hy - 0.03, 2.3), V(s * 0.28, hy - 0.02, 2.12), V(s * 0.38, hy - 0.01, 1.92)];
@@ -2116,7 +2130,7 @@ export function buildDragon(color: number, scale: number): CreatureRig {
     tips.forEach((t, i) => {
       sk.add('horn', tint(color, 0.6), tube([W, W.clone().lerp(t, 0.5), t], [0.05, 0.034, 0.006], 4), fingers[i]);
       // Molten marrow: a gold vein under each finger, seen from below as it flies.
-      sk.add('glow', GOLD_DEEP, tube([W.clone().add(V(0, -0.056, 0)), W.clone().lerp(t, 0.5).add(V(0, -0.04, 0)), W.clone().lerp(t, 0.92).add(V(0, -0.012, 0))], [0.014, 0.011, 0], 3), fingers[i], undefined, 0.8);
+      sk.add('glow', GOLD_DEEP, tube([W.clone().lerp(t, 0.3).add(V(0, -0.048, 0)), W.clone().lerp(t, 0.6).add(V(0, -0.036, 0)), W.clone().lerp(t, 0.92).add(V(0, -0.012, 0))], [0.013, 0.011, 0], 3), fingers[i], undefined, 0.8);
     });
     const thumb = [W, W.clone().add(V(s * 0.05, 0.13, 0.2)), W.clone().add(V(s * 0.02, 0.07, 0.36))];
     sk.add('horn', along(thumb, tint(color, 0.8), bone), spine(thumb, [0.05, 0.03], [0.04, 0.025], V(0, 1, 0)), hand);
@@ -2126,7 +2140,7 @@ export function buildDragon(color: number, scale: number): CreatureRig {
     }
     const eb = E.clone().add(V(0, 0.06, 0)), et = E.clone().add(V(s * 0.1, 0.4, -0.14));
     sk.add('horn', spikeC([eb, et]), blade(eb, et, 0.14, V(0, 0, 1), 0.04), fore);
-    const m = membrane(s, W, tips, fingers, [S, E], [root, fore], hand, V(s * 0.38, ty + 0.25, -0.85), hips, chest);
+    const m = membrane(s, W, tips, fingers, [S, E], [root, fore], hand, V(s * 0.38, ty + 0.25, -0.85), hips, chest, 0.26);
     sk.push('wing', mem, m.geo, m.weigh);
     const fold = foldWing(root, fore, hand, tips, V(s * 0.3, 0.85, -0.5), V(s * 0.05, -0.2, 1), [V(s * 0.04, 0.12, -1), V(s * 0.06, -0.04, -1), V(s * 0.08, -0.2, -1), V(s * 0.1, -0.35, -1)]);
     wings.push({ root, fore, hand, fingers, side: s, fold });
@@ -2158,9 +2172,9 @@ export function buildDragon(color: number, scale: number): CreatureRig {
   const spineW = chainWeights(torso, torsoTip);
   for (let i = 0; i < 11; i++) {
     const base = onProfile(prof, 0.9 - i * 0.2, 0, 0.92);
-    const len = (0.26 + 0.16 * Math.sin((i / 10) * Math.PI)) * (i % 2 ? 0.7 : 1);
+    const len = (0.34 + 0.2 * Math.sin((i / 10) * Math.PI)) * (i % 2 ? 0.65 : 1);
     const tip = base.clone().add(V(0, len, -len * 0.7));
-    const g = blade(base, tip, 0.2, V(1, 0, 0), 0.05);
+    const g = blade(base, tip, 0.24, V(1, 0, 0), 0.06);
     sk.push('horn', spikeC([base, tip]), g, spineW);
   }
   for (let i = 0; i < 9; i++) {
