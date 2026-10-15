@@ -19,12 +19,13 @@ const meshes = (root: THREE.Object3D) => {
 };
 
 describe('race models', () => {
-  it('every race in every class builds within a phone-friendly budget, in at most three draw calls', () => {
+  it('every race in every class builds within a phone-friendly budget, in a few draw calls', () => {
     for (const race of RACES) {
       for (const [cls, sub] of CLASSES) {
         const rig = hero(race, cls, sub);
         expect(rig.root.userData.tris, `${race} ${cls} ${sub}`).toBeLessThan(8000);
-        expect(meshes(rig.root).length).toBeLessThanOrEqual(3);
+        // One skinned mesh per surface (cloth and skin, metal, glow), and room for an outline.
+        expect(meshes(rig.root).length).toBeLessThanOrEqual(4);
       }
     }
   });
