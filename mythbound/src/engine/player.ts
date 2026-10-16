@@ -478,6 +478,27 @@ export class Player {
     this.hp = Math.min(this.maxHp, this.hp + amount);
   }
 
+  /**
+   * Builder mode: flies freely (no gravity, no walls, no harm), turning to
+   * face where it goes. `v` is the wanted velocity (m/s, world axes).
+   */
+  buildFly(dt: number, v: THREE.Vector3) {
+    this.attack = null;
+    this.charge = null;
+    this.rollT = -1;
+    this.blocking = false;
+    this.vel.copy(v);
+    this.pos.addScaledVector(v, dt);
+    const ground = heightAt(this.pos.x, this.pos.z);
+    if (this.pos.y < ground) this.pos.y = ground;
+    this.grounded = this.pos.y < ground + 0.05;
+    this.flying = !this.grounded;
+    this.swimming = false;
+    if (Math.hypot(v.x, v.z) > 0.5) this.yaw = rotateTowards(this.yaw, Math.atan2(v.x, v.z), dt, 8);
+    this.syncAnim(dt);
+    this.syncModel();
+  }
+
   // ---------------------------------------------------------------- update --
 
   update(dt: number, g: Game) {

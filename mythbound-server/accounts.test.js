@@ -77,7 +77,7 @@ async function scenario(store) {
 
     // Profile (unlocks) follows the account.
     assert.equal((await call('PUT', '/api/me', { profile: { unlocks: { ancient: true } } }, token)).status, 200);
-    assert.deepEqual((await call('GET', '/api/me', undefined, li.body.token)).body, { username: 'Aria_7', profile: { unlocks: { ancient: true } } });
+    assert.deepEqual((await call('GET', '/api/me', undefined, li.body.token)).body, { username: 'Aria_7', profile: { unlocks: { ancient: true } }, admin: false });
 
     // Delete a slot.
     assert.equal((await call('DELETE', '/api/slots/0', undefined, token)).status, 200);
@@ -133,5 +133,51 @@ test('without a database the API says accounts are off', async () => {
     assert.equal((await res.json()).error, 'no-accounts');
   } finally {
     await server.close();
+  }
+});
+
+test('admins and builds: only the named, older accounts are admins; anyone can open a build by its link', async () => {
+  const store = memoryStore();
+  await store.init();
+  let t = Date.UTC(2026, 0, 1);
+  const server = await startServer(0, { accounts: accountsApi(store, { now: () => t, admins: ['R88', 'Rock'], adminBefore: Date.UTC(2026, 5, 1) }) });
+  const base = `http://localhost:${server.port}`;
+  const call = async (method, path, body, token) => {
+    const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  try {
+    const r88 = await call('POST', '/api/signup', { username: 'R88', password: 'builder1' });
+    const rock = await call('POST', '/api/signup', { username: 'rock', password: 'builder2' });
+    const pleb = await call('POST', '/api/signup', { username: 'Pleb', password: 'player1' });
+    assert.equal((await call('GET', '/api/me', undefined, r88.body.token)).body.admin, true);
+    assert.equal((await call('GET', '/api/me', undefined, rock.body.token)).body.admin, true);
+    assert.equal((await call('GET', '/api/me', undefined, pleb.body.token)).body.admin, false);
+    // Players can't make builds.
+    assert.equal((await call('POST', '/api/builds', { name: 'x', edits: [] }, pleb.body.token)).status, 403);
+    assert.equal((await call('POST', '/api/builds', { name: 'x', edits: [] })).status, 401);
+    // An admin saves a build and gets its link id; anyone can open it.
+    const made = await call('POST', '/api/builds', { name: 'Castle', edits: [{ t: 'add', k: 'tower', x: 5, z: -3.25, evil: { nested: 1 } }] }, r88.body.token);
+    assert.equal(made.status, 201);
+    assert.match(made.body.id, /^[a-z0-9]{8}$/);
+    const open = await call('GET', `/api/builds/${made.body.id}`);
+    assert.equal(open.status, 200);
+    assert.equal(open.body.owner, 'R88');
+    assert.deepEqual(open.body.edits, [{ t: 'add', k: 'tower', x: 5, z: -3.25 }]);
+    assert.equal((await call('GET', '/api/builds/nosuchxx')).status, 404);
+    // Saving over it: the owner yes, another admin no.
+    assert.equal((await call('PUT', `/api/builds/${made.body.id}`, { name: 'Castle 2', edits: [] }, r88.body.token)).status, 200);
+    assert.equal((await call('PUT', `/api/builds/${made.body.id}`, { name: 'Mine', edits: [] }, rock.body.token)).status, 403);
+    assert.equal((await call('GET', '/api/builds', undefined, r88.body.token)).body.builds[0].name, 'Castle 2');
+    // A look-alike made after admin was handed out is not an admin.
+    await call('DELETE', `/api/builds/${made.body.id}`, undefined, r88.body.token);
+    assert.equal((await call('GET', `/api/builds/${made.body.id}`)).status, 404);
+    t = Date.UTC(2026, 11, 1);
+    await store.deleteSessions(2);
+    const late = await call('POST', '/api/signup', { username: 'Rock_', password: 'imposter' });
+    assert.equal(late.body.admin, false);
+  } finally {
+    await server.close();
+    await store.close();
   }
 });

@@ -3,12 +3,13 @@
 // Times are whole milliseconds; a slot's updatedAt doubles as its version.
 
 /**
- * @typedef {{ id: number, username: string, passHash: string, recoveryHash: string, profile: object }} User
+ * @typedef {{ id: number, username: string, passHash: string, recoveryHash: string, profile: object, createdAt: number }} User
+ * @typedef {{ id: string, ownerId: number, owner: string, name: string, data: string, updatedAt: number }} Build
  * @typedef {{ slot: number, summary: object, updatedAt: number }} SlotInfo
  * @typedef {{
  *   init(): Promise<void>,
  *   close(): Promise<void>,
- *   createUser(u: { username: string, passHash: string, recoveryHash: string }): Promise<number | null>,
+ *   createUser(u: { username: string, passHash: string, recoveryHash: string, createdAt?: number }): Promise<number | null>,
  *   findUser(username: string): Promise<User | null>,
  *   userById(id: number): Promise<User | null>,
  *   setSecrets(id: number, passHash: string, recoveryHash: string): Promise<void>,
@@ -22,6 +23,11 @@
  *   getSlot(userId: number, slot: number): Promise<{ data: string, updatedAt: number } | null>,
  *   putSlot(userId: number, slot: number, data: string, summary: object, base: number, now: number): Promise<{ updatedAt: number } | { conflict: number }>,
  *   deleteSlot(userId: number, slot: number): Promise<void>,
+ *   createBuild(b: { id: string, ownerId: number, name: string, data: string, now: number }): Promise<boolean>,
+ *   getBuild(id: string): Promise<Build | null>,
+ *   listBuilds(ownerId: number): Promise<{ id: string, name: string, updatedAt: number }[]>,
+ *   putBuild(id: string, name: string, data: string, now: number): Promise<number>,
+ *   deleteBuild(id: string): Promise<void>,
  * }} Store
  */
 
@@ -33,15 +39,17 @@ export function memoryStore() {
   const sessions = new Map();
   /** @type {Map<string, { data: string, summary: object, updatedAt: number }>} */
   const slots = new Map();
+  /** @type {Map<string, Build>} */
+  const builds = new Map();
   let nextId = 1;
   const key = (u, s) => `${u}:${s}`;
   return {
     async init() {},
     async close() {},
-    async createUser({ username, passHash, recoveryHash }) {
+    async createUser({ username, passHash, recoveryHash, createdAt = Date.now() }) {
       for (const u of users.values()) if (u.username.toLowerCase() === username.toLowerCase()) return null;
       const id = nextId++;
-      users.set(id, { id, username, passHash, recoveryHash, profile: {} });
+      users.set(id, { id, username, passHash, recoveryHash, profile: {}, createdAt });
       return id;
     },
     async findUser(username) {
@@ -100,6 +108,27 @@ export function memoryStore() {
     async deleteSlot(userId, slot) {
       slots.delete(key(userId, slot));
     },
+    async createBuild({ id, ownerId, name, data, now }) {
+      if (builds.has(id)) return false;
+      builds.set(id, { id, ownerId, owner: users.get(ownerId)?.username ?? '', name, data, updatedAt: now });
+      return true;
+    },
+    async getBuild(id) {
+      const b = builds.get(id);
+      return b ? { ...b } : null;
+    },
+    async listBuilds(ownerId) {
+      return [...builds.values()].filter((b) => b.ownerId === ownerId).sort((a, b) => b.updatedAt - a.updatedAt).map((b) => ({ id: b.id, name: b.name, updatedAt: b.updatedAt }));
+    },
+    async putBuild(id, name, data, now) {
+      const b = builds.get(id);
+      if (!b) return 0;
+      Object.assign(b, { name, data, updatedAt: Math.max(now, b.updatedAt + 1) });
+      return b.updatedAt;
+    },
+    async deleteBuild(id) {
+      builds.delete(id);
+    },
   };
 }
 
@@ -110,7 +139,7 @@ export async function pgStore(url) {
   // A dropped idle connection (the database napping) must not take the server down.
   pool.on('error', (err) => console.error('Database connection error:', err.message));
   const q = (text, params) => pool.query(text, params);
-  const user = (r) => r && { id: r.id, username: r.username, passHash: r.pass_hash, recoveryHash: r.recovery_hash, profile: r.profile ?? {} };
+  const user = (r) => r && { id: r.id, username: r.username, passHash: r.pass_hash, recoveryHash: r.recovery_hash, profile: r.profile ?? {}, createdAt: Number(r.created_at) };
   return {
     async init() {
       await q(`CREATE TABLE IF NOT EXISTS users (
@@ -136,15 +165,24 @@ export async function pgStore(url) {
         updated_at BIGINT NOT NULL,
         PRIMARY KEY (user_id, slot)
       )`);
+      // Builder mode's saved worlds, each opened by its own link.
+      await q(`CREATE TABLE IF NOT EXISTS builds (
+        id TEXT PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at BIGINT NOT NULL
+      )`);
+      await q('CREATE INDEX IF NOT EXISTS builds_owner ON builds(owner_id)');
     },
     async close() {
       await pool.end();
     },
-    async createUser({ username, passHash, recoveryHash }) {
+    async createUser({ username, passHash, recoveryHash, createdAt = Date.now() }) {
       const r = await q(
         `INSERT INTO users (username, username_key, pass_hash, recovery_hash, created_at) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (username_key) DO NOTHING RETURNING id`,
-        [username, username.toLowerCase(), passHash, recoveryHash, Date.now()],
+        [username, username.toLowerCase(), passHash, recoveryHash, createdAt],
       );
       return r.rows[0]?.id ?? null;
     },
@@ -210,6 +248,26 @@ export async function pgStore(url) {
     },
     async deleteSlot(userId, slot) {
       await q('DELETE FROM slots WHERE user_id = $1 AND slot = $2', [userId, slot]);
+    },
+    async createBuild({ id, ownerId, name, data, now }) {
+      const r = await q('INSERT INTO builds (id, owner_id, name, data, updated_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING RETURNING id', [id, ownerId, name, data, now]);
+      return r.rowCount > 0;
+    },
+    async getBuild(id) {
+      const r = await q('SELECT b.*, u.username FROM builds b JOIN users u ON u.id = b.owner_id WHERE b.id = $1', [id]);
+      const b = r.rows[0];
+      return b ? { id: b.id, ownerId: b.owner_id, owner: b.username, name: b.name, data: b.data, updatedAt: Number(b.updated_at) } : null;
+    },
+    async listBuilds(ownerId) {
+      const r = await q('SELECT id, name, updated_at FROM builds WHERE owner_id = $1 ORDER BY updated_at DESC', [ownerId]);
+      return r.rows.map((b) => ({ id: b.id, name: b.name, updatedAt: Number(b.updated_at) }));
+    },
+    async putBuild(id, name, data, now) {
+      const r = await q('UPDATE builds SET name = $2, data = $3, updated_at = GREATEST($4, updated_at + 1) WHERE id = $1 RETURNING updated_at', [id, name, data, now]);
+      return r.rows[0] ? Number(r.rows[0].updated_at) : 0;
+    },
+    async deleteBuild(id) {
+      await q('DELETE FROM builds WHERE id = $1', [id]);
     },
   };
 }

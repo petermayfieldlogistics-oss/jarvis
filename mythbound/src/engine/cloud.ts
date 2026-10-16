@@ -28,6 +28,15 @@ export interface Profile {
   unlocks?: { ancient?: boolean };
 }
 
+/** A builder mode build: a name, who made it, and its changes to the world. */
+export interface BuildData {
+  id: string;
+  name: string;
+  owner: string;
+  edits: Record<string, number | string>[];
+  updatedAt: number;
+}
+
 export class CloudError extends Error {
   constructor(public code: string, message: string, public status = 0) {
     super(message);
@@ -42,6 +51,8 @@ export function summarize(data: SaveData): SlotSummary {
 
 export class Cloud {
   session: { username: string; token: string } | null = readLocal(SESSION_KEY);
+  /** This account may use builder mode and the admin panel (the server checks again on every save). */
+  admin = false;
   /** Set once the server has answered (accounts on or off). */
   private awake: { accounts: boolean } | null = null;
   /** A wake-up in progress, shared by everyone waiting for it. */
@@ -146,6 +157,7 @@ export class Cloud {
   /** Signs out on this device only. */
   forget() {
     this.session = null;
+    this.admin = false;
     writeLocal(SESSION_KEY, null);
   }
 
@@ -156,8 +168,9 @@ export class Cloud {
   }
 
   async login(username: string, password: string) {
-    const r = await this.call<{ token: string; username: string }>('POST', '/api/login', { username, password });
+    const r = await this.call<{ token: string; username: string; admin?: boolean }>('POST', '/api/login', { username, password });
     this.remember(r.username, r.token);
+    this.admin = !!r.admin;
   }
 
   /** Sets a new password with the recovery code; returns the new recovery code. */
@@ -177,7 +190,36 @@ export class Cloud {
   }
 
   async profile(): Promise<Profile> {
-    return (await this.call<{ profile: Profile }>('GET', '/api/me')).profile ?? {};
+    const r = await this.call<{ profile: Profile; admin?: boolean }>('GET', '/api/me');
+    this.admin = !!r.admin;
+    return r.profile ?? {};
+  }
+
+  /** Asks the server whether this account is an admin (false when signed out or offline). */
+  async checkAdmin(): Promise<boolean> {
+    if (!this.session) return false;
+    await this.profile().catch(() => {});
+    return this.admin;
+  }
+
+  /** A saved build, by the id in its link (anyone may open one). */
+  async build(id: string): Promise<BuildData> {
+    return this.call('GET', `/api/builds/${encodeURIComponent(id)}`);
+  }
+
+  /** Admins: the builds this account has saved. */
+  async builds(): Promise<{ id: string; name: string; updatedAt: number }[]> {
+    return (await this.call<{ builds: { id: string; name: string; updatedAt: number }[] }>('GET', '/api/builds')).builds;
+  }
+
+  /** Admins: saves a build (over `id` if given, else as a new one) and returns its id. */
+  async saveBuild(name: string, edits: Record<string, number | string>[], id?: string): Promise<string> {
+    const r = id ? await this.call<{ id: string }>('PUT', `/api/builds/${id}`, { name, edits }) : await this.call<{ id: string }>('POST', '/api/builds', { name, edits });
+    return r.id;
+  }
+
+  async deleteBuild(id: string) {
+    await this.call('DELETE', `/api/builds/${id}`);
   }
 
   async setProfile(profile: Profile) {
