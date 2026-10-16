@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
-import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
+import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, LAIRS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { satchelCount } from '../rules/food';
 import { clearFed, fedNightVision } from '../rules/fed';
@@ -39,7 +39,7 @@ import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
 import { Wardrobe } from '../ui/wardrobe';
 
-export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand';
+export type ProjectileKind = 'arrow' | 'fireball' | 'orb' | 'water' | 'bolt' | 'axe' | 'knife' | 'wand' | 'boulder';
 
 export interface ProjectileSpec {
   from: THREE.Vector3;
@@ -814,11 +814,18 @@ export class Game {
     }
     if (first) {
       this.state.flags[flag] = true;
-      if (!c.weapons.some((w) => w.id === boss.reward)) {
-        c.weapons.push({ id: boss.reward, level: 1 });
-        setTimeout(() => this.hud.toast(`You claim ${WEAPONS[boss.reward].name}! (see your pack)`, 'quest'), 2600);
+      // Its weapon, or its trophy (to keep, or to sell to Quill).
+      if (WEAPONS[boss.reward]) {
+        if (!c.weapons.some((w) => w.id === boss.reward)) {
+          c.weapons.push({ id: boss.reward, level: 1 });
+          setTimeout(() => this.hud.toast(`You claim ${WEAPONS[boss.reward].name}! (see your pack)`, 'quest'), 2600);
+        }
+      } else if (ITEMS[boss.reward]) {
+        c.items[boss.reward] = (c.items[boss.reward] ?? 0) + 1;
+        setTimeout(() => this.hud.toast(`Trophy: ${ITEMS[boss.reward].name}! (Quill pays well for it)`, 'quest'), 2600);
       }
-      this.questProgress('hunts', 1);
+      const legend = LAIRS.some((l) => l.boss === boss.id && l.legend);
+      this.questProgress(legend ? 'legends' : 'hunts', 1);
     }
     this.save();
   }
@@ -1325,6 +1332,7 @@ export class Game {
         this.spawner.update(dt);
         this.lairs.update();
       }
+      this.lairs.discover(dt);
       this.updateOre();
       if (this.mode === 'play') this.updateInteraction();
       else this.hud.prompt(null);
@@ -1377,6 +1385,7 @@ export class Game {
         if (Math.random() < 0.7) this.fx.emit(pr.pos, { color: Math.random() < 0.5 ? 0xbfe0ff : 0xfff2a0, count: 1, speed: 2.5, life: 0.25, size: 0.35 });
       }
       if (pr.kind === 'axe' || pr.kind === 'knife') pr.mesh.rotation.x += dt * (pr.kind === 'knife' ? 28 : 20);
+      if (pr.kind === 'boulder') (pr.mesh.rotation.x += dt * 5), (pr.mesh.rotation.z += dt * 3);
       if (pr.kind === 'wand') {
         pr.mesh.lookAt(pr.pos.clone().add(pr.vel));
         if (Math.random() < 0.6) this.fx.emit(pr.pos, { color: pr.color ?? 0xb070ff, count: 1, speed: 0.4, life: 0.3, size: 0.35 });
@@ -1385,14 +1394,14 @@ export class Game {
       // A charged shot streams its burst's colour.
       const streak = pr.burst?.kind ?? pr.glowing;
       if (streak) this.fx.emit(pr.pos, { color: BURST_COLOR[streak], count: 2, speed: 0.6, life: 0.4, size: 0.5 });
-      if (pr.kind === 'orb' && Math.random() < 0.5) this.fx.emit(pr.pos, { color: 0xa070ff, count: 1, speed: 0.5, life: 0.4, size: 0.6 });
+      if (pr.kind === 'orb' && Math.random() < 0.5) this.fx.emit(pr.pos, { color: pr.color ?? 0xa070ff, count: 1, speed: 0.5, life: 0.4, size: 0.6 });
       let impact = false;
       if (!pr.returning && (pr.pos.y < heightAt(pr.pos.x, pr.pos.z) || pr.life <= 0)) impact = true;
       if (pr.boomerang && !pr.returning && pr.pos.distanceTo(pr.from) > BOOMERANG_RANGE) impact = true;
       if (pr.owner === 'enemy') {
         // Each player's game checks its own hero; the shot's copies elsewhere check theirs.
         const p = this.player;
-        if (p.alive && p.center().distanceTo(pr.pos) < 0.9 + (p.crouching ? 0 : 0.2)) {
+        if (p.alive && p.center().distanceTo(pr.pos) < (pr.kind === 'boulder' ? 1.5 : 0.9) + (p.crouching ? 0 : 0.2)) {
           this.damagePlayer(pr.damage * (pr.source && pr.source.status.hex > 0 ? HEX.dealt : 1), pr.element, pr.source);
           impact = true;
         }
@@ -1432,8 +1441,14 @@ export class Game {
           }
           if (pr.owner !== 'remote') this.shake(0.15);
         } else {
-          const color = pr.kind === 'wand' ? (pr.color ?? 0xb070ff) : pr.kind === 'fireball' ? 0xff6020 : pr.kind === 'orb' ? 0xa070ff : pr.kind === 'water' ? 0x60b0ff : 0xc0b090;
+          const color = pr.kind === 'wand' ? (pr.color ?? 0xb070ff) : pr.kind === 'fireball' ? 0xff6020 : pr.kind === 'orb' ? (pr.color ?? 0xa070ff) : pr.kind === 'water' ? 0x60b0ff : 0xc0b090;
           this.fx.emit(pr.pos, { color, count: 10, speed: 3, life: 0.35 });
+          // A boulder shatters with a thud.
+          if (pr.kind === 'boulder') {
+            this.fx.dust(pr.pos, 18, 0x8a8070);
+            this.fx.emit(pr.pos, { color: 0x6e675e, count: 14, speed: 5, life: 0.7, size: 0.6, gravity: 12, up: 3 });
+            if (pr.owner !== 'remote') this.shake(0.12);
+          }
         }
         // A returning throw turns for home instead of falling.
         if (pr.boomerang && !pr.returning) {
@@ -1693,10 +1708,22 @@ function projectileMesh(kind: ProjectileKind, color = 0xb070ff, rune?: RuneId, g
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), mat(0xffa040, { emissive: 0xff5010, emissiveIntensity: 3 })));
       g.add(glowSprite(0xff6020, 2.2));
       break;
-    case 'orb':
-      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), mat(0xc090ff, { emissive: 0x8040ff, emissiveIntensity: 3 })));
-      g.add(glowSprite(0x9060ff, 1.8));
+    case 'orb': {
+      // A boss's orb takes its colour (venom green, storm blue...); the default is a wraith's violet.
+      const c = new THREE.Color(color === 0xb070ff ? 0xc090ff : color);
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), mat(c.getHex(), { emissive: c.clone().multiplyScalar(0.6).getHex(), emissiveIntensity: 3 })));
+      g.add(glowSprite(color === 0xb070ff ? 0x9060ff : color, 1.8));
       break;
+    }
+    case 'boulder': {
+      // A giant's thrown rock, tumbling.
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.75, 0), mat(0x6e675e, { rough: 1 }));
+      rock.scale.set(1, 0.85, 0.95);
+      rock.castShadow = true;
+      rock.userData.tumble = true;
+      g.add(rock);
+      break;
+    }
     case 'water':
       g.add(new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), mat(0x60b0ff, { emissive: 0x2060a0, emissiveIntensity: 1, transparent: 0.8 })));
       break;

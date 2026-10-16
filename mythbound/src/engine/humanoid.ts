@@ -2279,6 +2279,23 @@ function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig
   });
 }
 
+// ----------------------------------------------------- beasts of legend --
+//
+// The humanoid beasts of Orrin's bestiary: kings, giants, a minotaur, a
+// cyclops, a fury, a harpy... each on the heroes' body with its own head,
+// gear and posture (built once per look, then cloned).
+
+export function buildLegend(id: string, color: number, scale: number): Rig {
+  return instance(`legend:${id}:${color}`, scale, () => buildLegendRig(id, color));
+}
+
+function buildLegendRig(id: string, color: number): Rig {
+  switch (id) {
+    default:
+      return buildBoss('champion', color);
+  }
+}
+
 // ------------------------------------------------------------ class garb --
 //
 // A hero's own clothes, cut for their class, in place of buildBody's plainer builds

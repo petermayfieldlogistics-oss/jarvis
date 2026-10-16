@@ -224,6 +224,8 @@ export class Player {
   combineMode = false;
   cooldowns = new Map<string, number>();
   speedBuff = 0;
+  /** Turned to stone by a gorgon's stare: seconds left (no moving or acting, the pose held). */
+  stone = 0;
   /** Held fast, or slowed, by another hero's blow (PvP), seconds left. */
   pvpRoot = 0;
   pvpSlow = 0;
@@ -478,6 +480,19 @@ export class Player {
     this.hp = Math.min(this.maxHp, this.hp + amount);
   }
 
+  /** A gorgon's stare: stone for a moment (a roll through it slips the gaze). */
+  petrify(g: Game, seconds: number) {
+    if (!this.alive || this.iframes > 0) return;
+    this.endMeditation();
+    this.stone = Math.max(this.stone, seconds);
+    this.stagger = Math.max(this.stagger, seconds);
+    this.attack = null;
+    this.rollT = -1;
+    g.hud.toast('Turned to stone! Look away from her eyes.', 'warn');
+    g.fx.emit(this.center(), { color: 0x9a9a90, count: 34, speed: 2.2, life: 0.9, size: 0.5, up: 1.2 });
+    g.fx.dust(this.pos, 16, 0x8a8a84);
+  }
+
   // ---------------------------------------------------------------- update --
 
   update(dt: number, g: Game) {
@@ -502,6 +517,7 @@ export class Player {
     // Timers.
     this.iframes = Math.max(0, this.iframes - dt);
     this.stagger = Math.max(0, this.stagger - dt);
+    this.stone = Math.max(0, this.stone - dt);
     this.blackout = Math.max(0, this.blackout - dt);
     this.speedBuff = Math.max(0, this.speedBuff - dt);
     this.stoneSkin = Math.max(0, this.stoneSkin - dt);
@@ -840,7 +856,8 @@ export class Player {
     this.mercy(dt, g);
 
     // Interaction is handled by Game (it owns the world state).
-    this.syncAnim(dt);
+    // Stone holds its pose.
+    this.syncAnim(this.stone > 0 ? 0 : dt);
     this.syncModel();
     this.weaponTrail(g);
   }

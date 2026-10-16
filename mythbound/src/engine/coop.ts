@@ -48,10 +48,12 @@ const STYLES: AttackStyle[] = [
   'cleave', 'strum', 'song', 'blow',
   // The Monk, the Sorcerer and the Rogue.
   'jab', 'cross', 'kick', 'palm', 'flurry', 'meditate', 'cyclone', 'channel', 'parry',
+  // The beasts of legend: the Sandworm's dive under the sand, the Gorgon's stare.
+  'burrow', 'gaze',
 ];
 const STYLE_INDEX = new Map(STYLES.map((s, i) => [s, i]));
 const PET_KINDS: AllyKind[] = ['wolf', 'boar', 'scorpion', 'magma-hound', 'drake', 'imp', 'lizard', 'shade'];
-const PROJECTILES = new Set<ProjectileKind>(['arrow', 'fireball', 'orb', 'water', 'bolt', 'axe', 'knife', 'wand']);
+const PROJECTILES = new Set<ProjectileKind>(['arrow', 'fireball', 'orb', 'water', 'bolt', 'axe', 'knife', 'wand', 'boulder']);
 const ELEMENTS = new Set<DamageElement>(['fire', 'water', 'wind', 'earth', 'physical', 'lightning', 'dark', 'light', 'true']);
 const CLASSES = new Set<ClassId>(['warrior', 'ranger', 'mage', 'monk', 'sorcerer', 'rogue']);
 /** Subclasses that change how a hero looks (the newer classes dress for their path). */

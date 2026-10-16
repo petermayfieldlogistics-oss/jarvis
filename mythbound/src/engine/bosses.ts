@@ -18,7 +18,7 @@ import type { Game } from './game';
 import type { Hero } from './hero';
 
 /** Moves only the great foes have; everything else is the shared Boss's. */
-const SPECIAL = new Set<BossAttack>(['bite', 'claw', 'breath', 'gust', 'flight', 'strike', 'tail', 'dive', 'wave', 'whirlpool', 'trident', 'geyser', 'reap', 'drain', 'web']);
+const SPECIAL = new Set<BossAttack>(['bite', 'claw', 'breath', 'gust', 'flight', 'strike', 'tail', 'dive', 'wave', 'whirlpool', 'trident', 'geyser', 'reap', 'drain', 'web', 'burrow', 'gaze']);
 const GREAT = new Set<BossId>(['leviathan', 'sea-queen', 'elder-dragon', 'reaper', 'giant-spider']);
 const CURVED = new Set<BossAttack>(['bite', 'claw', 'gust']);
 
@@ -142,15 +142,23 @@ export class GreatBoss extends Boss {
   private died = false;
   private wander = new THREE.Vector3();
   private wanderT = 0;
+  private lastGaze = -1;
   private thread: THREE.Mesh | null = null;
   private fxAcc = 0;
+  /** Waits under the sand until a hero comes close (the Sandworm). */
+  private buried = false;
+  private gazeAt = -100;
+  private trail = 0;
 
   constructor(def: BossDef, arena: { x: number; z: number; radius: number }, lair: LairDef | null) {
     super(def, arena);
     this.lair = lair;
     this.engaged = !lair;
     this.serpent = def.model === 'serpent';
-    this.radius = this.serpent ? SERPENT.body : def.model === 'dragon' ? 3 : def.model === 'spider' ? 1.9 : def.model === 'siren' ? 1.1 : 0.9;
+    const own: Partial<Record<string, number>> = { dragon: 3, spider: 1.9, siren: 1.1, reaper: 0.9 };
+    this.radius = this.serpent ? SERPENT.body : (own[def.model] ?? this.radius);
+    // The Sandworm waits under the sand.
+    this.buried = def.attacks.includes('burrow');
     if (this.serpent) {
       this.surfaces = surfaceAngles(arena.x, arena.z, SERPENT.ring, waterDepth, 3);
       // Rise first on the sea side facing the land.
@@ -177,7 +185,7 @@ export class GreatBoss extends Boss {
   }
 
   get bleeds() {
-    return this.bdef.model !== 'reaper';
+    return this.bdef.model !== 'reaper' && !this.bdef.bloodless;
   }
 
   /**
@@ -214,6 +222,17 @@ export class GreatBoss extends Boss {
         this.away += dt;
         if (this.away > 6) this.disengage(g);
       } else this.away = 0;
+    }
+    if (this.alive && this.alt < 0 && !(this.attack === 'burrow' && this.stage !== 'recover')) {
+      // Bursting up out of the sand.
+      const was = this.alt;
+      this.alt = Math.min(0, this.alt + dt * 16);
+      if (was < -2 && this.alt >= -2) {
+        g.sfx.dust(this.pos, 40, 0xc8a878);
+        g.sfx.shake(this.pos, 0.5);
+        g.sfx.sound('slam', this.pos);
+      }
+      this.model.root.visible = this.alt > -5;
     }
     if (this.alive && this.alt > 0 && !(this.attack === 'flight' && this.stage === 'strike')) {
       // Dropping from the canopy (or back to earth).
@@ -259,6 +278,16 @@ export class GreatBoss extends Boss {
     if (this.bdef.model === 'spider') {
       this.alt = Math.min(9, this.alt + dt * 6);
       this.yaw += dt * 0.15;
+    } else if (this.buried) {
+      // Under the sand, only a slow ripple shows where it waits.
+      this.alt = -7;
+      this.model.root.visible = false;
+      this.trail -= dt;
+      if (this.trail <= 0) {
+        this.trail = 1.2;
+        const ang = Math.random() * Math.PI * 2;
+        g.sfx.dust(_w.set(this.pos.x + Math.cos(ang) * 2, heightAt(this.pos.x, this.pos.z), this.pos.z + Math.sin(ang) * 2), 3, 0xc8a878);
+      }
     } else {
       this.wanderT -= dt;
       const dx = this.wander.x - this.pos.x, dz = this.wander.z - this.pos.z;
@@ -280,7 +309,7 @@ export class GreatBoss extends Boss {
     this.setMotion(vx, vz);
     this.syncModel(dt);
     // A hero close by (or a blow from afar) wakes it.
-    const notice = this.bdef.model === 'spider' ? 15 : 20;
+    const notice = this.bdef.model === 'spider' ? 15 : this.buried ? 16 : 20;
     const near = g.heroes.some((h) => h.alive && Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z) < notice);
     if (near || this.hp < this.maxHp) this.engage(g);
   }
@@ -308,7 +337,7 @@ export class GreatBoss extends Boss {
     this.auraFx = null;
     this.pos.copy(this.home);
     this.wander.copy(this.home);
-    this.model.root.visible = true;
+    this.model.root.visible = !this.buried;
     g.sfx.emit(this.center(), { color: AFFINITY[this.bdef.id], count: 30, speed: 4, life: 0.8 });
   }
 
@@ -360,6 +389,53 @@ export class GreatBoss extends Boss {
         if (dist > 8) add('leap', 2);
         if (minions < 5) add('summon');
         break;
+      default:
+        // The beasts of legend: each move where it makes sense.
+        for (const m of this.bdef.attacks) {
+          switch (m) {
+            case 'bite': case 'claw': case 'sweep': case 'combo':
+              if (near) add(m, 2);
+              break;
+            case 'slam':
+              if (dist < this.radius + 9) add(m);
+              break;
+            case 'ring':
+              if (dist < 9) add(m);
+              break;
+            case 'breath':
+              if (dist > 3 && dist < 17) add(m, 2);
+              break;
+            case 'gust':
+              if (dist < 12) add(m);
+              break;
+            case 'web':
+              if (dist > 6 && dist < 24) add(m);
+              break;
+            case 'charge': case 'leap':
+              if (dist > 8) add(m);
+              break;
+            case 'burrow':
+              // Far off, or now and then up close: it dives and comes up beneath you.
+              if (dist > 10 || Math.random() < 0.25) add(m, dist > 10 ? 2 : 1);
+              break;
+            case 'gaze':
+              if (this.clock - this.gazeAt > (two ? 9 : 13)) add(m, 2);
+              break;
+            case 'summon':
+              if (minions < (two ? 4 : 3)) add(m);
+              break;
+            case 'teleport':
+              if (dist > 7) add(m);
+              break;
+            case 'volley': case 'strikes':
+              if (dist > 5) add(m);
+              break;
+            default:
+              add(m);
+          }
+        }
+        // Nothing fits (a hero just out of reach): close in with whatever reaches.
+        if (!opts.length) for (const m of this.bdef.attacks) if (m === 'volley' || m === 'strikes' || m === 'leap' || m === 'charge' || m === 'burrow') add(m);
     }
     if (!opts.length) return;
     const pool = opts.filter((a) => a !== this.last);
@@ -488,6 +564,21 @@ export class GreatBoss extends Boss {
         this.flewAt = this.clock;
         this.flyFrom.copy(this.pos);
         g.sfx.sound('roar', this.pos, 90);
+        break;
+      case 'burrow': {
+        // Down into the sand, and up again beneath where the hero is running to.
+        this.flyFrom.copy(this.pos);
+        this.spot.set(p.pos.x + p.vel.x * 0.5, 0, p.pos.z + p.vel.z * 0.5);
+        this.clampIn(this.spot);
+        this.telegraphs.push(g.sfx.telegraph(this.spot.x, this.spot.z, 5, landAt, 0xd8b070));
+        g.sfx.sound('roar', this.pos, 90);
+        break;
+      }
+      case 'gaze':
+        this.gazeAt = this.clock;
+        g.sfx.magicCircle(this.pos, 0x9aff60, 3.2, w + 0.3);
+        g.sfx.toast(`${this.bdef.name} raises her eyes. Look away!`, 'warn', this.pos);
+        g.sfx.sound('devil', this.pos);
         break;
     }
   }
@@ -720,12 +811,13 @@ export class GreatBoss extends Boss {
         if (this.stage === 'windup') this.faceTowards(p.pos.x, p.pos.z, dt, 5);
         if (landed) {
           const spider = this.bdef.model === 'spider';
+          const venom = spider || !!this.bdef.venom;
           for (const h of this.foes(g)) {
             if (!inCone(h.pos.x, h.pos.z, this.pos.x, this.pos.z, this.yaw, this.radius + 3.2, 0.7, h.radius)) continue;
-            g.damageHero(h, Math.round(this.damage() * (spider ? 1 : 1.3)), spider ? 'earth' : 'physical', this);
-            if (spider) this.poisonHero(h, g);
+            g.damageHero(h, Math.round(this.damage() * (spider ? 1 : 1.3)), venom ? 'earth' : 'physical', this);
+            if (venom) this.poisonHero(h, g);
           }
-          g.sfx.impact(this.center(_w).addScaledVector(_q.set(fwdX, 0, fwdZ), this.radius + 1), spider ? 0x9aff40 : 0xffd0a0, 0.7);
+          g.sfx.impact(this.center(_w).addScaledVector(_q.set(fwdX, 0, fwdZ), this.radius + 1), venom ? 0x9aff40 : 0xffd0a0, 0.7);
           g.sfx.sound('hit', this.pos);
         }
         return striking && k < hits[0] && dist > this.radius + 1 ? [fwdX, fwdZ, this.bdef.model === 'spider' ? 9 : 6] : [0, 0, 0];
@@ -756,7 +848,71 @@ export class GreatBoss extends Boss {
         return [0, 0, 0];
       case 'flight':
         return this.fly(dt, g, k, striking);
+      case 'burrow':
+        return this.burrow(dt, g, k, landed);
+      case 'gaze':
+        this.faceTowards(p.pos.x, p.pos.z, dt, striking ? 1.5 : 3);
+        if (landed) {
+          // Whoever is facing her is caught by her stare (each player's own game turns its hero to stone).
+          for (const h of this.foes(g)) if (this.meets(h)) g.damageHero(h, Math.round(this.damage() * 0.5), 'earth', this);
+          g.sfx.ring(this.center(_w), 28, 0x9aff60, 0.6);
+        }
+        return [0, 0, 0];
     }
+    return [0, 0, 0];
+  }
+
+  /** Is this hero looking at the Gorgon (facing her, near enough to meet her eyes)? */
+  private meets(h: Hero) {
+    const d = Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z);
+    return d < 28 && Math.cos(wrapAngle(h.yaw - yawTo(h.pos.x, h.pos.z, this.pos.x, this.pos.z))) > 0.35;
+  }
+
+  /** The Sandworm's dive: it sinks, tunnels toward the mark (a ripple runs over the sand) and bursts up under it. */
+  private burrow(dt: number, g: Game, k: number, landed: boolean): [number, number, number] {
+    const land = this.btiming.hits[0];
+    if (this.stage === 'windup') {
+      this.alt = -7 * Math.min(1, this.stageTime / this.dur.w) ** 1.6;
+      this.model.root.visible = this.alt > -5;
+      this.trail -= dt;
+      if (this.trail <= 0) (this.trail = 0.1), g.sfx.dust(this.pos, 8, 0xc8a878);
+      return [0, 0, 0];
+    }
+    if (this.stage === 'strike' && k < land) {
+      const q = k / land;
+      this.alt = -7;
+      this.model.root.visible = false;
+      this.pos.x = this.flyFrom.x + (this.spot.x - this.flyFrom.x) * q;
+      this.pos.z = this.flyFrom.z + (this.spot.z - this.flyFrom.z) * q;
+      this.yaw = yawTo(this.flyFrom.x, this.flyFrom.z, this.spot.x, this.spot.z) || this.yaw;
+      this.trail -= dt;
+      if (this.trail <= 0) {
+        this.trail = 0.07;
+        g.sfx.dust(_w.set(this.pos.x, heightAt(this.pos.x, this.pos.z), this.pos.z), 5, 0xc8a878);
+      }
+      return [0, 0, 0];
+    }
+    if (landed) {
+      // Up through the sand, jaws first.
+      this.pos.x = this.spot.x;
+      this.pos.z = this.spot.z;
+      this.alt = -3;
+      this.model.root.visible = true;
+      const at = _w.set(this.pos.x, heightAt(this.pos.x, this.pos.z) + 0.3, this.pos.z);
+      for (const h of this.foes(g)) {
+        if (Math.hypot(h.pos.x - at.x, h.pos.z - at.z) > 5 + h.radius) continue;
+        g.damageHero(h, Math.round(this.damage() * 1.45), 'earth', this);
+        g.knockHero(h, _q.set(h.pos.x - at.x, 0, h.pos.z - at.z).normalize(), 14);
+      }
+      g.sfx.ring(at, 5.5, 0xd8b070, 0.6);
+      g.sfx.dust(at, 50, 0xc8a878);
+      g.sfx.impact(at, 0xd8b070, 1);
+      g.sfx.shake(at, 0.9);
+      g.sfx.sound('slam', at, 90);
+    }
+    // Out of the sand by the end of the strike.
+    this.alt = Math.min(0, this.alt + dt * 14);
+    this.model.root.visible = true;
     return [0, 0, 0];
   }
 
@@ -849,7 +1005,7 @@ export class GreatBoss extends Boss {
   protected teleport(g: Game): [number, number, number] {
     const p = this.target ?? g.player;
     const queen = this.bdef.model === 'siren';
-    const color = queen ? 0x40c0ff : 0x60ffa0;
+    const color = queen ? 0x40c0ff : this.bdef.id === 'reaper' ? 0x60ffa0 : AFFINITY[this.bdef.id];
     g.sfx.emit(this.center(), { color, count: 40, speed: 6, life: 0.6 });
     const behind = Math.atan2(p.pos.x - this.pos.x, p.pos.z - this.pos.z);
     const d = queen ? 5 : 3.2;
@@ -860,7 +1016,9 @@ export class GreatBoss extends Boss {
     g.sfx.emit(this.center(), { color, count: 40, speed: 6, life: 0.6 });
     if (queen) g.sfx.spikes(v.x, v.z, 0x60c0ff, 6, 1.8);
     else g.sfx.magicCircle(this.pos, color, 2.5, 0.8);
-    this.begin(queen ? 'trident' : 'reap', g, this.phase === 2 ? 0.4 : 0.55);
+    // It strikes as it arrives: with its own best blow.
+    const blow: BossAttack = queen ? 'trident' : this.bdef.id === 'reaper' ? 'reap' : this.bdef.attacks.includes('bite') ? 'bite' : 'sweep';
+    this.begin(blow, g, this.phase === 2 ? 0.4 : 0.55);
     this.last = 'teleport';
     return [0, 0, 0];
   }
@@ -947,9 +1105,17 @@ export class GreatBoss extends Boss {
     if (!near) return;
     const low = g.settings.quality === 'low';
     const ps = g.fx.particles;
+    const gz = a.attackStyle === 'gaze' ? a.attack : -1;
+    if (gz >= LANDS.gaze![0] && this.lastGaze < LANDS.gaze![0]) {
+      // The Gorgon's stare: a hero facing her turns to stone (each game its own hero).
+      g.fx.flash(this.center(_v), 0x9aff60, 40, 30);
+      if (this.meets(g.player)) g.player.petrify(g, this.phase === 2 ? 2.2 : 1.7);
+    }
+    this.lastGaze = gz;
     if (a.attackStyle === 'breath' && a.attack > 0.04 && a.attack < 0.94) {
       // A torrent from the jaws along the sweep.
       const water = this.affinity === 'water';
+      const venom = this.affinity === 'earth', shadow = this.affinity === 'dark';
       const mouth = (rig.j?.jaw ?? rig.head).getWorldPosition(_v);
       const beam = this.yaw + breathSweep(a.attack, BREATH_SPAN);
       const reach = this.breathRange();
@@ -961,7 +1127,7 @@ export class GreatBoss extends Boss {
       const n = low ? 4 : 9;
       for (let i = 0; i < n; i++) {
         const sp = len * (1.4 + Math.random() * 0.5);
-        _col.setHex(water ? (Math.random() < 0.4 ? 0xe8f8ff : 0x50b8f0) : Math.random() < 0.4 ? 0xffe070 : 0xff5a14);
+        _col.setHex(water ? (Math.random() < 0.4 ? 0xe8f8ff : 0x50b8f0) : venom ? (Math.random() < 0.4 ? 0xd0ff80 : 0x60c020) : shadow ? (Math.random() < 0.4 ? 0xd0a0ff : 0x6a30c0) : Math.random() < 0.4 ? 0xffe070 : 0xff5a14);
         ps.spawn(mouth.x, mouth.y, mouth.z, _q.x * sp + (Math.random() - 0.5) * 3, _q.y * sp + (Math.random() - 0.5) * 3, _q.z * sp + (Math.random() - 0.5) * 3, 0.55 + Math.random() * 0.2, 0.9 + Math.random() * 0.9, _col, water ? 3 : -1, 1.6, 0.4, 0.9);
       }
       if (Math.random() < 0.5) g.fx.dust(_w.set(tx, heightAt(tx, tz), tz), 2, water ? 0xd8eef8 : 0x3a3030);
@@ -1015,8 +1181,8 @@ export class GreatBoss extends Boss {
         fx.pillar(_w.copy(this.pos), 0x60ffa0, 1.2);
         break;
       default:
-        fx.emit(c, { color: 0x9aff40, count: 60, speed: 6, life: 0.9, up: 2 });
-        fx.dust(this.pos, 30);
+        fx.emit(c, { color: AFFINITY[this.bdef.id], count: 60, speed: 6, life: 0.9, up: 2 });
+        fx.dust(this.pos, this.bdef.mini ? 50 : 30);
     }
     if (Math.abs(g.player.pos.x - this.pos.x) + Math.abs(g.player.pos.z - this.pos.z) < 120) {
       g.audio.play('roar');
@@ -1029,6 +1195,11 @@ export class GreatBoss extends Boss {
 const AFFINITY: Record<BossId, number> = {
   cernunna: 0x60ffb0, thalassor: 0x40c0ff, zephyron: 0x80b0ff, ignaroth: 0xff6a20, champion: 0xff4030, 'hecate-shade': 0xa070ff,
   leviathan: 0x40c0ff, 'sea-queen': 0x60e0ff, 'elder-dragon': 0xff6020, reaper: 0x60ffa0, 'giant-spider': 0x9aff40,
+  'bandit-king': 0xffc060, 'erymanthian-boar': 0xc89a60, 'satyr-king': 0x9aff60, 'teumessian-fox': 0xffa040, 'captain-skarr': 0x60c0ff, talos: 0xffa040,
+  'nemean-lion': 0xffd070, 'scorpion-king': 0xb0ff40, hydra: 0x9aff40, empusa: 0x80ff90, cacus: 0xff6a20, orthrus: 0xff5a14, cerberus: 0xb070ff,
+  alecto: 0xff4060, minotaur: 0xd89a60, 'bronze-bull': 0xff8a30, 'frost-king': 0x9ad8ff, lykaon: 0xc0e8ff, callisto: 0xfff0b0, chimera: 0xff7020,
+  'ash-lord': 0xff6a20, salamander: 0xff5010, sandworm: 0xd8b070, sphinx: 0xa0d0ff, memnon: 0xffd060, manticore: 0xff6040, dryas: 0x80ff80,
+  argus: 0xb0a0ff, orion: 0xe0f0ff, python: 0x9aff40, medusa: 0x9aff60, arachne: 0xffd860, polyphemus: 0xffc060, celaeno: 0xa0c0ff, karkinos: 0x60d0ff,
 };
 
 /** The boss for a trial or lair: the great foes get their own moves. */
@@ -1037,7 +1208,7 @@ export function makeBoss(def: BossDef, place: string): Boss | null {
   const lair = LAIRS.find((l) => l.id === place) ?? null;
   const arena = trial ? { x: trial.x, z: trial.z, radius: trial.radius } : lair ? { x: lair.x, z: lair.z, radius: lair.leash } : null;
   if (!arena) return null;
-  const b = GREAT.has(def.id) ? new GreatBoss(def, arena, lair) : new Boss(def, arena);
+  const b = GREAT.has(def.id) || def.mini ? new GreatBoss(def, arena, lair) : new Boss(def, arena);
   b.place = place;
   return b;
 }
@@ -1103,6 +1274,22 @@ export class Lairs {
   /** Taken out with every other monster (switching worlds). */
   clear() {
     this.foes.clear();
+  }
+
+  private seenT = 0;
+
+  /** Every player: coming within sight of a beast of legend's lair marks it on the map. */
+  discover(dt: number) {
+    const g = this.g;
+    this.seenT -= dt;
+    if (this.seenT > 0 || !g.player.alive) return;
+    this.seenT = 1;
+    const p = g.player.pos;
+    for (const l of LAIRS) {
+      if (!l.legend || g.state.flags[`seen-${l.id}`] || Math.hypot(p.x - l.x, p.z - l.z) > 110) continue;
+      g.state.flags[`seen-${l.id}`] = true;
+      g.hud.toast(`Lair found: ${l.name}. ${BOSSES[l.boss].name} dwells here.`, 'quest');
+    }
   }
 }
 

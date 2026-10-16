@@ -437,6 +437,43 @@ export const WEAPONS: Record<string, WeaponDef> = {
     id: 'venomfang', name: 'Venomfang', kind: 'dagger', damage: 12, speed: 2.6, range: 2, element: 'earth',
     description: "The Giant Spider's fang, wrapped for a grip. Quick, and it bites with the earth.",
   },
+  // Taken from the beasts of legend that wielded them.
+  kingslayer: {
+    id: 'kingslayer', name: 'Kingslayer', kind: 'greatsword', damage: 27, speed: 0.8, range: 3.4, element: 'physical',
+    description: "Lykon's greatsword: a king's blade, stolen with the crown, with a bandit's notches down its edge.",
+  },
+  thyrsus: {
+    id: 'thyrsus', name: 'Thyrsus of Silvanus', kind: 'quarterstaff', damage: 16, speed: 1.55, range: 3.1, element: 'earth',
+    description: "The Satyr King's staff, tipped with a pine cone and wound with living ivy. Every blow bites with the earth.",
+  },
+  'skarrs-cutlass': {
+    id: 'skarrs-cutlass', name: "Skarr's Cutlass", kind: 'sword', damage: 17, speed: 1.8, range: 2.6, element: 'water',
+    description: "Captain Skarr's cutlass, salt-pitted and wickedly sharp. It lands with the weight of a wave.",
+  },
+  'hag-lantern': {
+    id: 'hag-lantern', name: "Empusa's Lantern", kind: 'staff', damage: 14, speed: 1.4, range: 2.7, element: 'dark',
+    description: 'A crooked staff hung with a witchlight lantern. Its light is not fire, and it is not kind.',
+  },
+  labrys: {
+    id: 'labrys', name: 'Labrys of Asterion', kind: 'battleaxe', damage: 30, speed: 0.8, range: 3.1, element: 'physical',
+    description: "The Minotaur's double axe of bronze, heavy as a door. Foes bleed.",
+  },
+  rimecrusher: {
+    id: 'rimecrusher', name: 'Rimecrusher', kind: 'hammer', damage: 31, speed: 0.9, range: 2.8, element: 'water',
+    description: "Hrimgar's maul: a block of black iron grown over with ice that never melts.",
+  },
+  cinderbrand: {
+    id: 'cinderbrand', name: 'Cinderbrand', kind: 'longsword', damage: 27, speed: 1.3, range: 3, element: 'fire',
+    description: 'The Lord of Ashes’ blade. Embers still crawl along its edge.',
+  },
+  khopesh: {
+    id: 'khopesh', name: "Memnon's Khopesh", kind: 'sword', damage: 23, speed: 1.6, range: 2.7, element: 'dark',
+    description: 'The Sunken King’s sickle-sword of gold and bronze, buried with him and dug up by him.',
+  },
+  'orions-bow': {
+    id: 'orions-bow', name: "Orion's Bow", kind: 'bow', damage: 23, speed: 1.25, range: 85, element: 'light',
+    description: "The giant huntsman's bow, cut down to a mortal's size. Its arrows fly true as starlight.",
+  },
   // Sold in Hearthhold: steel at Brann's forge, curios at Quill's stall.
   'steel-longsword': {
     id: 'steel-longsword', name: 'Steel Longsword', kind: 'longsword', damage: 15, speed: 1.35, range: 2.9, element: 'physical', price: 140, shop: 'brann',

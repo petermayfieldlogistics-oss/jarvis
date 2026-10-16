@@ -35,6 +35,7 @@ const LABEL: Record<QuestId, string> = {
   elders: 'The Elder Foes',
   hunts: 'Monster Hunts',
   harvest: "Wren's Field",
+  legends: 'Beasts of Legend',
 };
 
 const OBJECTIVE: Record<QuestId, string> = {
@@ -48,6 +49,7 @@ const OBJECTIVE: Record<QuestId, string> = {
   elders: 'Face the next elder foe',
   hunts: 'Hunt the monster in its lair',
   harvest: 'Plant, water and harvest',
+  legends: 'Hunt the nearest beast of legend',
 };
 
 // Camps where a quest's monsters live, named after their region.
@@ -80,7 +82,8 @@ function targetFor(id: QuestId, state: WorldState, x: number, z: number): QuestT
     case 'elders':
       return nearest(ELDER_TRIALS.filter((t) => !state.trialsDone.includes(t.id)).map((t) => ({ x: t.x, z: t.z, name: t.name })), x, z);
     case 'hunts':
-      return nearest(LAIRS.filter((l) => !state.flags[`hunted-${l.boss}`]).map((l) => ({ x: l.x, z: l.z, name: l.name })), x, z);
+    case 'legends':
+      return nearest(LAIRS.filter((l) => !!l.legend === (id === 'legends') && !state.flags[`hunted-${l.boss}`]).map((l) => ({ x: l.x, z: l.z, name: l.name })), x, z);
     case 'ore':
       return nearest(ORE, x, z);
     case 'fish':

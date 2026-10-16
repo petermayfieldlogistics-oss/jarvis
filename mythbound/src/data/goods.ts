@@ -204,6 +204,36 @@ export const STATIONS: { id: Exclude<StationId, 'anvil'>; name: string; x: numbe
 
 export const STATION_NAME: Record<StationId, string> = { cookfire: 'Cookfire', bench: 'Workbench', anvil: 'Anvil', loom: 'Loom' };
 
+/** A beast of legend's trophy, taken the first time it falls: a keepsake, or a fat bounty from Quill. */
+export const TROPHIES: Record<string, { name: string; description: string; sell: number }> = {
+  'boar-tusk': { name: 'Erymanthian Tusk', description: 'A tusk as long as a spear, from the Erymanthian Boar. Trophy.', sell: 70 },
+  'fox-pelt': { name: 'Foxfire Pelt', description: 'The Teumessian Fox’s coat. It glimmers, and is never quite where you left it. Trophy.', sell: 80 },
+  'bronze-nail': { name: 'Bronze Nail of Talos', description: 'The nail that stopped the bronze giant’s one vein of ichor. Trophy.', sell: 100 },
+  'nemean-pelt': { name: 'Nemean Pelt', description: 'No blade could pierce this hide. Its own claws could. Trophy.', sell: 110 },
+  'scorpion-crown': { name: 'Crown of Skorpios', description: 'A crest of golden chitin from the Scorpion King’s brow. Trophy.', sell: 110 },
+  'hydra-fang': { name: 'Hydra Fang', description: 'Still wet with venom. Handle with care. Trophy.', sell: 140 },
+  'cacus-ember': { name: 'Ember of Cacus', description: 'A coal from the giant’s belly that will not go out. Trophy.', sell: 150 },
+  'orthrus-collar': { name: 'Collar of Orthrus', description: 'A spiked bronze collar sized for two necks. Trophy.', sell: 150 },
+  'cerberus-chain': { name: 'Chain of Cerberus', description: 'A link of the chain that held the Hound of Hades. Trophy.', sell: 180 },
+  'fury-scourge': { name: 'Fury’s Scourge', description: 'Alecto’s whip of knotted serpents, quite still now. Trophy.', sell: 170 },
+  'bronze-heart': { name: 'Bronze Heart', description: 'The furnace that breathed fire through the Bronze Bull. Trophy.', sell: 170 },
+  'white-pelt': { name: 'White Wolf Pelt', description: 'Lykaon’s pelt, cold to the touch even by a fire. Trophy.', sell: 200 },
+  'star-fur': { name: 'Starfur', description: 'A tuft from the Great Bear, flecked with seven points of light. Trophy.', sell: 200 },
+  'chimera-horn': { name: 'Chimera Horn', description: 'The goat head’s horn, still smoking. Trophy.', sell: 240 },
+  'ember-scale': { name: 'Ember Scale', description: 'A scale from the Mother of Embers, warm as a hearthstone. Trophy.', sell: 220 },
+  'worm-tooth': { name: 'Sandworm Tooth', description: 'One of a thousand teeth from the Devourer’s maw. Trophy.', sell: 200 },
+  'riddle-stone': { name: 'Riddle Stone', description: 'Carved with the Sphinx’s last riddle. Nobody has answered it. Trophy.', sell: 210 },
+  'manticore-spine': { name: 'Manticore Spine', description: 'A barbed tail spine. It hums when thrown. Trophy.', sell: 230 },
+  heartwood: { name: 'Elder Heartwood', description: 'From the heart of the eldest treant. It is still growing. Trophy.', sell: 200 },
+  'argus-eye': { name: 'Eye of Argus', description: 'One of a hundred. It blinks. Trophy.', sell: 190 },
+  'python-scale': { name: 'Python Scale', description: 'A scale from the Earth Serpent, as wide as a shield. Trophy.', sell: 200 },
+  'gorgon-eye': { name: 'Gorgon’s Eye', description: 'Medusa’s eye, set in bronze. Don’t look into it. Trophy.', sell: 240 },
+  'weaver-silk': { name: 'Golden Silk', description: 'Spun by the Weaver Queen; finer than any loom’s. Trophy.', sell: 220 },
+  'cyclops-bell': { name: 'Bell of Polyphemus', description: 'The bronze bell from the Cyclops’ great ram. Trophy.', sell: 230 },
+  'storm-plume': { name: 'Storm Plume', description: 'A feather from the Harpy Queen. It tugs toward the next storm. Trophy.', sell: 210 },
+  'karkinos-claw': { name: 'Karkinos Claw', description: 'The tip of the great crab’s claw, hard as bronze. Trophy.', sell: 220 },
+};
+
 /** Monster parts and the sea's leavings: crafting materials (Quill buys them). */
 export const MATERIALS: Record<string, { name: string; description: string; sell: number }> = {
   hide: { name: 'Rough Hide', description: 'From wolves and boars. Lures, tools, horseshoes.', sell: 3 },
@@ -218,6 +248,7 @@ export const MATERIALS: Record<string, { name: string; description: string; sell
   bronze: { name: 'Bronze Scrap', description: 'From the legionaries of Mars. Helms and plate.', sell: 10 },
   scale: { name: 'Drake Scale', description: 'From ash drakes. Drake Crimson dye.', sell: 15 },
   lens: { name: 'Watcher Lens', description: 'From watchers. Eyeglow dye.', sell: 12 },
+  ...TROPHIES,
 };
 
 /** Which foes drop which material, and how often (each hero rolls their own). */

@@ -71,10 +71,26 @@ export interface CreatureJoints {
   /** A spider's fangs and abdomen. */
   fangs?: THREE.Group[];
   abdomen?: THREE.Group;
+  /** Heads beyond the first (Cerberus's, the Hydra's, the Chimera's goat): posed like the main one, each with its own sway. */
+  heads?: ExtraHead[];
+  /** The tail ends in a serpent that rears and strikes on its own (the Chimera). */
+  snakeTail?: boolean;
+  /** A scorpion's tail curled over the back, whipped forward to fling its spines (the Manticore). */
+  stinger?: boolean;
   /** Hip height in model units; gait stride scales with it. */
   legLen?: number;
   /** Torso half-width: how high the body rests when it dies on its side. */
   girth?: number;
+}
+
+/** A second (or seventh) head on its own neck. */
+export interface ExtraHead {
+  neck: THREE.Group[];
+  head: THREE.Group;
+  jaw?: THREE.Group;
+  /** Which way it looks off the main head's line (radians, + left), and how much it sways on its own. */
+  yaw: number;
+  sway: number;
 }
 
 export interface CreatureRig {
@@ -622,6 +638,7 @@ function cloneRig(t: CreatureRig): CreatureRig {
     tailRoot: tj.tailRoot && m(tj.tailRoot),
     fangs: tj.fangs?.map(m),
     abdomen: tj.abdomen && m(tj.abdomen),
+    heads: tj.heads?.map((h) => ({ ...h, neck: h.neck.map(m), head: m(h.head), jaw: h.jaw && m(h.jaw) })),
   };
   return { root: root as THREE.Group, body: m(t.body), head: m(t.head), legs: t.legs.map(m), extra: t.extra.map(m), kind: t.kind, height: t.height, j };
 }
@@ -2134,6 +2151,437 @@ function buildSpiderRig(color: number): CreatureRig {
   }
   const j: CreatureJoints = { limbs, fangs, abdomen, legLen: ty };
   return finish(sk, 'spider', body, head, j, 0.75, 1);
+}
+
+// ------------------------------------------------------- beasts of legend --
+//
+// The hunted beasts of Orrin's bestiary. A few body plans (a great cat, a bear,
+// a bull, a hound with one to three heads, a hydra, a wyrm, a spider-woman, a
+// serpent-woman, a salamander, a hermit crab) each build every boss that
+// shares it, dressed by the boss's id; the boar and the scorpion grow into
+// their kings. Each is built fresh with its own glow material.
+
+export function buildBeast(id: string, model: string, color: number, scale: number): CreatureRig {
+  switch (model) {
+    case 'lion':
+      return buildCat(id === 'chimera' ? 'chimera' : id === 'sphinx' ? 'sphinx' : id === 'manticore' ? 'manticore' : 'nemean', color, scale);
+    default:
+      return buildQuad(color, 'wolf', scale);
+  }
+}
+
+// ------------------------------------------------------------- great cats --
+
+type CatLook = 'nemean' | 'chimera' | 'sphinx' | 'manticore';
+
+/** A striped shade: bands of `a` and `b` across y (a headdress, a tail's rings). */
+function bands(a: number, b: number, freq: number, mottle = 0): Shade {
+  const A = new THREE.Color(a), B = new THREE.Color(b);
+  return (p, c) => {
+    c.copy(Math.sin(p.y * freq) > 0 ? A : B);
+    if (mottle) c.multiplyScalar(1 + mottle * Math.sin(p.x * 41 + p.z * 23));
+  };
+}
+
+/**
+ * A feathered wing on arm, forearm, hand and three finger bones: long
+ * primaries fanned off the hand, secondaries along the forearm, coverts over
+ * them. Folds back along the flank like the drake's.
+ */
+function featherWing(sk: Skin, chest: THREE.Group, s: number, ty: number, top: Shade, under: number, tipC: number, k = 1): Wing {
+  const S = V(s * 0.16, ty + 0.22, 0.3), E = V(s * 0.62 * k, ty + 0.42, 0.14), W = V(s * 1.1 * k, ty + 0.48, 0.24);
+  const tips = [V(s * 1.85 * k, ty + 0.34, -0.02), V(s * 1.66 * k, ty + 0.24, -0.52 * k), V(s * 1.28 * k, ty + 0.16, -0.9 * k)];
+  const root = sk.joint(chest, S.x, S.y, S.z);
+  const fore = sk.joint(root, E.x, E.y, E.z);
+  const hand = sk.joint(fore, W.x, W.y, W.z);
+  const fingers = tips.map(() => sk.joint(hand, W.x, W.y, W.z));
+  const up = V(0, 1, 0);
+  sk.add('fur', top, tube([S, S.clone().lerp(E, 0.5), E, E.clone().lerp(W, 0.5), W, W.clone().add(V(s * 0.08, 0, 0))], [0.07, 0.06, 0.05, 0.042, 0.035, 0.02], 6), [root, fore, hand], W.clone().add(V(s * 0.1, 0, 0)));
+  // Primaries: ten long feathers from the hand, fanned from the leading tip to the trailing one.
+  for (let i = 0; i < 10; i++) {
+    const f = (i / 9) * 2;
+    const a = Math.floor(Math.min(1.999, f)), t = f - a;
+    const tip = tips[a].clone().lerp(tips[a + 1], t);
+    const base = W.clone().lerp(tip, 0.18 + 0.05 * (i % 2));
+    const shade = i % 2 ? tint(tipC, 0.92) : tipC;
+    sk.add('fur', shade, tuft(base, tip.clone().add(V(0, -0.01 * i, 0)), 0.075 * k, up), fingers[Math.round(f)]);
+  }
+  // Secondaries along the forearm, shortening toward the body.
+  for (let i = 0; i < 9; i++) {
+    const t = i / 8;
+    const base = W.clone().lerp(E, t * 0.95);
+    const len = (0.78 - 0.32 * t) * k;
+    const tip = base.clone().add(V(s * 0.06, -0.06, -len));
+    sk.add('fur', i % 2 ? tint(tipC, 0.85) : tint(tipC, 0.95), tuft(base, tip, 0.08 * k, up), t < 0.3 ? hand : fore);
+  }
+  // Coverts: two rows of short feathers over the bases, lighter.
+  for (let row = 0; row < 2; row++) {
+    for (let i = 0; i < 8; i++) {
+      const t = i / 7;
+      const base = (row === 0 ? S.clone().lerp(E, 0.2 + 0.8 * t) : E.clone().lerp(W, t)).add(V(0, 0.02, 0));
+      const len = (row === 0 ? 0.3 : 0.38) * k;
+      sk.add('fur', top, tuft(base, base.clone().add(V(s * 0.04, -0.03, -len)), 0.07 * k, up), row === 0 ? (t < 0.6 ? root : fore) : t < 0.5 ? fore : hand);
+    }
+  }
+  // The underside of the wing shows paler when it spreads.
+  sk.add('fur', under, tube([E.clone().add(V(0, -0.03, -0.05)), W.clone().add(V(0, -0.03, -0.05))], [[0.05, 0.015], [0.04, 0.012]], 4), [fore, hand]);
+  const fold = foldWing(root, fore, hand, tips, V(s * 0.25, 0.85, -0.55), V(s * 0.05, -0.18, 1), [V(s * 0.03, 0.14, -1), V(s * 0.05, 0.02, -1), V(s * 0.07, -0.12, -1)]);
+  return { root, fore, hand, fingers, side: s, fold };
+}
+
+/** A bat's wing (the drake's): arm, forearm, hand and three finger spars with membrane between, and back to the flank. */
+function batWing(sk: Skin, chest: THREE.Group, hips: THREE.Group, s: number, ty: number, hide: Shade, spar: number, mem: Shade, k = 1): Wing {
+  const S = V(s * 0.17, ty + 0.24, 0.32), E = V(s * 0.7 * k, ty + 0.44, 0.16), W = V(s * 1.26 * k, ty + 0.5, 0.3);
+  const tips = [V(s * 2.0 * k, ty + 0.3, 0.04), V(s * 1.8 * k, ty + 0.2, -0.56 * k), V(s * 1.38 * k, ty + 0.14, -0.98 * k)];
+  const Hp = V(s * 0.2, ty + 0.16, -0.5);
+  const root = sk.joint(chest, S.x, S.y, S.z);
+  const fore = sk.joint(root, E.x, E.y, E.z);
+  const hand = sk.joint(fore, W.x, W.y, W.z);
+  const fingers = tips.map(() => sk.joint(hand, W.x, W.y, W.z));
+  sk.add('scale', hide, tube([S, S.clone().lerp(E, 0.5), E, E.clone().lerp(W, 0.5), W], [0.07, 0.055, 0.045, 0.035, 0.03], 6), [root, fore, hand], W.clone().add(V(s * 0.1, 0, 0)));
+  tips.forEach((t, i) => sk.add('scale', spar, tube([W, W.clone().lerp(t, 0.5), t], [0.026, 0.018, 0.004], 4), fingers[i]));
+  sk.add('fur', 0x1a1210, spike(W, W.clone().add(V(s * 0.04, 0.06, 0.17)), 0.026, 4), hand);
+  const m = membrane(s, W, tips, fingers, [S, E], [root, fore], hand, Hp, hips, chest);
+  sk.push('membrane', mem, m.geo, m.weigh);
+  const fold = foldWing(root, fore, hand, tips, V(s * 0.3, 0.8, -0.55), V(s * 0.05, -0.25, 1), [V(s * 0.04, 0.12, -1), V(s * 0.06, -0.08, -1), V(s * 0.08, -0.3, -1)]);
+  return { root, fore, hand, fingers, side: s, fold };
+}
+
+/**
+ * A great cat: deep chest, narrow waist, heavy forelegs on broad clawed paws
+ * and a long tail. The Nemean Lion wears a golden mane; the Chimera a mane of
+ * embers, a goat rising from its back and a serpent for a tail; the Sphinx a
+ * woman's head under a striped headdress and eagle's wings; the Manticore a
+ * man's face full of teeth, bat wings and a scorpion's tail of spines.
+ */
+function buildCat(look: CatLook, color: number, scale: number): CreatureRig {
+  const sk = new Skin();
+  const nemean = look === 'nemean', chimera = look === 'chimera', sphinx = look === 'sphinx', manticore = look === 'manticore';
+  const back = tint(color, 0.8), belly = tint(color, 1.45, 0xf0e2c4, 0.35);
+  const fur = grad(back, belly, 0.5, 0.95, 0.1);
+  const pale = tint(color, 1.5, 0xf4ead8, 0.45);
+  const legShade = grad(tint(color, 0.95), tint(color, 0.6), 0.04, 0.7, 0.08);
+  const clawC = nemean ? 0xe8c46a : 0xece4cc;
+  const eyeC = manticore ? 0xff3a18 : sphinx ? 0x60c8ff : chimera ? 0xffa020 : 0xffc838;
+  const ty = 0.72;
+  const body = sk.joint(sk.root, 0, ty, 0);
+  const chest = sk.joint(body, 0, ty + 0.02, 0.28);
+  const hips = sk.joint(body, 0, ty, -0.32);
+  // Deep chest, the waist tucked up under the ribs, a rounded haunch.
+  const prof: Profile = [
+    [-0.74, 0.05, 0.05, ty + 0.03], [-0.68, 0.13, 0.14, ty + 0.02], [-0.55, 0.19, 0.2, ty], [-0.38, 0.18, 0.19, ty + 0.01],
+    [-0.18, 0.15, 0.155, ty + 0.045], [0.02, 0.17, 0.2, ty + 0.01], [0.2, 0.2, 0.25, ty - 0.02], [0.38, 0.2, 0.25, ty],
+    [0.52, 0.16, 0.2, ty + 0.05], [0.6, 0.08, 0.1, ty + 0.1],
+  ];
+  const torso = [hips, chest];
+  const torsoTip = V(0, ty + 0.1, 0.62);
+  sk.add('fur', fur, profileTube(prof, 11), torso, torsoTip);
+  // A pale belly line and the ridge of the spine.
+  for (let i = 0; i < 6; i++) {
+    const z = 0.4 - i * 0.17;
+    sk.add('fur', pale, ell(onProfile(prof, z, Math.PI, 0.92), 0.12, 0.04, 0.1, 6, 3), torso, torsoTip);
+  }
+
+  // Legs on broad paws: four toes, each with a hooked claw.
+  const limbs: Limb[] = [];
+  for (const [front, s] of [[true, 1], [true, -1], [false, 1], [false, -1]] as const) {
+    const x = s * 0.13;
+    const pts = front
+      ? [V(x, ty + 0.02, 0.38), V(x * 1.1, ty * 0.58, 0.3), V(x * 1.02, 0.13, 0.36), V(x * 1.02, 0.04, 0.43)]
+      : [V(x * 0.95, ty, -0.46), V(x * 1.12, ty * 0.64, -0.3), V(x * 1.02, 0.24, -0.6), V(x * 1.02, 0.04, -0.52)];
+    const l = leg(sk, front ? chest : hips, pts, front ? [0.1, 0.07, 0.052, 0.048] : [0.12, 0.075, 0.05, 0.048], legShade, s, front);
+    muscle(sk, 'fur', fur, front ? ell(V(x * 0.95, ty - 0.04, 0.38), 0.085, 0.19, 0.12, 7, 5) : ell(V(x * 0.95, ty - 0.06, -0.44), 0.1, 0.21, 0.15, 7, 5), l);
+    const pw = pts[3];
+    sk.add('fur', legShade, ell(V(pw.x, 0.045, pw.z + 0.01), 0.068, 0.046, 0.082, 7, 5), l.low);
+    for (let t = 0; t < 4; t++) {
+      const tx = pw.x + (t - 1.5) * 0.031;
+      sk.add('fur', tint(color, 0.85), ell(V(tx, 0.032, pw.z + 0.07), 0.019, 0.022, 0.025, 5, 4), l.low);
+      sk.add('fur', clawC, tube(bez(V(tx, 0.042, pw.z + 0.086), V(tx, 0.038, pw.z + 0.122), V(tx, 0.002, pw.z + 0.128), 2), [0.009, 0.006, 0], 4), l.low);
+    }
+    limbs.push(l);
+  }
+
+  // Neck and head.
+  const n0 = sk.joint(chest, 0, ty + 0.1, 0.48);
+  const n1 = sk.joint(n0, 0, ty + 0.2, 0.6);
+  const hp = V(0, ty + 0.28, 0.72);
+  const head = sk.joint(n1, hp.x, hp.y, hp.z);
+  const neckChain = [chest, n0, n1, head];
+  const neckTip = V(0, hp.y + 0.04, 0.84);
+  const neckR: Radius[] = sphinx ? [[0.15, 0.18], [0.12, 0.13], [0.085, 0.09], [0.07, 0.072], [0.065, 0.065]] : [[0.16, 0.19], [0.15, 0.17], [0.13, 0.14], [0.11, 0.115], [0.09, 0.09]];
+  sk.add('fur', fur, tube([V(0, ty + 0.04, 0.34), V(0, ty + 0.1, 0.48), V(0, ty + 0.2, 0.6), hp, V(0, hp.y + 0.02, 0.8)], neckR, 9), neckChain, neckTip);
+  const hy = hp.y + 0.02, z0 = 0.8;
+  const ears: THREE.Group[] = [];
+  let jaw: THREE.Group;
+  if (sphinx) jaw = womanHead(sk, head, hy + 0.04, z0 - 0.02, ears);
+  else if (manticore) jaw = manHead(sk, head, hy, z0, color, eyeC, ears);
+  else jaw = lionHead(sk, head, hy, z0, color, fur, eyeC, chimera, ears);
+
+  // The mane: rings of heavy locks round the face, down the neck and over the chest.
+  if (!sphinx) {
+    const maneShade: Shade = chimera
+      ? grad(0xff8a30, 0x5a160a, hy - 0.4, hy + 0.15, 0.14)
+      : manticore
+        ? grad(tint(color, 0.9, 0x5a1408, 0.5), 0x24080a, hy - 0.4, hy + 0.15, 0.12)
+        : grad(tint(color, 1.15, 0xe0a850, 0.4), tint(color, 0.5, 0x3a2410, 0.5), hy - 0.45, hy + 0.15, 0.14);
+    const rings: [number, number, number, number, number, THREE.Object3D[] | THREE.Object3D][] = [
+      [z0 - 0.06, hy + 0.0, 16, 0.14, 0.17, head],
+      [0.66, ty + 0.26, 15, 0.19, 0.21, neckChain],
+      [0.55, ty + 0.17, 14, 0.21, 0.22, neckChain],
+      [0.44, ty + 0.08, 12, 0.21, 0.2, neckChain],
+    ];
+    for (const [cz, cy, n, r, len, bind] of rings) {
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + (cz > 0.7 ? 0 : 0.2);
+        const radial = V(Math.sin(a), Math.cos(a), 0);
+        // Leave the throat open under the jaw on the face ring.
+        if (cz > 0.7 && Math.cos(a) < -0.6) continue;
+        const base = V(0, cy, cz).addScaledVector(radial, r);
+        const tip = base.clone().addScaledVector(radial, len * 0.55).add(V(0, -len * 0.2, -len * 0.85));
+        sk.add('fur', maneShade, tuft(base, tip, 0.085, radial), bind, Array.isArray(bind) ? neckTip : undefined);
+      }
+    }
+    // Long locks hanging under the chest.
+    for (let i = 0; i < 7; i++) {
+      const x = (i - 3) * 0.05;
+      const base = V(x, ty - 0.12, 0.42 - Math.abs(x) * 0.3);
+      sk.add('fur', maneShade, tuft(base, base.clone().add(V(x * 0.4, -0.22, -0.06)), 0.07, V(0, -0.3, 1).normalize()), torso, torsoTip);
+    }
+    if (chimera) {
+      // Embers glow at the mane's tips.
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * TAU;
+        const p = V(Math.sin(a) * 0.32, ty + 0.2 + Math.cos(a) * 0.3, 0.5 - (i % 3) * 0.08);
+        sk.add('glow', 0xff7a20, ell(p, 0.018, 0.018, 0.018, 4, 3), neckChain, neckTip, 1.6);
+      }
+    }
+  } else {
+    // The Sphinx: a broad collar of gold and lapis over the chest.
+    for (let r = 0; r < 4; r++) {
+      const rr = 0.2 + r * 0.035;
+      const pts: V3[] = [];
+      for (let i = 0; i <= 10; i++) {
+        const a = -1.35 + (i / 10) * 2.7;
+        pts.push(V(Math.sin(a) * rr, ty + 0.2 - r * 0.03 + Math.cos(a) * 0.06 - 0.12 * (1 - Math.cos(a)), 0.5 + Math.cos(a) * (0.14 + r * 0.03)));
+      }
+      sk.add('shell', r % 2 ? 0x2a4ab0 : 0xd8b050, tube(pts, pts.map(() => 0.018), 4), neckChain, neckTip);
+    }
+  }
+
+  // Tail: a cat's with a dark tuft, a serpent, or a scorpion's of spines.
+  let tail: THREE.Group[];
+  if (chimera) tail = serpentTail(sk, hips, ty, color);
+  else if (manticore) tail = stingerTail(sk, hips, ty, color);
+  else {
+    const tp = [V(0, ty + 0.08, -0.72), V(0, ty - 0.02, -0.92), V(0, ty - 0.18, -1.08), V(0, ty - 0.34, -1.2), V(0, ty - 0.42, -1.34), V(0, ty - 0.42, -1.48)];
+    tail = chain(sk, hips, tp, [0.05, 0.04, 0.035, 0.03, 0.026, 0], 'fur', fur, 6);
+    sk.add('fur', nemean ? 0x3a2410 : tint(color, 0.45), ell(tp[5].clone().add(V(0, 0, 0.03)), 0.05, 0.05, 0.1, 6, 4), tail[tail.length - 1]);
+  }
+
+  // Wings.
+  const wings: Wing[] = [];
+  if (sphinx) {
+    const top = grad(0xb88a48, 0x6a4a24, ty + 0.1, ty + 0.6, 0.08);
+    for (const s of [-1, 1]) wings.push(featherWing(sk, chest, s, ty, top, 0xe8d8b0, 0x8a6a3c));
+  } else if (manticore) {
+    const hide = grad(tint(color, 0.8), tint(color, 0.5), ty, ty + 0.5, 0.06);
+    const mem = grad(tint(color, 0.7, 0x5a1a14, 0.4), tint(color, 0.4, 0x1a0806, 0.3), ty, ty + 0.5, 0.05);
+    for (const s of [-1, 1]) wings.push(batWing(sk, chest, hips, s, ty, hide, tint(color, 0.5), mem, 1));
+  }
+
+  // The Chimera's goat rises from its back.
+  const heads: ExtraHead[] = [];
+  if (chimera) heads.push(goatHead(sk, chest, ty));
+
+  // The Nemean Lion's hide shines like hammered gold where the light catches it.
+  if (nemean) {
+    for (const s of [-1, 1]) {
+      for (const [z0s, a0] of [[-0.45, 1.3], [0.1, 1.1]] as const) {
+        const pts = [0, 1, 2, 3].map((i) => onProfile(prof, z0s + i * 0.1, s * (a0 + Math.sin(i * 1.7) * 0.15), 1.012));
+        sk.add('glow', 0xffd878, tube(pts, [0.006, 0.008, 0.007, 0], 3), torso, torsoTip, 0.5);
+      }
+    }
+  }
+
+  const j: CreatureJoints = { chest, hips, neck: [n0, n1], jaw, ears, tail, limbs, wings, heads, legLen: ty, girth: 0.2, snakeTail: chimera, stinger: manticore };
+  return finish(sk, 'cat', body, head, j, sphinx || manticore ? 1.5 : 1.35, scale, true);
+}
+
+/** A lion's head: a broad flat skull, a square muzzle with whisker pads, small round ears, fangs. Returns the jaw. */
+function lionHead(sk: Skin, head: THREE.Group, hy: number, z0: number, color: number, fur: Shade, eyeC: number, fire: boolean, ears: THREE.Group[]): THREE.Group {
+  const pale = tint(color, 1.4, 0xf4ead8, 0.45);
+  sk.add('fur', fur, ell(V(0, hy + 0.01, z0), 0.125, 0.11, 0.13, 10, 8), head);
+  sk.add('fur', fur, ell(V(0, hy - 0.035, z0 + 0.06), 0.11, 0.07, 0.1, 8, 6), head);
+  for (const s of [-1, 1]) {
+    sk.add('fur', tint(color, 0.72), ell(V(s * 0.05, hy + 0.058, z0 + 0.092), 0.056, 0.024, 0.05, 6, 4, [0, 0, -s * 0.22]), head);
+    sk.add('fur', 0x140c08, ell(V(s * 0.056, hy + 0.034, z0 + 0.116), 0.027, 0.018, 0.016, 6, 4), head);
+    sk.add('glow', eyeC, ell(V(s * 0.058, hy + 0.035, z0 + 0.124), 0.016, 0.012, 0.01, 5, 3), head, undefined, 2.4);
+    sk.add('fur', pale, ell(V(s * 0.036, hy - 0.052, z0 + 0.205), 0.042, 0.033, 0.036, 6, 4), head);
+    // Whiskers.
+    for (let w = 0; w < 3; w++) sk.add('fur', 0xf0ece0, tube([V(s * 0.05, hy - 0.05 - w * 0.008, z0 + 0.22), V(s * 0.16, hy - 0.06 - w * 0.03, z0 + 0.2)], [0.003, 0.001], 3), head);
+    const e = sk.joint(head, s * 0.08, hy + 0.09, z0 - 0.03);
+    sk.add('fur', tint(color, 0.65), ell(V(s * 0.088, hy + 0.115, z0 - 0.03), 0.036, 0.042, 0.016, 6, 4, [0.1, 0, -s * 0.45]), e);
+    sk.add('fur', 0x2a1a10, ell(V(s * 0.09, hy + 0.115, z0 - 0.022), 0.022, 0.028, 0.008, 5, 3, [0.1, 0, -s * 0.45]), e);
+    ears.push(e);
+  }
+  // A broad square muzzle with a dark nose leather and a bridge down to it.
+  sk.add('fur', grad(tint(color, 1.0), pale, hy - 0.08, hy + 0.02, 0.05), tube([V(0, hy - 0.005, z0 + 0.06), V(0, hy - 0.025, z0 + 0.15), V(0, hy - 0.042, z0 + 0.22), V(0, hy - 0.048, z0 + 0.252)], [[0.088, 0.07], [0.078, 0.06], [0.062, 0.048], [0.036, 0.03]], 8), head);
+  sk.add('fur', tint(color, 0.88), tube([V(0, hy + 0.045, z0 + 0.1), V(0, hy + 0.022, z0 + 0.19), V(0, hy - 0.012, z0 + 0.238)], [0.032, 0.027, 0.02], 5), head);
+  sk.add('fur', 0x2a1612, ell(V(0, hy - 0.026, z0 + 0.248), 0.031, 0.02, 0.018, 6, 4), head);
+  sk.add(fire ? 'glow' : 'fur', fire ? 0xff5010 : 0x3a0a0a, ell(V(0, hy - 0.072, z0 + 0.14), 0.05, 0.02, 0.09, 6, 4), head, undefined, fire ? 1.6 : 1);
+  const jaw = sk.joint(head, 0, hy - 0.072, z0 + 0.02);
+  sk.add('fur', pale, tube([V(0, hy - 0.076, z0 + 0.02), V(0, hy - 0.1, z0 + 0.14), V(0, hy - 0.1, z0 + 0.22)], [[0.072, 0.036], [0.056, 0.028], [0.032, 0.018]], 7), jaw);
+  for (const s of [-1, 1]) {
+    sk.add('fur', 0xf2ead4, spike(V(s * 0.03, hy - 0.062, z0 + 0.212), V(s * 0.031, hy - 0.112, z0 + 0.218), 0.012, 4), head);
+    sk.add('fur', 0xf2ead4, spike(V(s * 0.026, hy - 0.096, z0 + 0.198), V(s * 0.026, hy - 0.058, z0 + 0.204), 0.01, 4), jaw);
+  }
+  return jaw;
+}
+
+/** The Sphinx: a woman's calm face under a striped headdress whose lappets fall to the chest, a cobra on the brow. */
+function womanHead(sk: Skin, head: THREE.Group, hy: number, z0: number, ears: THREE.Group[]): THREE.Group {
+  const skin = 0xc89870, gold = 0xd8b050, lapis = 0x2a4ab0;
+  sk.add('fur', skin, ell(V(0, hy, z0), 0.085, 0.105, 0.095, 10, 8), head);
+  sk.add('fur', skin, ell(V(0, hy - 0.055, z0 + 0.025), 0.06, 0.05, 0.07, 8, 6), head);
+  // Nose, lips, painted eyes and brows.
+  sk.add('fur', tint(skin, 1.04), tube([V(0, hy + 0.025, z0 + 0.09), V(0, hy - 0.012, z0 + 0.108), V(0, hy - 0.022, z0 + 0.104)], [0.012, 0.014, 0.012], 5), head);
+  sk.add('fur', 0x8a3a30, ell(V(0, hy - 0.048, z0 + 0.087), 0.02, 0.007, 0.01, 6, 3), head);
+  sk.add('fur', 0x9a4a3a, ell(V(0, hy - 0.058, z0 + 0.084), 0.017, 0.007, 0.01, 6, 3), head);
+  for (const s of [-1, 1]) {
+    sk.add('fur', 0xf2ece0, ell(V(s * 0.033, hy + 0.018, z0 + 0.078), 0.017, 0.009, 0.008, 6, 4), head);
+    sk.add('glow', 0x60c8ff, ell(V(s * 0.033, hy + 0.018, z0 + 0.084), 0.008, 0.008, 0.004, 5, 3), head, undefined, 2.2);
+    sk.add('fur', 0x101418, tube([V(s * 0.016, hy + 0.024, z0 + 0.084), V(s * 0.05, hy + 0.024, z0 + 0.074), V(s * 0.068, hy + 0.03, z0 + 0.056)], [0.003, 0.003, 0.002], 3), head);
+    sk.add('fur', 0x1a1410, tube([V(s * 0.016, hy + 0.04, z0 + 0.086), V(s * 0.045, hy + 0.046, z0 + 0.078)], [0.004, 0.003], 3), head);
+  }
+  // The headdress: a striped cloth over the crown, flaring wide at the temples and falling in two lappets.
+  const stripes = bands(gold, lapis, 95);
+  sk.add('fur', stripes, ell(V(0, hy + 0.035, z0 - 0.012), 0.102, 0.098, 0.105, 12, 8), head);
+  for (const s of [-1, 1]) {
+    sk.add('fur', stripes, tube([V(s * 0.085, hy + 0.04, z0 + 0.02), V(s * 0.125, hy - 0.04, z0 - 0.0), V(s * 0.12, hy - 0.16, z0 + 0.0), V(s * 0.1, hy - 0.26, z0 + 0.02)], [[0.025, 0.06], [0.03, 0.068], [0.024, 0.06], [0.02, 0.05]], 6), head);
+    const e = sk.joint(head, s * 0.1, hy, z0);
+    ears.push(e);
+  }
+  sk.add('fur', stripes, tube([V(0, hy + 0.02, z0 - 0.1), V(0, hy - 0.08, z0 - 0.13), V(0, hy - 0.16, z0 - 0.12)], [[0.07, 0.03], [0.06, 0.028], [0.045, 0.02]], 6), head);
+  sk.add('shell', gold, tube([V(0, hy + 0.072, z0 + 0.0), V(0, hy + 0.072, z0 + 0.0)].map((p, i) => p.add(V(0, 0, i * 0.001))), [[0.104, 0.1], [0.104, 0.1]], 12), head);
+  // The cobra rearing on the brow.
+  sk.add('shell', gold, tube(bez(V(0, hy + 0.07, z0 + 0.088), V(0, hy + 0.11, z0 + 0.1), V(0, hy + 0.13, z0 + 0.09), 3), [0.009, 0.012, 0.014, 0.01], 4), head);
+  sk.add('glow', 0xff4030, ell(V(0, hy + 0.13, z0 + 0.1), 0.008, 0.008, 0.006, 4, 3), head, undefined, 2);
+  // A jaw that barely moves (she speaks her riddles).
+  const jaw = sk.joint(head, 0, hy - 0.05, z0 + 0.02);
+  sk.add('fur', skin, ell(V(0, hy - 0.078, z0 + 0.05), 0.035, 0.022, 0.035, 6, 4), jaw);
+  return jaw;
+}
+
+/** The Manticore: a man's face gone to beast, a heavy brow over burning eyes, a mouth with three rows of teeth, small horns. */
+function manHead(sk: Skin, head: THREE.Group, hy: number, z0: number, color: number, eyeC: number, ears: THREE.Group[]): THREE.Group {
+  const skin = tint(color, 1.25, 0xb07a60, 0.6);
+  sk.add('fur', skin, ell(V(0, hy + 0.02, z0), 0.105, 0.118, 0.11, 10, 8), head);
+  sk.add('fur', skin, ell(V(0, hy - 0.05, z0 + 0.04), 0.09, 0.07, 0.09, 8, 6), head);
+  sk.add('fur', tint(skin, 0.85), tube([V(-0.07, hy + 0.05, z0 + 0.09), V(0, hy + 0.06, z0 + 0.1), V(0.07, hy + 0.05, z0 + 0.09)], [0.022, 0.028, 0.022], 5), head);
+  sk.add('fur', tint(skin, 0.95), tube([V(0, hy + 0.04, z0 + 0.1), V(0, hy - 0.0, z0 + 0.125), V(0, hy - 0.018, z0 + 0.13)], [0.016, 0.022, 0.024], 5), head);
+  for (const s of [-1, 1]) {
+    sk.add('fur', 0x140806, ell(V(s * 0.038, hy + 0.028, z0 + 0.092), 0.022, 0.014, 0.012, 6, 4), head);
+    sk.add('glow', eyeC, ell(V(s * 0.038, hy + 0.028, z0 + 0.1), 0.012, 0.009, 0.006, 5, 3), head, undefined, 3);
+    sk.add('fur', 0xe8dcc0, tube(bez(V(s * 0.06, hy + 0.09, z0 + 0.03), V(s * 0.1, hy + 0.15, z0 - 0.01), V(s * 0.09, hy + 0.17, z0 - 0.08), 3), [0.018, 0.013, 0.007, 0], 5), head);
+    const e = sk.joint(head, s * 0.1, hy + 0.02, z0 - 0.01);
+    sk.add('fur', skin, tube([V(s * 0.1, hy + 0.02, z0 - 0.01), V(s * 0.15, hy + 0.06, z0 - 0.04)], [[0.02, 0.012], 0], 4), e);
+    ears.push(e);
+  }
+  // The mouth: a wide dark gash, three rows of teeth above and below.
+  sk.add('glow', 0x3a0806, ell(V(0, hy - 0.06, z0 + 0.09), 0.06, 0.016, 0.04, 8, 4), head, undefined, 0.6);
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 7; i++) {
+      const x = (i - 3) * 0.016 * (1 - row * 0.12);
+      sk.add('fur', 0xf0e8d0, spike(V(x, hy - 0.05, z0 + 0.118 - row * 0.012 - Math.abs(x) * 0.6), V(x, hy - 0.072, z0 + 0.12 - row * 0.012 - Math.abs(x) * 0.6), 0.005, 3), head);
+    }
+  }
+  const jaw = sk.joint(head, 0, hy - 0.065, z0 + 0.02);
+  sk.add('fur', skin, tube([V(0, hy - 0.07, z0 + 0.0), V(0, hy - 0.098, z0 + 0.07), V(0, hy - 0.1, z0 + 0.11)], [[0.075, 0.032], [0.062, 0.028], [0.04, 0.02]], 7), jaw);
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 7; i++) {
+      const x = (i - 3) * 0.015 * (1 - row * 0.12);
+      sk.add('fur', 0xf0e8d0, spike(V(x, hy - 0.085, z0 + 0.108 - row * 0.012 - Math.abs(x) * 0.6), V(x, hy - 0.064, z0 + 0.11 - row * 0.012 - Math.abs(x) * 0.6), 0.005, 3), jaw);
+    }
+  }
+  return jaw;
+}
+
+/** The Chimera's goat: a neck rising from the back, a long narrow head, ridged horns curling back, a beard. */
+function goatHead(sk: Skin, chest: THREE.Group, ty: number): ExtraHead {
+  const hide = grad(0x8a7a5a, 0x4a3e2c, ty + 0.2, ty + 0.8, 0.12);
+  const g0 = sk.joint(chest, 0, ty + 0.2, 0.06);
+  const g1 = sk.joint(g0, 0, ty + 0.42, 0.12);
+  const hp = V(0, ty + 0.6, 0.2);
+  const head = sk.joint(g1, hp.x, hp.y, hp.z);
+  sk.add('fur', hide, tube([V(0, ty + 0.12, 0.02), V(0, ty + 0.2, 0.06), V(0, ty + 0.42, 0.12), hp, V(0, hp.y + 0.03, 0.26)], [[0.1, 0.11], [0.09, 0.1], [0.075, 0.08], [0.062, 0.066], [0.05, 0.05]], 8), [chest, g0, g1, head], V(0, hp.y + 0.04, 0.3));
+  const hy = hp.y + 0.03;
+  sk.add('fur', hide, ell(V(0, hy, 0.25), 0.058, 0.068, 0.08, 8, 6), head);
+  sk.add('fur', grad(0x9a8a6a, 0x5a4a38, hy - 0.08, hy, 0.06), tube([V(0, hy - 0.01, 0.3), V(0, hy - 0.05, 0.4), V(0, hy - 0.08, 0.46)], [[0.045, 0.05], [0.036, 0.04], [0.024, 0.028]], 7), head);
+  sk.add('fur', 0x1a1410, ell(V(0, hy - 0.08, 0.465), 0.02, 0.014, 0.012, 5, 3), head);
+  const hornC = grad(0xd8ccb0, 0x3a3024, hy, hy + 0.3, 0.04);
+  for (const s of [-1, 1]) {
+    sk.add('fur', 0x140c08, ell(V(s * 0.045, hy + 0.025, 0.31), 0.018, 0.012, 0.012, 5, 3), head);
+    sk.add('glow', 0xffd040, tube([V(s * 0.05, hy + 0.025, 0.318), V(s * 0.05, hy + 0.025, 0.322)], [[0.014, 0.004], [0.014, 0.004]], 4), head, undefined, 2.2);
+    // Ridged horns sweeping back and curling down.
+    const hornPts = bez(V(s * 0.03, hy + 0.06, 0.24), V(s * 0.13, hy + 0.24, 0.1), V(s * 0.18, hy + 0.06, -0.06), 7);
+    sk.add('fur', hornC, tube(hornPts, taper(8, 0.032, 0.004), 6), head);
+    for (let r = 1; r < 7; r++) sk.add('fur', 0x2e261c, tube([hornPts[r].clone().lerp(hornPts[r + 1], 0.45), hornPts[r].clone().lerp(hornPts[r + 1], 0.55)], [0.034 - r * 0.004, 0.033 - r * 0.004], 6), head);
+    sk.add('fur', hide, tube([V(s * 0.05, hy + 0.02, 0.2), V(s * 0.13, hy - 0.02, 0.18)], [[0.025, 0.01], 0], 4), head);
+  }
+  // The beard.
+  sk.add('fur', 0x3a3024, tuft(V(0, hy - 0.09, 0.38), V(0, hy - 0.24, 0.34), 0.04, V(0, 0, 1)), head);
+  const jaw = sk.joint(head, 0, hy - 0.06, 0.3);
+  sk.add('fur', grad(0x8a7a5a, 0x5a4a38, hy - 0.1, hy - 0.05, 0.05), tube([V(0, hy - 0.065, 0.3), V(0, hy - 0.09, 0.42)], [[0.035, 0.018], [0.02, 0.012]], 6), jaw);
+  return { neck: [g0, g1], head, jaw, yaw: 0.5, sway: 1.2 };
+}
+
+/** The Chimera's tail: a serpent rearing over its back, its head turned forward to strike. */
+function serpentTail(sk: Skin, hips: THREE.Group, ty: number, color: number): THREE.Group[] {
+  const tp = [V(0, ty + 0.06, -0.72), V(0, ty + 0.2, -0.96), V(0, ty + 0.46, -1.1), V(0, ty + 0.72, -1.08), V(0, ty + 0.9, -0.94), V(0, ty + 0.98, -0.78)];
+  const scaleC = bellyShade(tp, 0x3a4a22, 0xc8c080, (_c, out) => out.set(0, 0, 1), 0.1);
+  const tail = chain(sk, hips, tp, [0.07, 0.066, 0.06, 0.055, 0.05, 0.046], 'scale', scaleC, 8);
+  const tj = tail[tail.length - 1];
+  const h = tp[5];
+  sk.add('scale', grad(0x4a5a2a, 0x2a3418, h.y - 0.05, h.y + 0.06, 0.06), ell(h.clone().add(V(0, 0.01, 0.08)), 0.065, 0.05, 0.1, 8, 6), tj);
+  for (const s of [-1, 1]) {
+    sk.add('glow', 0xffd040, ell(h.clone().add(V(s * 0.045, 0.035, 0.12)), 0.012, 0.01, 0.01, 4, 3), tj, undefined, 2.4);
+    sk.add('fur', 0xf0ead8, spike(h.clone().add(V(s * 0.022, -0.02, 0.16)), h.clone().add(V(s * 0.022, -0.06, 0.165)), 0.007, 3), tj);
+  }
+  sk.add('fur', 0xa01818, tube([h.clone().add(V(0, -0.02, 0.17)), h.clone().add(V(0, -0.03, 0.24)), h.clone().add(V(0.015, -0.04, 0.27))], [0.006, 0.004, 0], 3), tj);
+  sk.add('fur', 0xa01818, tube([h.clone().add(V(0, -0.03, 0.24)), h.clone().add(V(-0.015, -0.04, 0.27))], [0.004, 0], 3), tj);
+  // Banded scales down its length.
+  for (let i = 1; i < 5; i++) sk.add('scale', tint(color, 0.5, 0x2a3418, 0.6), tube([tp[i].clone().lerp(tp[i + 1], 0.45), tp[i].clone().lerp(tp[i + 1], 0.55)], [0.064 - i * 0.004, 0.062 - i * 0.004], 8), tail[i]);
+  return tail;
+}
+
+/** The Manticore's tail: plated segments arching over the back to a bulb crowned with spines it can fling. */
+function stingerTail(sk: Skin, hips: THREE.Group, ty: number, color: number): THREE.Group[] {
+  const tp = [V(0, ty + 0.06, -0.72), V(0, ty + 0.24, -0.96), V(0, ty + 0.52, -1.06), V(0, ty + 0.82, -0.98), V(0, ty + 1.02, -0.8), V(0, ty + 1.1, -0.58)];
+  const plate = grad(tint(color, 1.1), tint(color, 0.55), ty, ty + 1.1, 0.05);
+  const tail: THREE.Group[] = [];
+  let p: THREE.Object3D = hips;
+  for (let i = 0; i < tp.length; i++) {
+    p = sk.joint(p, tp[i].x, tp[i].y, tp[i].z);
+    tail.push(p as THREE.Group);
+    if (i < tp.length - 1) {
+      const c = tp[i].clone().lerp(tp[i + 1], 0.5);
+      const r = 0.07 - i * 0.008;
+      sk.add('shell', plate, tube([tp[i].clone().lerp(tp[i + 1], -0.08), c, tp[i + 1].clone().lerp(tp[i], -0.04)], [[r * 0.8, r * 0.75], [r, r * 0.95], [r * 0.75, r * 0.7]], 8), p);
+    }
+  }
+  const tb = tp[tp.length - 1];
+  const tj = tail[tail.length - 1];
+  sk.add('shell', tint(color, 0.7, 0x3a0a08, 0.4), ell(tb.clone().add(V(0, 0, 0.06)), 0.07, 0.065, 0.1, 8, 6), tj);
+  // A crown of spines on the bulb, the stinger below.
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * TAU;
+    const dir = V(Math.sin(a) * 0.8, Math.cos(a) * 0.8 + 0.3, 0.5).normalize();
+    const b = tb.clone().add(V(0, 0, 0.06)).addScaledVector(dir, 0.06);
+    sk.add('fur', 0xe0d4b8, spike(b, b.clone().addScaledVector(dir, 0.16), 0.012, 4), tj);
+  }
+  sk.add('fur', 0x14100c, tube(bez(tb.clone().add(V(0, -0.02, 0.14)), tb.clone().add(V(0, 0.0, 0.26)), tb.clone().add(V(0, -0.12, 0.3)), 3), [0.03, 0.02, 0.01, 0], 5), tj);
+  sk.add('glow', 0xff5030, ell(tb.clone().add(V(0, -0.12, 0.3)), 0.012, 0.012, 0.012, 4, 3), tj, undefined, 2);
+  return tail;
 }
 
 // ---------------------------------------------------------------- animator --

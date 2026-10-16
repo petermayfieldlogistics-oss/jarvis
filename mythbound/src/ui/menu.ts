@@ -1,5 +1,5 @@
 import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { ARENA, ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
+import { ARENA, ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, lairShown, type QuestId, type ZoneId } from '../data/world';
 
 /** Where the world map names the outer lands. */
 const REGION_LABELS: [number, number, ZoneId][] = [
@@ -284,12 +284,14 @@ export class Menu {
     const arena = (t: (typeof TRIALS)[number]) => `<div class="row${this.g.state.trialsDone.includes(t.id) ? ' done' : ''}"><div><b>${esc(t.name)}</b> <small>level ${t.level}</small><div class="desc">${esc(BOSSES[t.boss].name)} guards the ${esc(rewardName(BOSSES[t.boss].reward, WEAPONS))}.</div></div></div>`;
     // The elder foes and the hunted show once someone has told you of them.
     const elders = st.elders.state !== 'none' ? `<h3>The Elder Foes</h3>${ELDER_TRIALS.map(arena).join('')}` : '';
-    const hunts = st.hunts.state !== 'none'
-      ? `<h3>Monster Hunts</h3>${LAIRS.map((l) => `<div class="row${this.g.state.flags[`hunted-${l.boss}`] ? ' done' : ''}"><div><b>${esc(BOSSES[l.boss].name)}</b> <small>${esc(l.name)}</small><div class="desc">${esc(l.hint)}</div></div></div>`).join('')}`
-      : '';
+    const lair = (l: (typeof LAIRS)[number]) => `<div class="row${this.g.state.flags[`hunted-${l.boss}`] ? ' done' : ''}"><div><b>${esc(BOSSES[l.boss].name)}</b> <small>${esc(l.name)} · level ${BOSSES[l.boss].level}</small><div class="desc">${esc(l.hint)}</div></div></div>`;
+    const hunts = st.hunts.state !== 'none' ? `<h3>Monster Hunts</h3>${LAIRS.filter((l) => !l.legend).map(lair).join('')}` : '';
+    // The bestiary lists every beast once Orrin has told of them (else only the lairs come across so far).
+    const known = LAIRS.filter((l) => l.legend && lairShown(l, st, this.g.state.flags));
+    const legends = known.length ? `<h3>Beasts of Legend</h3>${known.map(lair).join('')}` : '';
     return `<h3>Active</h3>${active.map(row).join('') || '<p class="hint">Talk to the people of Hearthhold.</p>'}
       <h3>The Six Trials</h3>${WEAPON_TRIALS.map(arena).join('')}
-      ${elders}${hunts}
+      ${elders}${hunts}${legends}
       ${done.length ? `<h3>Completed</h3>${done.map(row).join('')}` : ''}`;
   }
 
@@ -640,7 +642,7 @@ export class Menu {
     label(0, 20, 'Hearthhold', '#d8c8a0', 5);
     label(ARENA.x, ARENA.z, '⚔ Arena of Ares', '#e08060', 5);
     for (const t of TRIALS) label(t.x, t.z, t.name.replace('Trial of ', '').replace('the ', ''), g.state.trialsDone.includes(t.id) ? '#8a8a8a' : '#ff5a40', 6);
-    if (g.state.quests.hunts.state !== 'none') for (const l of LAIRS) label(l.x, l.z, `☠ ${l.name}`, g.state.flags[`hunted-${l.boss}`] ? '#8a8a8a' : '#c080ff', 5);
+    for (const l of LAIRS) if (lairShown(l, g.state.quests, g.state.flags)) label(l.x, l.z, `☠ ${l.name}`, g.state.flags[`hunted-${l.boss}`] ? '#8a8a8a' : '#c080ff', 5);
     for (const s of SHRINES) if (g.state.shrinesFound.includes(s.id)) label(s.x, s.z, '', '#ffd070', 5);
     if (g.state.flags.eyesRevealed) label(EYES_RUINS.x, EYES_RUINS.z, '◉ ◉ ◉', '#60ff90', 5);
     if (g.state.lostEmbers) label(g.state.lostEmbers.x, g.state.lostEmbers.z, 'Lost embers', '#ffb040', 4);

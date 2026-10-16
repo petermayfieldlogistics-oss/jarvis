@@ -14,7 +14,9 @@ export type AttackStyle =
   // Monster and boss moves.
   | 'bite' | 'claw' | 'sting' | 'sweep' | 'charge' | 'slam' | 'leap' | 'stomp' | 'volley' | 'ring' | 'summon' | 'teleport' | 'strikes' | 'combo'
   // The elder and hunted foes (bosses.ts): their strike runs anim.attack 0..1 straight through.
-  | 'breath' | 'gust' | 'flight' | 'strike' | 'tail' | 'dive' | 'wave' | 'whirlpool' | 'trident' | 'geyser' | 'reap' | 'drain' | 'web';
+  | 'breath' | 'gust' | 'flight' | 'strike' | 'tail' | 'dive' | 'wave' | 'whirlpool' | 'trident' | 'geyser' | 'reap' | 'drain' | 'web'
+  // The Sandworm dives and bursts up beneath you; the Gorgon's stare.
+  | 'burrow' | 'gaze';
 
 export interface AnimState {
   /** Walk/run cycle phase, radians; advance it by distance travelled. */
@@ -92,4 +94,5 @@ export const FLURRY_AT = [0.16, 0.25, 0.34, 0.43, 0.52, 0.61, 0.7, 0.8];
 export const LANDS: Partial<Record<AttackStyle, number[]>> = {
   bite: [0.35], claw: [0.4], strike: [0.12], tail: [0.32], wave: [0.2], gust: [0.35], reap: [0.4], web: [0.3], trident: [0.22, 0.48, 0.76],
   geyser: [0.2], whirlpool: [0.1], breath: [0.06], drain: [0.1], dive: [0.45], flight: [FLIGHT.land],
+  burrow: [0.72], gaze: [0.5],
 };

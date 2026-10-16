@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { ENEMIES, type Affinity, type BossAttack, type BossDef, type EnemyDef, type EnemyId } from '../data/world';
-import type { CreatureKind, DamageElement } from '../data/defs';
-import { buildShield, buildWeapon, compact, outline } from './models';
-import { animateHumanoid, buildBossHumanoid, buildHumanoid, type Rig } from './humanoid';
-import { animateCreature, buildCrab, buildDragon, buildFloater, buildImp, buildInsect, buildQuad, buildReaper, buildSerpent, buildSiren, buildSpider, type CreatureRig } from './creatures';
+import { ENEMIES, type Affinity, type BossAttack, type BossDef, type BossId, type EnemyDef, type EnemyId } from '../data/world';
+import { WEAPONS, type CreatureKind, type DamageElement } from '../data/defs';
+import { buildBossProp, buildShield, buildWeapon, compact, outline } from './models';
+import { animateHumanoid, buildBossHumanoid, buildHumanoid, buildLegend, type Rig } from './humanoid';
+import { animateCreature, buildBeast, buildCrab, buildDragon, buildFloater, buildImp, buildInsect, buildQuad, buildReaper, buildSerpent, buildSiren, buildSpider, type CreatureRig } from './creatures';
 import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, WATER_LEVEL } from './terrain';
 import { newTeamMemory } from '../rules/teamcombo';
@@ -129,6 +129,16 @@ function bossBody(def: BossDef): Model {
       return creatureModel(buildReaper(def.color, def.scale));
     case 'spider':
       return creatureModel(buildSpider(def.color, def.scale));
+    case 'humanoid': {
+      // A beast of legend on two legs: its own look, and what it carries.
+      const rig = buildLegend(def.id, def.color, def.scale);
+      const gear = LEGEND_GEAR[def.id];
+      if (gear?.right) rig.handR.add(gear.right());
+      if (gear?.left) rig.handL.add(gear.left());
+      return humanoidModel(rig);
+    }
+    case 'lion': case 'bear': case 'bull': case 'canine': case 'boar': case 'scorpion': case 'hydra': case 'wyrm': case 'drider': case 'naga': case 'salamander': case 'hermit':
+      return creatureModel(buildBeast(def.id, def.model, def.color, def.scale));
     default: {
       const rig = buildBossHumanoid(def.model, def.color, def.scale);
       // Each wields the legendary it drops.
@@ -139,6 +149,26 @@ function bossBody(def: BossDef): Model {
     }
   }
 }
+
+/** The weapon a beast of legend wields is the one it drops (built from its own model). */
+const legendWeapon = (id: string) => () => buildWeapon(WEAPONS[id].kind, false, undefined, id);
+
+/** What the humanoid beasts of legend carry in their right and left hands. */
+const LEGEND_GEAR: Partial<Record<BossId, { right?: () => THREE.Group; left?: () => THREE.Group }>> = {
+  'bandit-king': { right: legendWeapon('kingslayer') },
+  'satyr-king': { right: legendWeapon('thyrsus') },
+  'captain-skarr': { right: legendWeapon('skarrs-cutlass'), left: () => buildBossProp('hook') },
+  empusa: { right: legendWeapon('hag-lantern') },
+  cacus: { right: () => buildBossProp('great-club') },
+  alecto: { right: () => buildBossProp('scourge'), left: () => buildBossProp('torch') },
+  minotaur: { right: legendWeapon('labrys') },
+  'frost-king': { right: legendWeapon('rimecrusher') },
+  'ash-lord': { right: legendWeapon('cinderbrand') },
+  memnon: { right: legendWeapon('khopesh'), left: () => buildBossProp('crook') },
+  argus: { right: () => buildBossProp('herd-staff') },
+  orion: { right: () => buildBossProp('hunter-club'), left: legendWeapon('orions-bow') },
+  polyphemus: { right: () => buildBossProp('tree-club') },
+};
 
 // ------------------------------------------------------------ move timing --
 //
@@ -1050,6 +1080,8 @@ const BOSS_TIMING: Record<BossAttack, { w: number; s: number; r: number }> = {
   reap: { w: 0.8, s: 0.9, r: 0.8 },
   drain: { w: 0.8, s: 2.4, r: 0.8 },
   web: { w: 0.7, s: 0.8, r: 0.7 },
+  burrow: { w: 0.9, s: 1.7, r: 1.0 },
+  gaze: { w: 1.3, s: 1.1, r: 0.8 },
 };
 
 type Stage = 'windup' | 'strike' | 'recover';
@@ -1095,7 +1127,7 @@ export class Boss extends Enemy {
     this.arena = arena;
     this.hp = this.maxHp = def.hp;
     this.bossLastHp = this.hp;
-    this.radius = def.model === 'crab' ? 3.2 : def.model === 'stag' ? 2.2 : 0.55 * def.scale + 0.4;
+    this.radius = def.radius ?? (def.model === 'crab' ? 3.2 : def.model === 'stag' ? 2.2 : 0.55 * def.scale + 0.4);
     this.aware = true;
     this.state = 'chase';
     this.summoned = true;
@@ -1114,7 +1146,7 @@ export class Boss extends Enemy {
     return this.bdef.affinity;
   }
   get bleeds() {
-    return this.bdef.model !== 'witch' && this.bdef.model !== 'golem' && this.bdef.model !== 'colossus';
+    return !this.bdef.bloodless && this.bdef.model !== 'witch' && this.bdef.model !== 'golem' && this.bdef.model !== 'colossus';
   }
   get flies() {
     return this.bdef.model === 'witch';
@@ -1536,17 +1568,22 @@ export class Boss extends Enemy {
       case 'volley': {
         this.faceTowards(p.pos.x, p.pos.z, dt, 4);
         if (this.stage !== 'strike') return [0, 0, 0];
-        const shots = this.phase === 2 ? 7 : 5;
         const p0 = hits[0];
+        // Giants heave fewer, heavier boulders, lobbed onto the hero.
+        const boulder = this.bdef.projectile === 'boulder';
+        const shots = boulder ? (this.phase === 2 ? 3 : 2) : this.phase === 2 ? 7 : 5;
         while (this.fired < shots && k >= p0 + (this.fired / shots) * 0.55) {
-          const spread = (this.fired - (shots - 1) / 2) * 0.12;
+          const spread = (this.fired - (shots - 1) / 2) * (boulder ? 0.2 : 0.12);
           const from = this.center();
-          from.y += this.height * 0.2;
+          from.y += this.height * (boulder ? 0.45 : 0.2);
           const dir = new THREE.Vector3(p.pos.x - from.x, p.center(_w).y - from.y, p.pos.z - from.z).normalize();
           dir.applyAxisAngle(THREE.Object3D.DEFAULT_UP, spread);
-          const to = from.clone().addScaledVector(dir, 40);
+          const to = boulder ? from.clone().addScaledVector(dir, Math.max(6, Math.hypot(p.pos.x - from.x, p.pos.z - from.z))) : from.clone().addScaledVector(dir, 40);
+          if (boulder) to.y = heightAt(to.x, to.z) + 0.5;
           const kind = this.bdef.projectile === 'lightning' ? 'orb' : this.bdef.projectile;
-          g.spawnProjectile({ from, to, speed: 24, kind, owner: 'enemy', damage: Math.round(this.damage() * 0.6), element: elementOf(this.affinity), source: this, gravity: kind === 'arrow' ? 3 : 0 });
+          // A boss's orbs glow in its own colour; the wraith-violet stays for the dark ones.
+          const color = kind === 'orb' && this.affinity !== 'dark' ? AFFINITY_COLOR[this.affinity] : undefined;
+          g.spawnProjectile({ from, to, speed: boulder ? 19 : 24, kind, owner: 'enemy', damage: Math.round(this.damage() * (boulder ? 1.1 : 0.6)), element: elementOf(this.affinity), source: this, gravity: kind === 'arrow' ? 3 : boulder ? 14 : 0, color });
           this.fired++;
           this.hits = 1;
         }

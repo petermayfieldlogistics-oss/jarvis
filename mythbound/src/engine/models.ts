@@ -1175,6 +1175,22 @@ export function setBowString(bow: THREE.Object3D, nock: THREE.Vector3, arrow: bo
   }
 }
 
+/**
+ * What a beast of legend carries that no hero can take from it: a giant's
+ * club, a fury's scourge and torch, a pirate's hook. Built along +y from the
+ * grip like a weapon; left-hand things are marked off-hand.
+ */
+export function buildBossProp(id: string): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.kind = 'hammer';
+  switch (id) {
+    default:
+      part(cyl(0.05, 0.08, 1.2, 8), mat(0x5a3a22, { rough: 0.9 }), 0, 0.5, 0, g);
+  }
+  compact(g);
+  return g;
+}
+
 export function buildShield(): THREE.Group {
   const g = new THREE.Group();
   const wood = mat(0x5a3e26, { rough: 0.85 });
