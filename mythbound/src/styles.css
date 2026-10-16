@@ -1269,3 +1269,32 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
 .is-touch .pvp-score { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); font-size: 12px; max-width: calc(100vw - 360px); }
 .is-touch .pvp-score ol { flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
 .is-touch .pvp-score .ptitle i { width: 80px; }
+
+/* Builder mode (admins): its help line across the top of the screen. */
+.builder-hud {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 30; pointer-events: none;
+  max-width: min(980px, calc(100vw - 32px)); padding: 8px 14px; border: 1px solid var(--gold-dim); border-radius: 8px;
+  background: var(--panel); color: #e8dcc0; font-size: 13px; text-align: center; line-height: 1.5;
+}
+.builder-hud .bh-top { color: var(--gold-hi); font-weight: 700; letter-spacing: 0.06em; }
+.builder-hud .bh-cats b { margin: 0 6px; color: #9a8a6a; font-weight: 600; }
+.builder-hud .bh-cats b.on { color: var(--gold-hi); text-decoration: underline; }
+.builder-hud .bh-keys { color: #b8ac90; font-size: 12px; }
+.builder-hud::after { content: ''; position: fixed; left: 50vw; top: 50vh; width: 10px; height: 10px; margin: -5px; border: 2px solid #60e0ff; border-radius: 50%; }
+
+/* The admin panel (admins only). */
+.admin { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); padding: 16px; }
+.admin .adm-box {
+  width: min(560px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 14px 18px;
+  border: 1px solid var(--gold-dim); border-radius: 10px; background: var(--panel); color: #e8dcc0;
+}
+.admin .adm-head { display: flex; align-items: center; gap: 10px; font-size: 17px; color: var(--gold-hi); }
+.admin .adm-head small { color: #9cc0ff; font-size: 13px; }
+.admin .adm-head button { margin-left: auto; }
+.admin h3 { margin: 14px 0 6px; color: var(--gold); font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
+.admin .adm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.admin .adm-row span { flex: 1; min-width: 140px; }
+.admin .adm-row small { color: #9a8a6a; }
+.admin input, .admin select { background: #1a1612; color: #f0e4c8; border: 1px solid var(--gold-dim); border-radius: 6px; padding: 6px 8px; font: inherit; }
+.admin .adm-link input { flex: 1; min-width: 200px; }
+.admin .hint { color: #a89c80; font-size: 12px; margin: 4px 0; }

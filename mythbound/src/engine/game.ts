@@ -34,6 +34,9 @@ import { loadUnlocks, saveUnlocks, writeSave, type SaveData, type Settings, type
 import { heightAt, zoneAt, WATER_LEVEL } from './terrain';
 import { World, type Interactable } from './world';
 import { Story } from './story';
+import { Builder } from './builder';
+import { AdminPanel } from '../ui/admin';
+import type { Cloud } from './cloud';
 import { Hud } from '../ui/hud';
 import { Dialog } from '../ui/dialog';
 import { Menu } from '../ui/menu';
@@ -181,6 +184,14 @@ export class Game {
   onUnlock: () => void = () => {};
   /** Signed-in username, if any (friends in co-op see it). */
   accountName = '';
+  /** The server says this account is an admin: builder mode (K) and the admin panel (P). */
+  admin = false;
+  /** Admin panel: no harm comes to the hero. */
+  godMode = false;
+  /** The account service (saving builds); null when playing without it. */
+  cloud: Cloud | null = null;
+  builder!: Builder;
+  adminPanel!: AdminPanel;
 
   constructor(
     public container: HTMLElement,
@@ -241,6 +252,8 @@ export class Game {
     this.buildNpcs();
     this.farm = new FarmView(this.scene, this.world.interactables);
     this.setPlayer(character);
+    this.builder = new Builder(this);
+    this.adminPanel = new AdminPanel(this);
     this.spawnAll();
     this.restoreWorldObjects();
 
@@ -857,6 +870,8 @@ export class Game {
 
   /** All damage to the hero goes through here. */
   damagePlayer(amount: number, element: DamageElement, source: Actor | null, environmental = false) {
+    // Building, or an admin's god mode: no harm.
+    if (this.builder?.active || this.godMode) return;
     const p = this.player;
     if (!p.alive || amount <= 0 || this.mode === 'dead') return;
     if (!environmental && p.iframes > 0) {
@@ -1277,7 +1292,12 @@ export class Game {
 
       this.cam.look(this);
 
-      this.player.update(gdt, this);
+      // Builder mode: the hero flies and builds; the monsters hold still.
+      const building = this.builder.active;
+      if (building) this.builder.update(dt);
+      else this.player.update(gdt, this);
+    }
+    if (playing && !this.builder.active) {
       updateHazards(this, gdt);
       this.armory.update(gdt, this);
       if (this.bleedTimer > 0) {

@@ -21,6 +21,17 @@ and add `DATABASE_URL` with Neon's connection string). Without it, co-op still w
 - Login attempts are rate-limited per address and per username.
 - `GET /health` reports `accounts: true` when the database is connected.
 
+## Admins and builds
+
+The accounts **R88** and **Rock** are admins: in the game they get builder mode (K) and the admin panel (P). Only accounts
+that already existed when admin was handed out count, so nobody can sign up with one of those names later and become
+admin. `ADMINS` (comma-separated usernames) and `ADMIN_BEFORE` (a date) in the server's environment change this.
+
+Builder mode saves a *build*: a list of changes to the world (props placed, wild trees and rocks moved or taken away).
+Each build has an 8-letter id; anyone can open it with the game's link `…/mythbound/?build=<id>` (`GET /api/builds/<id>`
+needs no sign-in). Only admins can save builds (`POST /api/builds`, `PUT /api/builds/<id>` for their own, `GET
+/api/builds` lists theirs). Builds are kept in the `builds` table, made on start-up.
+
 `npm test` runs against an in-memory store; set `TEST_DATABASE_URL` to also run the tests on PostgreSQL.
 
 ## Files

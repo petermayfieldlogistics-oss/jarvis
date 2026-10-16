@@ -930,6 +930,7 @@ export class World {
   private cuts = new Set<string>();
   /** The wild plants' colliders, by where they grew (so a cut plant stops blocking). */
   private plantCol = new Map<string, Collider>();
+  private cutKept = new Map<string, { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[]>();
   private detail = detailTexture();
   private time = { value: 0 };
   private wind = { value: new THREE.Vector2(0.2, 0.1) };
@@ -1017,6 +1018,12 @@ export class World {
     if (this.propMode) return { x, z, r, top };
     const c = { x, z, r, top };
     this.colliders.push(c);
+    this.gridAdd(c);
+    return c;
+  }
+
+  private gridAdd(c: Collider) {
+    const { x, z, r } = c;
     const cx0 = Math.floor((x - r) / 16), cx1 = Math.floor((x + r) / 16);
     const cz0 = Math.floor((z - r) / 16), cz1 = Math.floor((z + r) / 16);
     for (let cx = cx0; cx <= cx1; cx++)
@@ -1026,7 +1033,6 @@ export class World {
         if (!list) this.grid.set(k, (list = []));
         list.push(c);
       }
-    return c;
   }
 
   /** Takes a collider away again (a placed prop moved or deleted, a wild plant cut). */
@@ -1249,8 +1255,11 @@ export class World {
   }
 
   /** The wild trees, rocks and bushes drawn near the hero (what builder mode can pick up). */
-  pickablePlants(): THREE.InstancedMesh[] {
-    return this.plantTiles.filter((t) => t.mesh.visible && !SMALL.includes(t.mesh.userData.kind) && t.mesh.userData.kind !== 'grass').map((t) => t.mesh);
+  pickablePlants(near: THREE.Vector3, r: number): THREE.InstancedMesh[] {
+    const reach = r + TILE * 0.71;
+    return this.plantTiles
+      .filter((t) => t.mesh.visible && Math.hypot(t.x - near.x, t.z - near.z) < reach && !SMALL.includes(t.mesh.userData.kind) && t.mesh.userData.kind !== 'grass')
+      .map((t) => t.mesh);
   }
 
   /** What a ray from the camera hit among the plants: which plant, and where it grew. */
@@ -1263,23 +1272,42 @@ export class World {
   /** Takes a wild plant away (it stops blocking, and its tile leaves it out if built again). */
   cutPlant(x: number, z: number) {
     const key = spotKey(x, z);
+    if (this.cuts.has(key)) return;
     this.cuts.add(key);
     const c = this.plantCol.get(key);
-    if (c) {
-      this.removeCollider(c);
-      this.plantCol.delete(key);
-    }
+    if (c) this.removeCollider(c);
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const kept: { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[] = [];
     for (const t of this.plantTiles) {
       if (Math.abs(t.x - x) > TILE || Math.abs(t.z - z) > TILE) continue;
       const at = t.mesh.userData.at as number[] | undefined;
       if (!at) continue;
       for (let i = 0; i < at.length; i += 4) {
         if (spotKey(at[i], at[i + 1]) !== key) continue;
+        const m = new THREE.Matrix4();
+        t.mesh.getMatrixAt(i / 4, m);
+        kept.push({ mesh: t.mesh, i: i / 4, m });
         t.mesh.setMatrixAt(i / 4, zero);
         t.mesh.instanceMatrix.needsUpdate = true;
       }
     }
+    this.cutKept.set(key, kept);
+  }
+
+  /** Puts a cut plant back (undo in builder mode). */
+  uncutPlant(x: number, z: number) {
+    const key = spotKey(x, z);
+    if (!this.cuts.delete(key)) return;
+    const c = this.plantCol.get(key);
+    if (c) {
+      this.colliders.push(c);
+      this.gridAdd(c);
+    }
+    for (const { mesh, i, m } of this.cutKept.get(key) ?? []) {
+      mesh.setMatrixAt(i, m);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.cutKept.delete(key);
   }
 
   /** Forgets every cut (loading another build): tiles built from now on grow them back. */

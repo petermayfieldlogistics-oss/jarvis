@@ -213,7 +213,7 @@ export class Cloud {
   }
 
   /** Admins: saves a build (over `id` if given, else as a new one) and returns its id. */
-  async saveBuild(name: string, edits: Record<string, number | string>[], id?: string): Promise<string> {
+  async saveBuild(name: string, edits: object[], id?: string): Promise<string> {
     const r = id ? await this.call<{ id: string }>('PUT', `/api/builds/${id}`, { name, edits }) : await this.call<{ id: string }>('POST', '/api/builds', { name, edits });
     return r.id;
   }

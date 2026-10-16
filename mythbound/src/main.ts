@@ -8,6 +8,7 @@ import { deleteSave, loadSave, loadSettings, loadUnlocks, newWorldState, writeSa
 import type { Character } from './rules/character';
 import { showFront } from './ui/account';
 import { showCreator, showTitle } from './ui/creator';
+import { cleanEdits } from './engine/builder';
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
@@ -16,6 +17,8 @@ let sync: SlotSync | null = null;
 const cloud = new Cloud(() => loadSettings().coopServer);
 /** A co-op room from an invite link (`?join=CODE`), joined as soon as a hero is picked. */
 let invite = inviteCode(location.search);
+/** A builder mode build to play in (`?build=ID`): the world as its admin built it. */
+const buildId = /^[a-z0-9]{8}$/.exec(new URLSearchParams(location.search).get('build') ?? '')?.[0] ?? null;
 
 function stopGame() {
   sync?.dispose();
@@ -71,6 +74,20 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
     const g = new Game(host, character, world, loadSettings());
     game = g;
     g.onQuit = title;
+    g.cloud = cloud;
+    // Admins (asked of the server) get builder mode and the admin panel; on a
+    // test copy run on this machine, ?admin turns them on to try them out.
+    const local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).has('admin');
+    if (local) g.admin = true;
+    else if (cloud.session) {
+      g.accountName ||= cloud.session.username;
+      void cloud.checkAdmin().then((a) => {
+        if (game !== g || !a) return;
+        g.admin = true;
+        g.hud.toast('Admin: P opens the admin panel, K enters builder mode.', 'skill');
+      });
+    }
+    if (buildId) openBuild(g, buildId);
     if (slot && cloud.session) {
       g.storeKey = cloud.localKey(slot.slot);
       g.accountName = cloud.session.username;
@@ -86,6 +103,21 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
     if (fresh) g.story.intro();
     if (invite) joinInvite(g, invite);
   }, 50);
+}
+
+/** Opens the build a link named: the world as its builder left it. */
+function openBuild(g: Game, id: string) {
+  g.hud.toast('Opening the build…', 'skill');
+  void cloud
+    .ready(() => {})
+    .then(() => cloud.build(id))
+    .then((b) => {
+      if (game !== g) return;
+      g.builder.load({ id: b.id, name: b.name, owner: b.owner }, cleanEdits(b.edits));
+      g.hud.banner(b.name, 'zone');
+      g.hud.toast(`A build by ${b.owner}.`, 'quest');
+    })
+    .catch((err) => game === g && g.hud.toast(`Could not open the build: ${err instanceof Error ? err.message : String(err)}`, 'warn'));
 }
 
 /** Takes the hero into the room an invite link named (once: quitting to the title doesn't rejoin). */
