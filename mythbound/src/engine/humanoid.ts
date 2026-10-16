@@ -3416,8 +3416,8 @@ const ARM: Record<string, number[]> = {
   RGL_OUT: [-0.93, -0.02, 1.13, -0.26, -0.17, -0.01],
   CH_R: [-3.07, -0.22, -1.14, -1.67, 0.63, 1.75],
   CH_L: [0.28, -1.19, 2.16, -1.62, 1.07, 0],
-  CH_HR: [-0.63, 0.91, -0.1, -1.34, -0.81, -1.08],
-  CH_HL: [-0.93, -1.13, 0.06, -0.79, -0.23, 0],
+  // A heavy weapon carried on the run (solved with the run's lean): the hand before the right shoulder, the head or blade resting back over it.
+  SH_R: [-0.59, 0.14, 0.06, -2.32, 0.02, -0.02],
   // Two-handed backhand sweep (greatsword, battle axe): the left hand just below the right on the grip.
   CL_W: [-2.06, 0.54, 1.1, -1.11, -0.3, 1.75],
   CL_M: [-1.14, 0.6, 0.29, -0.81, -1.7, 1.07],
@@ -3744,10 +3744,10 @@ interface State {
   staff: boolean;
   /** The last roll's kind (see AnimState.rollKind), kept while it settles. */
   rollKind: number;
-  /** A one-handed blade trailing behind on the run (0-1, eased, with hysteresis). */
-  trail: number;
   /** The body's height last frame (the cape flaps with each step). */
   lastBodyY: number;
+  /** How far into its running carry (shouldered, or a spear levelled) the weapon is: eased in time, past a pace, with hysteresis. */
+  carryRun: number;
   /** Gait phase per metre, as the gameplay code advances it (smoothed), and last frame's phase. */
   k: number;
   lastPhase: number;
@@ -3761,7 +3761,7 @@ function newState(j: Joints, prof: Profile): State {
     mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, ride: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
     act: 0, spin: 0, roll: 0, tuck: 0, latched: false, lastStyle: '', lastAttack: -1, lastWindup: 0, lastDraw: 0, lastHurt: 0, hurtSide: 1, deadSide: 1,
     cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, upright: false, orbit: undefined, shoulder: false, shield: false, leftTwist: 0, carry: 0,
-    fists: false, staff: false, rollKind: 0, trail: 0, lastBodyY: 0, k: 0, lastPhase: 0,
+    fists: false, staff: false, rollKind: 0, lastBodyY: 0, k: 0, lastPhase: 0, carryRun: 0,
   };
 }
 
@@ -4097,13 +4097,15 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   s.lastYaw = ry;
   s.yawRate = approach(s.yawRate, clamp(turn, -6, 6), 6);
   s.accel = approach(s.accel, dt > 0 ? clamp((spd - s.lastSpd) / dt, -30, 30) : 0, 5);
+  // A heavy weapon swings up onto the shoulder (a spear levels) once the pace
+  // is a run, in a quarter second, so it never hangs halfway at a steady jog.
+  // A greatsword or battle axe already rests there, so it rides on it at any pace.
+  const on = s.carryRun > 0.5;
+  s.carryRun = approach(s.carryRun, s.carry >= 2 && (s.shoulder ? s.mv > (on ? 0.2 : 0.4) : s.run > (on ? 0.35 : 0.55)) ? 1 : 0, 9);
   // How far a stride carries: from how fast the gameplay turns the phase over (a default when it doesn't).
   const kNow = dt > 0 && spd > 1 ? (a.phase - s.lastPhase) / (spd * dt) : 0;
   s.k = kNow > 0.6 && kNow < 4 ? (s.k > 0 ? approach(s.k, kNow, 4) : kNow) : s.k || strideRate(spd);
   s.lastPhase = a.phase;
-  // A one-handed blade swings back to trail behind at a run (not at a walk; the
-  // gap keeps monsters chasing at about running pace from flicking between carries).
-  s.trail = approach(s.trail, s.carry === 1 && s.run > (s.trail > 0.5 ? 0.4 : 0.6) && !s.shoulder ? 1 : 0, 10);
   s.lastSpd = spd;
 
   // The current move and where we are in it.
@@ -4146,17 +4148,19 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const fall = smooth(0.25, 0.6, s.airT);
     for (let c = 0; c < NCH; c++) g[c] += (lerp(AIR_UP[c], AIR_DOWN[c], fall) - g[c]) * s.air;
   }
-  // Running with an axe, hammer or spear carries it in both hands, ready to
-  // strike. (A sword or dagger is held low at the hip instead; see the hold.)
-  const chargeW = s.carry >= 2 ? s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.run : 0;
-  if (chargeW > 0.001) {
-    const p = s.carry === 3 ? CHARGE_SPEAR : CHARGE_HEAVY;
-    for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : p[c]) - g[c]) * chargeW;
-    g[SPY] += (p[SPY] - g[SPY]) * chargeW;
-    g[CHY] += (p[CHY] - g[CHY]) * chargeW;
+  // On the run an axe, hammer, greatsword or battle axe rides on the right
+  // shoulder, leaving the left arm free to pump; a spear is carried low in
+  // both hands, ready to thrust. (A sword or dagger is held forward and down
+  // at the side instead; see the hold.)
+  const runCarry = s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.carryRun;
+  if (s.carry === 2 && runCarry > 0.001) for (const c of RIGHT_ARM) g[c] += (SHOULDER_RUN[c] - g[c]) * runCarry;
+  if (s.carry === 3 && runCarry > 0.001) {
+    for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : CHARGE_SPEAR[c]) - g[c]) * runCarry;
+    g[SPY] += (CHARGE_SPEAR[SPY] - g[SPY]) * runCarry;
+    g[CHY] += (CHARGE_SPEAR[CHY] - g[CHY]) * runCarry;
   }
   // A shield is carried forward and angled on the run (so the arm's swing shows as the shield rocking).
-  const sr = s.shield && s.carry < 2 ? s.mv * smooth(0.2, 0.7, s.run) * (1 - s.back) * (1 - s.crouch) * (1 - s.air) : 0;
+  const sr = s.shield && s.carry !== 3 ? s.mv * smooth(0.2, 0.7, s.run) * (1 - s.back) * (1 - s.crouch) * (1 - s.air) : 0;
   if (sr > 0.001) for (const c of SHIELD_ARM) g[c] += (SHIELD_RUN[c] - g[c]) * sr;
   blend(g, BLOCK, s.block * (1 - s.air));
   if (s.aim > 0.001) {
@@ -4349,12 +4353,13 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const legs = w * legsFree * (1 - (busy ? (mv.ownLegs ? 1 : (mv.legs ?? 1) * 0.3) : 0));
     const arms = w * armsFree;
     // A weapon arm swings less and stays straighter.
-    const armsR = s.weaponLen > 0 ? lerp(0.55, 0.85, s.trail) : 1;
-    // Both arms pump with the stride, elbows bent. A two-handed carry (see
-    // the target pose) holds the weapon still instead.
-    const carry2 = s.carry >= 2 ? arms * (1 - s.back) * (1 - s.crouch) * clamp01(0.5 * s.run + 0.5 * s.sprint) : 0;
-    const pump = 1 - 0.9 * carry2;
-    const armsL = arms * (1 - s.back) * pump * (1 - 0.45 * sr);
+    const armsR = s.weaponLen > 0 ? 0.55 : 1;
+    // Both arms pump with the stride, elbows bent. A weapon on the shoulder
+    // (see the target pose) holds the right arm still, a spear both.
+    // (The pump adds to the pose, so a held arm must stop altogether or its elbow folds.)
+    const held = (1 - s.back) * (1 - s.crouch) * s.carryRun;
+    const pump = 1 - (s.carry >= 2 ? held : 0);
+    const armsL = arms * (1 - s.back) * (1 - (s.carry === 3 ? held : 0)) * (1 - 0.45 * sr);
     if (s.back < 0.999) {
       // Running: the IK cycle (its hips lower by however much a crouch or hunch bends the knees).
       const rw = s.run;
@@ -4421,7 +4426,7 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   // On the move the weapon is held steady against the arm swing: a blade
   // low at the hip, pointing forward; staves angle forward and up.
   // A two-handed carry holds the weapon in its own pose.
-  const carried = s.carry >= 2 ? (1 - s.back) * (1 - s.crouch) * s.run : 0;
+  const carried = s.carry >= 2 ? (1 - s.back) * (1 - s.crouch) * s.carryRun : 0;
   // (A shouldered two-hander just sways with the arm at a walk.)
   const hold = s.mv * armsFree * (s.weaponLen > 0 && !s.shoulder ? 1 : 0) * (1 - carried);
   if (hold > 0.001) {
@@ -4430,13 +4435,10 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const swingR = o[ARX] - cur[ARX];
     if (s.weaponLen >= 1.45) o[WRX] = lerp(o[WRX], PI / 2 - 2.55 + fore, hold);
     else {
-      // At a walk: forward and down, swinging with half the arm. At a run: the
-      // hand turned over, the blade trailing back and down behind the hip.
-      const fwd = PI / 2 - lerp(0.95, 1.2, s.run) + fore + 0.5 * swingR;
-      const back = -fore + 0.38 - 0.5 * swingR;
-      o[WRX] = lerp(o[WRX], lerp(fwd, back, s.trail), hold);
-      o[WRY] += hold * (lerp(-0.3 * s.run, -(PI - 0.55), s.trail) - o[WRY]);
-      o[ARZ] -= 0.15 * hold * s.trail;
+      // Forward and down at the side, swinging with half the arm, angled a
+      // little out so the blade clears the legs.
+      o[WRX] = lerp(o[WRX], PI / 2 - 0.92 + fore + lerp(0.5, 0.25, s.run) * swingR, hold);
+      o[WRY] += hold * (-0.3 * s.run - o[WRY]);
     }
   }
   // Keep elbows and knees bending the right way.
@@ -4489,14 +4491,14 @@ const GUARD_LP = poseOf(GUARD_L, READY);
 const SHIELD_RUN = poseOf({ [ALX]: 0.33, [ALY]: -0.62, [ALZ]: 0.68, [FLX]: -1.05, [FLY]: 0.36 });
 const SHIELD_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
 const LEFT_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
-// Charging with a weapon ready. An axe or hammer is carried in both hands
-// low at the right hip, its head angled up over the shoulder, the chest
-// turned into it (a shield arm stays out in front, as CHARGE_BLADE's left).
+// Charging with a spear (a shield arm stays out in front, as CHARGE_BLADE's left).
 const CHARGE_BLADE = poseOf({ ...armR('CH_R'), ...armL('CH_L') });
-const CHARGE_HEAVY = poseOf({ [SPY]: -0.15, [CHY]: -0.3, ...armR('CH_HR'), ...armL('CH_HL') });
 // A spear is carried low and angled forward in both hands, ready to thrust.
 const CHARGE_SPEAR = poseOf({ [SPY]: -0.3, [CHY]: -0.3, ...armR('SPC_R'), ...armL('SPC_L') });
-/** How each weapon is carried at a run: 1 a blade low at the hip, 2 a heavy weapon in both hands, 3 a spear (or quarterstaff) levelled. */
+/** A heavy weapon on the right shoulder at a run. */
+const SHOULDER_RUN = poseOf(armR('SH_R'));
+const RIGHT_ARM = [ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
+/** How each weapon is carried at a run: 1 a blade forward and down at the side, 2 a heavy weapon on the shoulder, 3 a spear (or quarterstaff) levelled. */
 const CARRY: Record<string, number> = { sword: 1, dagger: 1, longsword: 1, knives: 1, axe: 2, hammer: 2, greatsword: 2, battleaxe: 2, spear: 3, quarterstaff: 3 };
 const REST_SHOULDER = [-1.9, 0.35];
 const CHARGE_ARMS = [ALX, ALY, ALZ, FLX, FLY, WLX, WLY, WLZ, ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
