@@ -2247,18 +2247,25 @@ function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig
       k.add(cube(0.04, 0.04, 0.3), METAL, gold, H, 0, 1.885, -0.005);
       k.add(new THREE.TorusGeometry(0.21, 0.08, 5, 14, PI), MATTE, shade(color, 1.5), H, 0, 1.76, -0.02, 0, PI / 2, 0, 0.36, 1.15, 1);
       k.add(tube([[0, 1.75, -0.2], [0, 1.6, -0.27], [0, 1.4, -0.28]], [0.035, 0.03, 0.005], 5), MATTE, shade(color, 0.85), H);
-      // Sun emblem.
-      k.add(new THREE.CylinderGeometry(1, 1, 1, 14), METAL, gold, j.chest, 0, 1.37, 0.17 * d.BZ, PI / 2 - 0.15, 0, 0, 0.07, 0.015, 0.07);
+      // Sun emblem, out on the breastplate's keel.
+      k.add(new THREE.CylinderGeometry(1, 1, 1, 14), METAL, gold, j.chest, 0, 1.37, 0.217 * d.BZ, PI / 2 - 0.15, 0, 0, 0.07, 0.015, 0.07);
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * TAU;
-        k.add(spike(0.016, 0.06, 3), METAL, gold, j.chest, Math.sin(a) * 0.1, 1.37 + Math.cos(a) * 0.1, 0.165 * d.BZ, PI / 2 - 0.15, 0, -a, 1, 1, 0.4);
+        k.add(spike(0.022, 0.08, 3), METAL, gold, j.chest, Math.sin(a) * 0.105, 1.37 + Math.cos(a) * 0.105, 0.208 * d.BZ, PI / 2 - 0.15, 0, -a, 1, 1, 0.45);
       }
-      // Gilded pauldron spikes and knee medallions.
+      // Gilded spikes on the pauldrons (front and back of each dome; the left
+      // one's top carries the sunburst) and knee medallions.
       for (const s of [-1, 1]) {
         const arm = s > 0 ? j.armL : j.armR;
         const leg = s > 0 ? j.legL : j.legR;
         const shin = s > 0 ? j.shinL : j.shinR;
-        for (let i = 0; i < 3; i++) k.add(spike(0.025, 0.13, 5), METAL, gold, arm, s * d.SX * (1.0 + i * 0.12), 1.6 - i * 0.025, -0.03 + i * 0.03, 0, 0, -s * (0.5 + i * 0.25));
+        const px = s * d.SX * 1.08, tilt = -s * 0.34;
+        const rx = 0.19 * d.B, ry = 0.15, rz = 0.178 * d.BZ;
+        for (const v of [-0.5, 0.5]) {
+          const lx = s * 0.15 * rx, lz = v * rz;
+          const ly = Math.sqrt(1 - 0.15 ** 2 - v * v) * ry;
+          k.add(spike(0.025, 0.13, 5), METAL, gold, shoulderSkin(j.chest, arm), px + lx * Math.cos(tilt) - ly * Math.sin(tilt), 1.5 + lx * Math.sin(tilt) + ly * Math.cos(tilt) + 0.05, lz, v * 0.9, 0, tilt * 1.4);
+        }
         k.add(new THREE.TorusGeometry(1, 0.12, 3, 12), METAL, gold, arm, s * d.SX * 1.08, 1.395, 0, PI / 2, -s * 0.5, 0, 0.122 * d.B, 0.117 * d.BZ, 0.12);
         k.add(ball(6, 5), METAL, gold, splitY(leg, shin, 0.5, 0.06), s * d.HX, 0.51, 0.09, 0, 0, 0, 0.03, 0.03, 0.015);
       }
