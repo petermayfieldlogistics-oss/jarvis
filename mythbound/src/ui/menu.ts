@@ -1,5 +1,5 @@
 import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
+import { ARENA, ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
 
 /** Where the world map names the outer lands. */
 const REGION_LABELS: [number, number, ZoneId][] = [
@@ -18,6 +18,7 @@ import { FRUITS, MATERIALS, STATION_NAME, spanText } from '../data/goods';
 import { saveSettings } from '../engine/state';
 import { DEFAULT_SERVER, PAGES_URL } from '../engine/net';
 import { inviteLink } from '../rules/invite';
+import { MATCH, type MatchMode } from '../rules/pvp';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
 import { mapImage, paintMap, toMap } from './mapimage';
@@ -44,6 +45,10 @@ export class Menu {
   /** The reset button waits for a second tap. */
   private respecArmed = false;
   private coopCode = '';
+  /** The arena match the host is setting up. */
+  private pvpMode: MatchMode = 'ffa';
+  private pvpGoal = MATCH.goals[0];
+  private pvpTime = MATCH.times[1];
 
   constructor(parent: HTMLElement, private g: Game) {
     this.el = document.createElement('div');
@@ -342,6 +347,7 @@ export class Menu {
         <p class="hint">${co.isHost
           ? 'Your world is shared: keep this tab open and in view, or it pauses for everyone. Resting at a shrine no longer brings monsters back while friends are here.'
           : 'Monsters, bosses and the time of day come from the host. Your hero, items and progress are yours and save on this device.'}</p>
+        ${this.pvpSection()}
         ${this.teamCombos()}
       </div>`;
     }
@@ -355,8 +361,38 @@ export class Menu {
       ${pages ? `<p class="hint">Co-op needs the online version of the game: <a href="${PAGES_URL}" target="_blank" rel="noopener">${PAGES_URL}</a></p>` : ''}
       <p class="hint">The free server naps when nobody is playing, so the first connection can take up to a minute.</p>
       <details><summary class="hint">Server address</summary><label>Address <input type="text" data-coop="server" value="${esc(s.coopServer || DEFAULT_SERVER)}"></label></details>
+      ${this.pvpSection()}
       ${this.teamCombos()}
     </div>`;
+  }
+
+  /** Duels, the Arena of Ares and war mode (in co-op), with this hero's rank and record. */
+  private pvpSection(): string {
+    const g = this.g;
+    const st = g.pvp.status();
+    const rec = st.record;
+    const head = `<div class="pvpsec"><h3>⚔ Player against player</h3>
+      <p class="prank"><b>${esc(st.rank.title)}</b> · ${rec.glory} glory${st.rank.next !== null ? ` <small>(${st.rank.next - rec.glory} more to the next rank)</small>` : ''}</p>
+      <p class="hint">Duels won ${rec.duelsWon}, lost ${rec.duelsLost}${rec.duelsDrawn ? `, drawn ${rec.duelsDrawn}` : ''} · Arena wins ${rec.matchesWon} of ${rec.matchesPlayed} · Heroes felled ${rec.kills} · Falls ${rec.deaths}</p>`;
+    if (!g.coop.active) return `${head}<p class="hint">Host or join a co-op game to duel your friends, fight in the Arena of Ares, or turn on war mode.</p></div>`;
+    const now = st.duel
+      ? `<p>In a duel with <b>${esc(st.duel)}</b>. The first to fall yields.</p>`
+      : st.match?.inIt ? `<p>Fighting in the Arena of Ares.</p><div class="btnrow"><button data-act="pvp-leave">Leave the arena</button></div>` : '';
+    const friends = st.friends.length
+      ? `<ul class="who duels">${st.friends.map((f) => `<li><span>${esc(f.name)} <small>level ${f.level} · ${esc(f.title)}</small></span><button data-duel="${f.id}"${f.why ? ` disabled title="${esc(f.why)}"` : ''}>⚔ Duel</button>${f.why ? `<small class="why">${esc(f.why)}</small>` : ''}</li>`).join('')}</ul>`
+      : '<p class="hint">No friends here yet.</p>';
+    const opt = <T extends string | number>(v: T, label: string, cur: T) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`;
+    const arena = g.coop.isHost
+      ? `<div class="arena"><b>Arena of Ares</b> <small>(south-east of town; everyone who joins is carried there and back)</small>
+          <label>Mode <select data-pvp="mode">${opt<MatchMode>('ffa', 'Everyone for themselves', this.pvpMode)}${opt<MatchMode>('teams', 'Two teams', this.pvpMode)}</select></label>
+          <label>First to <select data-pvp="goal">${MATCH.goals.map((n) => opt(n, `${n} falls`, this.pvpGoal)).join('')}</select></label>
+          <label>Time <select data-pvp="time">${MATCH.times.map((n) => opt(n, `${n / 60} minutes`, this.pvpTime)).join('')}</select></label>
+          <div class="btnrow"><button class="primary" data-act="pvp-match"${st.match || st.inviting ? ' disabled' : ''}>Call everyone to the arena</button></div></div>`
+      : '<p class="hint">The host can call everyone to the Arena of Ares for a match.</p>';
+    return `${head}${now}<p class="hint">Challenge a friend here, or stand by them and press F (✋ on touch). Duels heal you both before and after, and nobody dies.</p>
+      ${friends}${arena}
+      <label class="war">War mode <input type="checkbox" data-pvp="war"${rec.war ? ' checked' : ''}></label>
+      <p class="hint">With war mode on, heroes who turned it on too can attack you anywhere but in town and by the shrines. Falling to one costs no embers.</p></div>`;
   }
 
   /** The team combos two heroes' elements make together. */
@@ -514,6 +550,26 @@ export class Menu {
       void g.coop.join(g.settings.coopServer || DEFAULT_SERVER, this.coopCode, this.coopName());
     });
     this.el.querySelector('[data-act="coop-leave"]')?.addEventListener('click', () => g.coop.leave());
+    // Player against player.
+    this.el.querySelectorAll<HTMLButtonElement>('[data-duel]').forEach((b) => b.addEventListener('click', () => {
+      g.pvp.challenge(Number(b.dataset.duel));
+      this.close();
+    }));
+    this.el.querySelector<HTMLSelectElement>('[data-pvp="mode"]')?.addEventListener('change', (e) => (this.pvpMode = (e.target as HTMLSelectElement).value === 'teams' ? 'teams' : 'ffa'));
+    this.el.querySelector<HTMLSelectElement>('[data-pvp="goal"]')?.addEventListener('change', (e) => (this.pvpGoal = Number((e.target as HTMLSelectElement).value)));
+    this.el.querySelector<HTMLSelectElement>('[data-pvp="time"]')?.addEventListener('change', (e) => (this.pvpTime = Number((e.target as HTMLSelectElement).value)));
+    this.el.querySelector('[data-act="pvp-match"]')?.addEventListener('click', () => {
+      g.pvp.startMatch(this.pvpMode, this.pvpGoal, this.pvpTime);
+      this.render();
+    });
+    this.el.querySelector('[data-act="pvp-leave"]')?.addEventListener('click', () => {
+      g.pvp.leaveMatch();
+      this.render();
+    });
+    this.el.querySelector<HTMLInputElement>('[data-pvp="war"]')?.addEventListener('change', (e) => {
+      g.pvp.setWar((e.target as HTMLInputElement).checked);
+      this.render();
+    });
     const link = this.el.querySelector<HTMLInputElement>('.invitelink');
     link?.addEventListener('focus', () => link.select());
     this.el.querySelector('[data-act="coop-invite"]')?.addEventListener('click', async () => {
@@ -582,6 +638,7 @@ export class Menu {
       ctx.shadowBlur = 0;
     };
     label(0, 20, 'Hearthhold', '#d8c8a0', 5);
+    label(ARENA.x, ARENA.z, '⚔ Arena of Ares', '#e08060', 5);
     for (const t of TRIALS) label(t.x, t.z, t.name.replace('Trial of ', '').replace('the ', ''), g.state.trialsDone.includes(t.id) ? '#8a8a8a' : '#ff5a40', 6);
     if (g.state.quests.hunts.state !== 'none') for (const l of LAIRS) label(l.x, l.z, `☠ ${l.name}`, g.state.flags[`hunted-${l.boss}`] ? '#8a8a8a' : '#c080ff', 5);
     for (const s of SHRINES) if (g.state.shrinesFound.includes(s.id)) label(s.x, s.z, '', '#ffd070', 5);

@@ -27,6 +27,7 @@ import {
 import { heightAt, inLava, SWIM_DEPTH, WATER_LEVEL } from './terrain';
 import { gallopDrain, HORSE, rideBlock, rideSpeed, rideStep } from '../rules/horse';
 import { hasTool } from '../rules/crafting';
+import { PVP } from '../rules/pvp';
 import { applyOutfit, baseLook, dressedOf, isPlain, PLAIN, wardrobeBlock, wearable, type Dressed } from '../rules/outfit';
 import { EAT_GAP, eatItem, foodCount, pickFood } from '../rules/food';
 import { fedMul, fedRegen, tickFed } from '../rules/fed';
@@ -223,6 +224,9 @@ export class Player {
   combineMode = false;
   cooldowns = new Map<string, number>();
   speedBuff = 0;
+  /** Held fast, or slowed, by another hero's blow (PvP), seconds left. */
+  pvpRoot = 0;
+  pvpSlow = 0;
   stoneSkin = 0;
   aegis = 0;
   moonveil = 0;
@@ -575,6 +579,8 @@ export class Player {
     const sprint = input.held.has('sprint') && wantLen > 0.1 && !this.exhausted && this.stamina > 0 && !this.swimming && !this.crouching && !this.blocking && this.drawing === 0 && !this.attack && !this.riding;
     let speed = moveSpeed(c) * (sprint ? 1.55 : 1) * (this.crouching ? 0.5 : 1) * (this.speedBuff > 0 ? 1.6 : 1) * (this.song ? SONGS[this.song].speed : 1) * (this.tailwind > 0 ? 1.3 : 1);
     if (this.blocking || this.drawing > 0 || this.charge) speed *= 0.45;
+    if (this.pvpRoot > 0) speed = 0;
+    else if (this.pvpSlow > 0) speed *= PVP.slowFactor;
     const atk = this.attack;
     // Moving (or rolling) stands a meditating monk up.
     if (atk?.kind === 'meditate' && (wantLen > 0.3 || input.pressed.has('roll') || input.pressed.has('jump'))) this.endMeditation();

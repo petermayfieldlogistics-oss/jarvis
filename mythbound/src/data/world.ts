@@ -49,6 +49,8 @@ export const ZONES: Record<ZoneId, ZoneDef> = {
 };
 
 export const TOWN = { x: 0, z: 20, radius: 62 };
+/** The Arena of Ares, where arena matches between heroes are fought (engine/pvp.ts): open ground south-east of town. */
+export const ARENA = { x: 80, z: -60, radius: 24 };
 export const VOLCANO = { x: 0, z: -315, radius: 160, crater: 42, platform: 30 };
 export const ISLAND = { x: 70, z: 262, radius: 40 };
 

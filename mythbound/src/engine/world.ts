@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
-  ANVILS, DOCKS, EYES_RUINS, FIELD, FISHING_SPOTS, ISLAND, LAIRS, LAVA_POOLS, LORE, NPCS, OASES, ORE_NODES, PAGES, plotCentre, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
+  ANVILS, ARENA, DOCKS, EYES_RUINS, FIELD, FISHING_SPOTS, ISLAND, LAIRS, LAVA_POOLS, LORE, NPCS, OASES, ORE_NODES, PAGES, plotCentre, SHRINES, TOMES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId,
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
@@ -1236,6 +1236,8 @@ export class World {
     };
     const avoid = (x: number, z: number, pad: number) => {
       if (Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.radius + pad) return true;
+      // The Arena of Ares is open ground (heroes fight there).
+      if (Math.hypot(x - ARENA.x, z - ARENA.z) < ARENA.radius + pad + 4) return true;
       for (const t of TRIALS) if (Math.hypot(x - t.x, z - t.z) < t.radius + pad + 4) return true;
       for (const s of SHRINES) if (Math.hypot(x - s.x, z - s.z) < 8 + pad) return true;
       for (const d of DOCKS) if (Math.hypot(x - d.x, z - d.z) < 10 + pad) return true;

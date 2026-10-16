@@ -19,6 +19,7 @@ import { Spawner } from './spawner';
 import { Ally, Boss, Enemy, type Actor } from './entities';
 import { buildRelic, clearHazards, huntedNear, isRelic, Lairs, makeBoss, rewardName, updateHazards } from './bosses';
 import { Coop, RemoteHero, type KillInfo } from './coop';
+import { Pvp, type Rival } from './pvp';
 import type { Hero } from './hero';
 import { SharedFx } from './sharedfx';
 import { Fx } from './fx';
@@ -150,6 +151,8 @@ export class Game {
   /** Effects every player sees (monsters' attacks, heroes' blows and spells). */
   sfx: SharedFx;
   coop: Coop;
+  /** Duels, arena matches and war mode between co-op heroes. */
+  pvp: Pvp;
   /** The heroes monsters can hunt: the local hero first, then any friends. */
   heroes: Hero[] = [];
   isNight = false;
@@ -233,6 +236,7 @@ export class Game {
     this.sfx = new SharedFx(this);
     this.coop = new Coop(this);
     this.coop.onChange = () => this.menu.coopChanged();
+    this.pvp = new Pvp(this);
 
     this.buildNpcs();
     this.farm = new FarmView(this.scene, this.world.interactables);
@@ -336,7 +340,7 @@ export class Game {
 
   removeEnemy(e: Enemy) {
     if (e.net) this.coop.forget(e);
-    else if (e.alive && this.coop.isHost) this.coop.gone(e);
+    else if (e.alive && this.coop.isHost && !e.pvpId) this.coop.gone(e);
     e.dispose();
     this.scene.remove(e.model.root);
     disposeObject(e.model.root);
@@ -549,6 +553,8 @@ export class Game {
 
   damageEnemy(e: Enemy, amount: number, element: DamageElement, o: { source?: string; dot?: boolean; quiet?: boolean; tags?: string[]; by?: number } = {}) {
     if (!e.alive || amount <= 0) return;
+    // A hostile hero's stand-in: the blow goes to their game (engine/pvp.ts).
+    if (e.pvpId) return this.pvp.strike(e as Rival, amount, element, o);
     // A guest's blow goes to the host, whose game owns the monster; show it here at once.
     const guest = !!e.net;
     if (guest) this.coop.hit(e, amount, element, o);
@@ -923,7 +929,11 @@ export class Game {
       this.hud.toast('You are bleeding.', 'warn');
       this.addPlayerBleed();
     }
-    if (p.hp <= 0 && !p.notDeadYet(this)) this.playerDied();
+    if (p.hp <= 0) {
+      // A duel's yield, or a fall in the arena: PvP takes it from here.
+      if (this.pvp.spare()) return;
+      if (!p.notDeadYet(this)) this.playerDied();
+    }
   }
 
   private bleedTimer = 0;
@@ -944,11 +954,13 @@ export class Game {
     const c = p.c;
     // Death clears the Fed slot (resting and saving keep it).
     clearFed(c);
-    if (c.gold > 0) {
+    // Felled by another hero in war mode: no embers are lost.
+    const slayer = this.pvp.warDeath();
+    if (c.gold > 0 && !slayer) {
       this.state.lostEmbers = { x: p.pos.x, y: Math.max(p.pos.y, WATER_LEVEL), z: p.pos.z, amount: c.gold };
       c.gold = 0;
     }
-    this.hud.banner('YOU DIED', 'death', cause);
+    this.hud.banner('YOU DIED', 'death', slayer ? `Slain by ${slayer}` : cause);
     setTimeout(() => this.running && this.respawn(), 4200);
   }
 
@@ -1132,12 +1144,18 @@ export class Game {
     const horse = this.player.horsePrompt();
     if (horse && best && this.player.horse!.pos.distanceTo(p) < bestD) best = null;
     this.nearest = best;
-    const label = best ? this.story.label(best) : horse;
+    // A duel to answer (or start, standing by a friend), an arena to join: PvP's turn.
+    const pvp = this.player.sailing ? null : this.pvp.promptLabel();
+    const urgent = pvp !== null && this.pvp.answering;
+    const label = urgent ? pvp : best ? this.story.label(best) : horse ?? pvp;
     this.hud.prompt(label);
     // While sailing the interact button steps ashore (the player handles it).
     this.input.setInteract(label ?? (this.player.sailing ? 'Step ashore' : null));
-    if (best && this.input.pressed.has('interact')) this.story.interact(best);
-    else if (horse && this.input.pressed.has('interact')) this.player.mountHorse(this);
+    if (!this.input.pressed.has('interact')) return;
+    if (urgent) this.pvp.interact();
+    else if (best) this.story.interact(best);
+    else if (horse) this.player.mountHorse(this);
+    else if (pvp) this.pvp.interact();
   }
 
   // ---------------------------------------------------------------- saving --
@@ -1272,6 +1290,8 @@ export class Game {
       const many = this.heroes.length > 1;
       const mirrorAt = performance.now() / 1000 - 0.13;
       for (const e of this.enemies) {
+        // Hostile heroes' stand-ins follow them (engine/pvp.ts moves them).
+        if (e.pvpId) continue;
         if (e.net && e.alive) {
           e.updateMirror(gdt, this, mirrorAt);
           continue;
@@ -1317,6 +1337,7 @@ export class Game {
     }
 
     this.coop.update(dt);
+    this.pvp.update(dt);
     this.wardrobe.update(dt);
     this.cam.update(dt, this);
     // The host runs the monsters around every hero, so it needs the trees' colliders there too.

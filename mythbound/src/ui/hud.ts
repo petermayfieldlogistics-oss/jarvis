@@ -694,7 +694,8 @@ export class Hud {
       const d = e.pos.distanceTo(p.pos);
       if (d > 28 || (e.hp >= e.maxHp && !e.aware && e.awareness < 0.05 && !historian)) continue;
       const head = e.center();
-      if (!this.project(this.v2.set(head.x, head.y + e.height * 0.6 + 0.4, head.z))) continue;
+      // A hostile hero's bar sits above their nametag.
+      if (!this.project(this.v2.set(head.x, head.y + (e.pvpId ? 1.95 : e.height * 0.6 + 0.4), head.z))) continue;
       let el = this.bars3d[n];
       if (!el) {
         el = document.createElement('div');
