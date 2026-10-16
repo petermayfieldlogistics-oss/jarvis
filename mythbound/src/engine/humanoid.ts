@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { pivot } from './models';
-import { FLURRY_AT, type AnimState, type AttackStyle } from './anim';
+import { FLURRY_AT, strideRate, type AnimState, type AttackStyle } from './anim';
 
 type O3 = THREE.Object3D;
 const PI = Math.PI;
@@ -3416,8 +3416,8 @@ const ARM: Record<string, number[]> = {
   RGL_OUT: [-0.93, -0.02, 1.13, -0.26, -0.17, -0.01],
   CH_R: [-3.07, -0.22, -1.14, -1.67, 0.63, 1.75],
   CH_L: [0.28, -1.19, 2.16, -1.62, 1.07, 0],
-  CH_HR: [-0.63, 0.91, -0.1, -1.34, -0.81, -1.08],
-  CH_HL: [-0.93, -1.13, 0.06, -0.79, -0.23, 0],
+  // A heavy weapon carried on the run (solved with the run's lean): the hand before the right shoulder, the head or blade resting back over it.
+  SH_R: [-0.59, 0.14, 0.06, -2.32, 0.02, -0.02],
   // Two-handed backhand sweep (greatsword, battle axe): the left hand just below the right on the grip.
   CL_W: [-2.06, 0.54, 1.1, -1.11, -0.3, 1.75],
   CL_M: [-1.14, 0.6, 0.29, -0.81, -1.7, 1.07],
@@ -3744,10 +3744,13 @@ interface State {
   staff: boolean;
   /** The last roll's kind (see AnimState.rollKind), kept while it settles. */
   rollKind: number;
-  /** A one-handed blade trailing behind on the run (0-1, eased, with hysteresis). */
-  trail: number;
   /** The body's height last frame (the cape flaps with each step). */
   lastBodyY: number;
+  /** How far into its running carry (shouldered, or a spear levelled) the weapon is: eased in time, past a pace, with hysteresis. */
+  carryRun: number;
+  /** Gait phase per metre, as the gameplay code advances it (smoothed), and last frame's phase. */
+  k: number;
+  lastPhase: number;
 }
 
 const states = new WeakMap<O3, State>();
@@ -3758,7 +3761,7 @@ function newState(j: Joints, prof: Profile): State {
     mv: 0, run: 0, sprint: 0, crouch: 0, block: 0, air: 0, airT: 0, swim: 0, fly: 0, ride: 0, aim: 0, fury: 0, back: 0, hipYaw: 0, yawRate: 0, lastYaw: 0, accel: 0, lastSpd: 0,
     act: 0, spin: 0, roll: 0, tuck: 0, latched: false, lastStyle: '', lastAttack: -1, lastWindup: 0, lastDraw: 0, lastHurt: 0, hurtSide: 1, deadSide: 1,
     cape: new Float32Array(16), tail: new Float32Array(16), wing: 0, weapon: undefined, weaponLen: 0, left: undefined, bow: false, upright: false, orbit: undefined, shoulder: false, shield: false, leftTwist: 0, carry: 0,
-    fists: false, staff: false, rollKind: 0, trail: 0, lastBodyY: 0,
+    fists: false, staff: false, rollKind: 0, lastBodyY: 0, k: 0, lastPhase: 0, carryRun: 0,
   };
 }
 
@@ -3786,13 +3789,14 @@ function stride(o: Float32Array, p: number, run: number, sprint: number, crouch:
   o[TLX] += legs * 0.4 * swL;
   o[TRX] += legs * 0.4 * swR;
   const twist = lerp(0.1, 0.17, run);
-  o[HIY] += legs * twist * sp;
+  // The pelvis turns with the swinging leg, the shoulders against it.
+  o[HIY] -= legs * twist * sp;
   o[HIZ] += legs * (0.035 * (1 - run) + 0.04 * run) * Math.sin(2 * p);
   // The chest rocks against the bounce, so the head stays steady.
   o[CHX] -= legs * 0.03 * run * Math.cos(2 * p);
-  o[SPY] -= legs * twist * 0.5 * sp;
-  o[CHY] -= legs * twist * 1.1 * sp;
-  o[HDY] += legs * twist * 0.5 * sp;
+  o[SPY] += legs * twist * 0.5 * sp;
+  o[CHY] += legs * twist * 1.1 * sp;
+  o[HDY] -= legs * twist * 0.5 * sp;
   o[BY] += legs * (0.012 * (1 - run) * Math.cos(2 * p) + 0.1 * run * sp * sp);
   o[BX] += legs * 0.018 * (1 - run) * Math.sin(p);
   const swing = lerp(0.32, 0.7, run) * (1 + 0.3 * sprint);
@@ -3805,8 +3809,174 @@ function stride(o: Float32Array, p: number, run: number, sprint: number, crouch:
   o[ARZ] -= armsR * 0.1 * run;
 }
 
+// ---- The run: real foot paths, solved for the leg angles.
+//
+// A stride is one cycle of both legs (u from 0 to 1, the left foot landing at
+// 0). Each foot is planted for the first `duty` of its cycle, sliding back
+// under the hip exactly as fast as the ground goes by, then rolls onto its
+// toes and pushes off. In the swing it follows a runner's path: the heel kicks
+// up behind, comes through tucked under the hip, the knee drives forward and
+// up, and the foot reaches out and paws back down. Two-bone IK turns those
+// ankle positions into thigh and knee angles, so the feet never skate. The
+// hips dip as the planted leg takes the weight and rise through each flight.
+
 const THIGH = 0.43;
 const SHIN = 0.415;
+const ANKLE = 0.085;
+
+/** Swing keys: [t, ankle x ahead of the hip, ankle height, ankle bend (toes down +)] at run and at sprint. */
+const SWING_RUN = [
+  [0.15, -0.03, 0.24, 0.6],
+  [0.4, -0.14, 0.44, 0.5],
+  [0.66, 0.3, 0.3, 0.0],
+  [0.86, 0.06, 0.15, -0.15],
+];
+const SWING_SPRINT = [
+  [0.15, -0.04, 0.3, 0.65],
+  [0.4, -0.14, 0.58, 0.55],
+  [0.64, 0.36, 0.36, 0.0],
+  [0.86, 0.08, 0.16, -0.18],
+];
+const _key = new Float32Array(6 * 4);
+const _ik = new Float32Array(2);
+const _at = new Float32Array(3);
+
+/** Thigh (forward +, from straight down) and knee bend for an ankle at (x, y) from the hip, into _ik. */
+function legIK(x: number, y: number) {
+  const d = clamp(Math.hypot(x, y), 0.2, (THIGH + SHIN) * 0.999);
+  const knee = PI - Math.acos(clamp((THIGH * THIGH + SHIN * SHIN - d * d) / (2 * THIGH * SHIN), -1, 1));
+  const lean = Math.acos(clamp((THIGH * THIGH + d * d - SHIN * SHIN) / (2 * THIGH * d), -1, 1));
+  _ik[0] = Math.atan2(x, -y) + lean;
+  _ik[1] = knee;
+}
+
+/** The swing keys at k (0 toe-off, 1 touchdown) by cubic Hermite, end slopes m0 and m1 (per unit k), into _at. */
+function swingAt(n: number, k: number, m0x: number, m0h: number, m0a: number, m1x: number, m1h: number, m1a: number) {
+  let i = 0;
+  while (i < n - 2 && k > _key[(i + 1) * 4]) i++;
+  const t0 = _key[i * 4], t1 = _key[(i + 1) * 4];
+  const h = t1 - t0;
+  const v = clamp01((k - t0) / h);
+  const v2 = v * v, v3 = v2 * v;
+  const h00 = 2 * v3 - 3 * v2 + 1, h10 = v3 - 2 * v2 + v, h01 = -2 * v3 + 3 * v2, h11 = v3 - v2;
+  for (let c = 1; c <= 3; c++) {
+    const slope = (j: number) =>
+      j === 0 ? (c === 1 ? m0x : c === 2 ? m0h : m0a) : j === n - 1 ? (c === 1 ? m1x : c === 2 ? m1h : m1a) : (_key[(j + 1) * 4 + c] - _key[(j - 1) * 4 + c]) / (_key[(j + 1) * 4] - _key[(j - 1) * 4]);
+    _at[c - 1] = h00 * _key[i * 4 + c] + h10 * h * slope(i) + h01 * _key[(i + 1) * 4 + c] + h11 * h * slope(i + 1);
+  }
+}
+
+/**
+ * One stride of the run at phase p (left foot down at p = PI / 2, as in the
+ * walk), blended into `o` by `legs` (legs, hips, body) and `arms`/`armsR`.
+ * `metres` is the stride's length on the ground; `drop` lowers the hips
+ * (a crouch or hunch already bending the knees).
+ */
+function runStride(o: Float32Array, p: number, metres: number, sprint: number, robe: number, drop: number, legs: number, arms: number, armsR: number) {
+  const short = 1 - 0.3 * robe;
+  const reach = 0.29 + 0.02 * sprint;
+  const push = (0.43 + 0.05 * sprint) * short;
+  const span = reach + push;
+  // The share of the stride a foot is down: the ground it covers (span) over the stride.
+  const duty = clamp(span / Math.max(metres, 0.5), 0.15, 0.42);
+  const uL = (((p / TAU - 0.25) % 1) + 1) % 1;
+  const uR = (uL + 0.5) % 1;
+
+  // The hips: lowest a fifth of the way through each stance, highest mid-flight.
+  const bob = (0.032 + 0.012 * sprint) * short;
+  const peak = (0.5 + duty) / 2;
+  const mean = 0.895 - 0.012 * sprint - drop;
+  o[BY] += legs * (mean + bob * Math.cos(4 * PI * (uL - peak)) - 0.93);
+  const hip = 0.93 + o[BY];
+
+  // Swing keys between the toe-off and touchdown points, run to sprint.
+  const lift = short;
+  _key[0] = 0;
+  _key[1] = -push;
+  _key[3] = 0;
+  for (let i = 0; i < 4; i++) {
+    const r = SWING_RUN[i], q = SWING_SPRINT[i];
+    _key[(i + 1) * 4] = r[0] + (q[0] - r[0]) * sprint;
+    _key[(i + 1) * 4 + 1] = (r[1] + (q[1] - r[1]) * sprint) + (i === 0 ? -push : i === 3 ? reach : 0);
+    _key[(i + 1) * 4 + 2] = (r[2] + (q[2] - r[2]) * sprint) * (i === 3 ? 1 : lift);
+    _key[(i + 1) * 4 + 3] = r[3] + (q[3] - r[3]) * sprint;
+  }
+  _key[20] = 1;
+  _key[21] = reach;
+  // The foot rolls onto its toes as it leaves: the toe stays down, the ankle rises.
+  const toeOff = 0.62 + 0.08 * sprint;
+  const ankleUp = (a: number) => ANKLE * Math.cos(a) + 0.17 * Math.sin(a);
+  _key[2] = ankleUp(toeOff);
+  _key[22] = ANKLE + 0.004;
+  // Bends at the ends, relative to the shin, from the planted foot's angle there.
+  legIK(-push, _key[2] - hip);
+  _key[3] = _ik[0] - _ik[1] + toeOff;
+  legIK(reach, _key[22] - hip);
+  _key[23] = _ik[0] - _ik[1] - 0.06;
+  // The foot leaves and lands moving back at the ground's speed (half of it at touchdown: a paw back).
+  const back = (-span / duty) * (1 - duty);
+
+  let thighL = 0, thighR = 0, downL = 0, downR = 0;
+  for (let side = 0; side < 2; side++) {
+    const u = side ? uR : uL;
+    const T = side ? LRX : LLX, K = side ? KRX : KLX, F = side ? TRX : TLX;
+    let x: number, y: number, bend: number;
+    if (u < duty) {
+      // Planted: sliding back under the hip, rolling onto the toes at the end.
+      const k = u / duty;
+      const roll = toeOff * smooth(0.5, 1, k) - 0.06 * (1 - smooth(0, 0.25, k));
+      x = reach - span * k;
+      y = ankleUp(roll) - hip;
+      legIK(x, y);
+      bend = _ik[0] - _ik[1] + roll;
+      if (side) downR = Math.sin(PI * k);
+      else downL = Math.sin(PI * k);
+    } else {
+      const k = (u - duty) / (1 - duty);
+      swingAt(6, k, back, 0.6, 0, back * 0.5, -0.3, 0);
+      x = _at[0];
+      y = _at[1] - hip;
+      legIK(x, y);
+      bend = _at[2];
+    }
+    if (side) thighR = _ik[0];
+    else thighL = _ik[0];
+    o[T] += legs * (-_ik[0] - o[HIX] - o[T]);
+    o[K] += legs * (_ik[1] - o[K]);
+    o[F] += legs * (bend - o[F]);
+  }
+  // Feet land under the body, not out at the hips.
+  o[LLZ] -= legs * 0.045;
+  o[LRZ] += legs * 0.045;
+
+  // The pelvis turns with the leg swinging through; the shoulders turn back
+  // against it (with the arms), and the head stays on the path.
+  const spread = thighL - thighR;
+  const turn = (0.1 + 0.03 * sprint) * spread;
+  o[HIY] -= legs * turn;
+  o[SPY] += legs * turn * 0.7;
+  o[CHY] += legs * turn * 1.35;
+  o[HDY] -= legs * turn * 1.05;
+  // The swing leg's side of the pelvis dips a little, and the body rides over the planted foot.
+  o[HIZ] += legs * 0.045 * (downL - downR);
+  o[BX] += legs * 0.012 * (downL - downR);
+
+  // Arms pump against the legs, elbows near a right angle: the hand comes up
+  // in front of the chest and drops back past the hip, the elbow opening a
+  // little behind. Hands cross a touch toward the middle in front.
+  const amp = 0.62 + 0.22 * sprint;
+  const qL = Math.cos(TAU * (uL - 0.9));
+  const qR = Math.cos(TAU * (uR - 0.9));
+  o[ALX] += arms * (0.16 + amp * qL);
+  o[ARX] += armsR * (0.16 + amp * qR);
+  o[FLX] += arms * (-1.45 + 0.32 * qL);
+  o[FRX] += armsR * (-1.45 + 0.32 * qR);
+  o[ALZ] += arms * 0.08;
+  o[ARZ] -= armsR * 0.08;
+  o[ALY] -= arms * 0.22 * Math.max(0, -qL);
+  o[ARY] += armsR * 0.22 * Math.max(0, -qR);
+}
+
 /** Height of a foot's lowest point above the body origin, from the leg angles. */
 function footLow(o: Float32Array, thigh: number, knee: number, ankle: number, abd: number) {
   const a1 = o[HIX] + o[thigh];
@@ -3927,9 +4097,15 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   s.lastYaw = ry;
   s.yawRate = approach(s.yawRate, clamp(turn, -6, 6), 6);
   s.accel = approach(s.accel, dt > 0 ? clamp((spd - s.lastSpd) / dt, -30, 30) : 0, 5);
-  // A one-handed blade swings back to trail behind at a run (not at a walk; the
-  // gap keeps monsters chasing at about running pace from flicking between carries).
-  s.trail = approach(s.trail, s.carry === 1 && s.run > (s.trail > 0.5 ? 0.4 : 0.6) && !s.shoulder ? 1 : 0, 10);
+  // A heavy weapon swings up onto the shoulder (a spear levels) once the pace
+  // is a run, in a quarter second, so it never hangs halfway at a steady jog.
+  // A greatsword or battle axe already rests there, so it rides on it at any pace.
+  const on = s.carryRun > 0.5;
+  s.carryRun = approach(s.carryRun, s.carry >= 2 && (s.shoulder ? s.mv > (on ? 0.2 : 0.4) : s.run > (on ? 0.35 : 0.55)) ? 1 : 0, 9);
+  // How far a stride carries: from how fast the gameplay turns the phase over (a default when it doesn't).
+  const kNow = dt > 0 && spd > 1 ? (a.phase - s.lastPhase) / (spd * dt) : 0;
+  s.k = kNow > 0.6 && kNow < 4 ? (s.k > 0 ? approach(s.k, kNow, 4) : kNow) : s.k || strideRate(spd);
+  s.lastPhase = a.phase;
   s.lastSpd = spd;
 
   // The current move and where we are in it.
@@ -3960,7 +4136,8 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   if (s.upright) g[WLX] = PI / 2;
   blend(g, CROUCH, s.crouch);
   // Running leans into the stride; acceleration and turns lean the body.
-  g[SPX] += s.mv * (0.28 * s.run + 0.2 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
+  g[HIX] += s.mv * s.run * (0.1 + 0.06 * s.sprint);
+  g[SPX] += s.mv * (0.17 * s.run + 0.13 * s.sprint) + clamp(s.accel * 0.012, -0.1, 0.12) * s.mv;
   g[HDX] -= s.mv * 0.14 * s.run;
   g[BRZ] -= s.yawRate * 0.03 * s.mv * (0.3 + s.run);
   g[HIY] += s.hipYaw;
@@ -3971,17 +4148,19 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const fall = smooth(0.25, 0.6, s.airT);
     for (let c = 0; c < NCH; c++) g[c] += (lerp(AIR_UP[c], AIR_DOWN[c], fall) - g[c]) * s.air;
   }
-  // Running with an axe, hammer or spear carries it in both hands, ready to
-  // strike. (A sword or dagger is held low at the hip instead; see the hold.)
-  const chargeW = s.carry >= 2 ? s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.run : 0;
-  if (chargeW > 0.001) {
-    const p = s.carry === 3 ? CHARGE_SPEAR : CHARGE_HEAVY;
-    for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : p[c]) - g[c]) * chargeW;
-    g[SPY] += (p[SPY] - g[SPY]) * chargeW;
-    g[CHY] += (p[CHY] - g[CHY]) * chargeW;
+  // On the run an axe, hammer, greatsword or battle axe rides on the right
+  // shoulder, leaving the left arm free to pump; a spear is carried low in
+  // both hands, ready to thrust. (A sword or dagger is held forward and down
+  // at the side instead; see the hold.)
+  const runCarry = s.mv * (1 - s.back) * (1 - s.crouch) * (1 - s.air) * s.carryRun;
+  if (s.carry === 2 && runCarry > 0.001) for (const c of RIGHT_ARM) g[c] += (SHOULDER_RUN[c] - g[c]) * runCarry;
+  if (s.carry === 3 && runCarry > 0.001) {
+    for (const c of CHARGE_ARMS) g[c] += ((s.shield && c < ARX ? CHARGE_BLADE[c] : CHARGE_SPEAR[c]) - g[c]) * runCarry;
+    g[SPY] += (CHARGE_SPEAR[SPY] - g[SPY]) * runCarry;
+    g[CHY] += (CHARGE_SPEAR[CHY] - g[CHY]) * runCarry;
   }
   // A shield is carried forward and angled on the run (so the arm's swing shows as the shield rocking).
-  const sr = s.shield && s.carry < 2 ? s.mv * smooth(0.2, 0.7, s.run) * (1 - s.back) * (1 - s.crouch) * (1 - s.air) : 0;
+  const sr = s.shield && s.carry !== 3 ? s.mv * smooth(0.2, 0.7, s.run) * (1 - s.back) * (1 - s.crouch) * (1 - s.air) : 0;
   if (sr > 0.001) for (const c of SHIELD_ARM) g[c] += (SHIELD_RUN[c] - g[c]) * sr;
   blend(g, BLOCK, s.block * (1 - s.air));
   if (s.aim > 0.001) {
@@ -4168,18 +4347,29 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   o.set(cur);
   const legsFree = (1 - rollW) * (1 - dashW) * (1 - s.swim) * (1 - s.fly) * (1 - s.air) * (1 - s.ride) * (dead ? 0 : 1);
   const armsFree = (1 - s.act) * (1 - s.block) * (1 - s.aim) * (1 - s.swim) * (1 - s.fly) * (1 - s.tuck) * (1 - s.ride) * (dead ? 0 : 1);
+  let ikW = 0;
   if (s.mv > 0.001) {
     const w = s.mv;
     const legs = w * legsFree * (1 - (busy ? (mv.ownLegs ? 1 : (mv.legs ?? 1) * 0.3) : 0));
     const arms = w * armsFree;
     // A weapon arm swings less and stays straighter.
-    const armsR = s.weaponLen > 0 ? lerp(0.55, 0.85, s.trail) : 1;
-    // Both arms pump with the stride, elbows bent. A two-handed carry (see
-    // the target pose) holds the weapon still instead.
-    const carry2 = s.carry >= 2 ? arms * (1 - s.back) * (1 - s.crouch) * clamp01(0.5 * s.run + 0.5 * s.sprint) : 0;
-    const pump = 1 - 0.9 * carry2;
-    const armsL = arms * (1 - s.back) * pump * (1 - 0.45 * sr);
-    if (s.back < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back), armsL, arms * armsR * (1 - s.back) * pump);
+    const armsR = s.weaponLen > 0 ? 0.55 : 1;
+    // Both arms pump with the stride, elbows bent. A weapon on the shoulder
+    // (see the target pose) holds the right arm still, a spear both.
+    // (The pump adds to the pose, so a held arm must stop altogether or its elbow folds.)
+    const held = (1 - s.back) * (1 - s.crouch) * s.carryRun;
+    const pump = 1 - (s.carry >= 2 ? held : 0);
+    const armsL = arms * (1 - s.back) * (1 - (s.carry === 3 ? held : 0)) * (1 - 0.45 * sr);
+    if (s.back < 0.999) {
+      // Running: the IK cycle (its hips lower by however much a crouch or hunch bends the knees).
+      const rw = s.run;
+      ikW = legs * (1 - s.back) * rw;
+      if (rw > 0.001) {
+        const drop = Math.max(0, Math.min(footLow(o, LLX, KLX, TLX, LLZ), footLow(o, LRX, KRX, TRX, LRZ)));
+        runStride(o, a.phase, TAU / s.k, s.sprint, prof.robe, drop, ikW, armsL * rw, arms * armsR * (1 - s.back) * pump * rw);
+      }
+      if (rw < 0.999) stride(o, a.phase, s.run, s.sprint, s.crouch, prof.robe, legs * (1 - s.back) * (1 - rw), armsL * (1 - rw), arms * armsR * (1 - s.back) * pump * (1 - rw));
+    }
     if (sr > 0.001) o[ALY] += armsL * 0.2 * Math.sin(a.phase);
     if (s.back > 0.001) stride(o, -a.phase, s.run * 0.6, 0, s.crouch, prof.robe, legs * s.back, arms * s.back, arms * armsR * s.back);
   }
@@ -4229,14 +4419,14 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   const lowL = footLow(o, LLX, KLX, TLX, LLZ);
   const lowR = footLow(o, LRX, KRX, TRX, LRZ);
   const low = Math.min(lowL, lowR);
-  const flatL = planted * (1 - smooth(0.02, 0.12, lowL - low)) * 0.9;
-  const flatR = planted * (1 - smooth(0.02, 0.12, lowR - low)) * 0.9;
+  const flatL = planted * (1 - smooth(0.02, 0.12, lowL - low)) * 0.9 * (1 - ikW);
+  const flatR = planted * (1 - smooth(0.02, 0.12, lowR - low)) * 0.9 * (1 - ikW);
   o[TLX] = lerp(o[TLX] + 0.25 * (1 - planted), -(o[HIX] + o[LLX] + o[KLX]), flatL);
   o[TRX] = lerp(o[TRX] + 0.25 * (1 - planted), -(o[HIX] + o[LRX] + o[KRX]), flatR);
   // On the move the weapon is held steady against the arm swing: a blade
   // low at the hip, pointing forward; staves angle forward and up.
   // A two-handed carry holds the weapon in its own pose.
-  const carried = s.carry >= 2 ? (1 - s.back) * (1 - s.crouch) * s.run : 0;
+  const carried = s.carry >= 2 ? (1 - s.back) * (1 - s.crouch) * s.carryRun : 0;
   // (A shouldered two-hander just sways with the arm at a walk.)
   const hold = s.mv * armsFree * (s.weaponLen > 0 && !s.shoulder ? 1 : 0) * (1 - carried);
   if (hold > 0.001) {
@@ -4245,13 +4435,10 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
     const swingR = o[ARX] - cur[ARX];
     if (s.weaponLen >= 1.45) o[WRX] = lerp(o[WRX], PI / 2 - 2.55 + fore, hold);
     else {
-      // At a walk: forward and down, swinging with half the arm. At a run: the
-      // hand turned over, the blade trailing back and down behind the hip.
-      const fwd = PI / 2 - lerp(0.95, 1.2, s.run) + fore + 0.5 * swingR;
-      const back = -fore + 0.38 - 0.5 * swingR;
-      o[WRX] = lerp(o[WRX], lerp(fwd, back, s.trail), hold);
-      o[WRY] += hold * (lerp(-0.3 * s.run, -(PI - 0.55), s.trail) - o[WRY]);
-      o[ARZ] -= 0.15 * hold * s.trail;
+      // Forward and down at the side, swinging with half the arm, angled a
+      // little out so the blade clears the legs.
+      o[WRX] = lerp(o[WRX], PI / 2 - 0.92 + fore + lerp(0.5, 0.25, s.run) * swingR, hold);
+      o[WRY] += hold * (-0.3 * s.run - o[WRY]);
     }
   }
   // Keep elbows and knees bending the right way.
@@ -4259,8 +4446,8 @@ export function animateHumanoid(rig: Rig, a: AnimState): void {
   o[FRX] = Math.min(o[FRX], 0.05);
   o[KLX] = Math.max(o[KLX], 0);
   o[KRX] = Math.max(o[KRX], 0);
-  // Plant the lower foot on the ground (less so mid-run, when both feet fly).
-  const ground = planted * (1 - 0.85 * s.run * s.mv * legsFree);
+  // Plant the lower foot on the ground (not on the run: its feet are placed, and both fly between steps).
+  const ground = planted * (1 - Math.max(0.85 * s.run * s.mv * legsFree, ikW));
   const plant = -Math.min(footLow(o, LLX, KLX, TLX, LLZ), footLow(o, LRX, KRX, TRX, LRZ)) * ground;
 
   // ---- Pose the joints.
@@ -4304,14 +4491,14 @@ const GUARD_LP = poseOf(GUARD_L, READY);
 const SHIELD_RUN = poseOf({ [ALX]: 0.33, [ALY]: -0.62, [ALZ]: 0.68, [FLX]: -1.05, [FLY]: 0.36 });
 const SHIELD_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
 const LEFT_ARM = [ALX, ALY, ALZ, FLX, FLY, WLX];
-// Charging with a weapon ready. An axe or hammer is carried in both hands
-// low at the right hip, its head angled up over the shoulder, the chest
-// turned into it (a shield arm stays out in front, as CHARGE_BLADE's left).
+// Charging with a spear (a shield arm stays out in front, as CHARGE_BLADE's left).
 const CHARGE_BLADE = poseOf({ ...armR('CH_R'), ...armL('CH_L') });
-const CHARGE_HEAVY = poseOf({ [SPY]: -0.15, [CHY]: -0.3, ...armR('CH_HR'), ...armL('CH_HL') });
 // A spear is carried low and angled forward in both hands, ready to thrust.
 const CHARGE_SPEAR = poseOf({ [SPY]: -0.3, [CHY]: -0.3, ...armR('SPC_R'), ...armL('SPC_L') });
-/** How each weapon is carried at a run: 1 a blade low at the hip, 2 a heavy weapon in both hands, 3 a spear (or quarterstaff) levelled. */
+/** A heavy weapon on the right shoulder at a run. */
+const SHOULDER_RUN = poseOf(armR('SH_R'));
+const RIGHT_ARM = [ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];
+/** How each weapon is carried at a run: 1 a blade forward and down at the side, 2 a heavy weapon on the shoulder, 3 a spear (or quarterstaff) levelled. */
 const CARRY: Record<string, number> = { sword: 1, dagger: 1, longsword: 1, knives: 1, axe: 2, hammer: 2, greatsword: 2, battleaxe: 2, spear: 3, quarterstaff: 3 };
 const REST_SHOULDER = [-1.9, 0.35];
 const CHARGE_ARMS = [ALX, ALY, ALZ, FLX, FLY, WLX, WLY, WLZ, ARX, ARY, ARZ, FRX, FRY, WRX, WRY, WRZ];

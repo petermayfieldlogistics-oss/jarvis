@@ -10,7 +10,7 @@ import { SONG, SONGS, type SongId } from '../rules/weapons';
 import { BURST_COLOR, BURSTS, type Burst } from '../rules/power';
 import { BOSSES, ENEMIES, TRIALS, type BossId, type EnemyId } from '../data/world';
 import { mainWeapon } from '../rules/combat';
-import { newAnim, type AttackStyle } from './anim';
+import { newAnim, strideRate, type AttackStyle } from './anim';
 import { allyModel, Boss, Enemy, STATUS_KEYS, newStatus, type AllyKind, type MirrorSample, type Model } from './entities';
 import { makeBoss } from './bosses';
 import { animateHumanoid, type Rig } from './humanoid';
@@ -394,7 +394,7 @@ export class RemoteHero implements Hero {
     const sailing = (f & 32) !== 0;
     a.speed = sailing ? 0 : speed;
     a.moving = sailing ? 0 : Math.min(1, speed / 4);
-    a.phase += speed * dt * (1.9 - 0.3 * Math.min(1, Math.max(0, (speed - 8.5) / 2)));
+    a.phase += speed * dt * strideRate(speed);
     if (speed > 0.05 && !sailing) {
       const sy = Math.sin(yaw), cy = Math.cos(yaw);
       const kk = Math.min(1, speed / 2.5) / speed;
