@@ -85,7 +85,7 @@ export class Spawner {
   /** Clears ordinary monsters and fills every camp again (resting, dying, starting). */
   spawnAll() {
     const g = this.g;
-    for (const e of [...g.enemies]) if (!(e instanceof Boss)) g.removeEnemy(e);
+    for (const e of [...g.enemies]) if (!(e instanceof Boss) && !e.pvpId) g.removeEnemy(e);
     for (const gr of this.groups) {
       gr.members = [];
       gr.left = [...gr.roster];
@@ -121,7 +121,7 @@ export class Spawner {
   private counts() {
     let live = 0, near = 0;
     for (const e of this.g.enemies) {
-      if (!e.alive) continue;
+      if (!e.alive || e.pvpId) continue;
       live++;
       if (this.g.heroDistance(e.pos.x, e.pos.z) < NEAR) near++;
     }

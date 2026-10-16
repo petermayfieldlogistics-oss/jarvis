@@ -2,6 +2,7 @@ import { MAX_KNIVES, classWields } from './weapons';
 import { newSteed, normalizeSteed, type Steed } from './horse';
 import { fedMul, fedSwims, normalizeFed, type Fed } from './fed';
 import { newWardrobe, normalizeWardrobe, type Wardrobe } from './outfit';
+import { newPvpRecord, normalizePvp, type PvpRecord } from './pvp';
 import {
   CLASSES,
   MAGE_STARTING_SPELLS,
@@ -82,6 +83,8 @@ export interface Character extends CharacterChoice {
   fed: Fed | null;
   /** Clothes and dye colours (for looks only), and what is worn. */
   wardrobe: Wardrobe;
+  /** Duels, arena matches and war mode: glory, rank and the tally. */
+  pvp: PvpRecord;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -203,6 +206,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     steed: newSteed(rng),
     fed: null,
     wardrobe: newWardrobe(),
+    pvp: newPvpRecord(),
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -327,6 +331,8 @@ export function normalizeCharacter(c: Character): Character {
   // Fruit buffs came later (and a junk one is dropped).
   c.fed = normalizeFed(c.fed);
   c.wardrobe = normalizeWardrobe(c.wardrobe);
+  // Player-versus-player came later.
+  c.pvp = normalizePvp(c.pvp);
   return c;
 }
 

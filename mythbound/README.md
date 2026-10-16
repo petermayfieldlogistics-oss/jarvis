@@ -85,6 +85,32 @@ code; friends type it and press **Join**. Co-op needs the online version
   name and the two heroes who made it.
 - The free server naps after 15 minutes without players, so the first connection can take up to a minute.
 
+## Player against player
+
+PvP happens in co-op games, in three ways. All of it is under Menu → Co-op → **⚔ Player against player**.
+
+- **Duels**: press **⚔ Duel** next to a friend in the menu, or stand by them and press **F** (✋ on touch). They answer
+  with Accept (F, or tap) or Decline. A ring of fog rises between you (12 m across each way) and the count goes 3, 2,
+  1, FIGHT. Both start with full health, mana and stamina. The first to fall yields: nobody dies, nothing is lost, and
+  you are both healed afterwards. For a few seconds after, F asks for a rematch. Monsters are kept out of the ring.
+  A duel that runs past 3 minutes is a draw.
+- **The Arena of Ares** (south-east of town, ringed by standing stones): the host chooses everyone for themselves or
+  two teams (Crimson and Azure, split evenly by level), first to 5, 10 or 15 falls, and 3, 5 or 10 minutes, then
+  calls everyone. Those who join (F or tap) are carried to the arena's edge, count down from 5 and fight. A fallen hero
+  rises at their place after 4 seconds, safe for a moment. The scoreboard shows the falls and the clock (at the
+  bottom of the screen on phones), and the side shows who felled whom. When a team or hero reaches the goal (or time
+  runs out), everyone sees the results and goes back to where they were.
+- **War mode** (a tick box): heroes who both have it on can attack each other anywhere but in town and by the
+  shrines. A hero felled this way loses no embers. War mode can't be turned off in the middle of a fight.
+- **How blows land**: every weapon, spell, burst, pet and trap that hurts monsters hurts a hostile hero, but at
+  55% of what it would deal a monster, and never more than 30% of the hero's health in one blow (40% for what would
+  slay a monster outright, like a backstab). Guards, parries, rolls, armour and wards work as against monsters. A stun
+  or fear holds a hero for at most a second and can't hold them again for 4 seconds after; roots, slows, burning,
+  poison and bleeding are shorter and weaker too. A foe's songs and healing don't help you.
+- **Glory and ranks**: wins, falls and arena matches earn glory (more for beating a higher level, less for beating
+  the same friend again and again). Ranks: Recruit, Brawler (30), Gladiator (100), Champion (250), Warlord (500) and
+  Legend of the Arena (1000). Your rank shows under your name for friends, and your record is in the menu.
+
 ## The world
 
 - **Hearthhold** (town): Orrin the Historian (main quest, spell tomes), Brann the Smith (upgrades), Sister Lumen
@@ -273,6 +299,8 @@ won't strike first, the ruins appear on the map, but dark damage hurts 20% more.
 
 - `src/data/` – classes, races, roles, spells, weapons, monsters, bosses, places, quests, lore
 - `src/rules/` – character creation, stats, combat and spell rules (unit tested)
-- `src/engine/` – terrain, world building, models, player, monsters and bosses, effects, game loop, story
+- `src/engine/` – terrain, world building, models, player, monsters and bosses, effects, game loop, story; co-op in
+  `coop.ts` and player-against-player in `pvp.ts` (a hostile hero gets a stand-in among the monsters, so every attack
+  can reach them; the blow is sent to that player's game, which lands it on their hero)
 - `src/ui/` – title, character creator, HUD (framed stat and boss bars, spell cooldown sweeps, compass minimap), menus,
   dialogs; the gold ornaments are inline SVGs in `src/styles.css`

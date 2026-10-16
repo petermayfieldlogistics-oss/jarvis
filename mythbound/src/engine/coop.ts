@@ -19,6 +19,7 @@ import { buildBoat, disposeObject } from './models';
 import { DEFAULT_SERVER, Net, type ServerMsg } from './net';
 import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, heroDressed, limbTrail, poseBowString, RAGE_RED, RIDER_HIP, TIMING } from './player';
 import { decodeOutfit, encodeOutfit, isPlain, outfitKey } from '../rules/outfit';
+import { rankOf } from '../rules/pvp';
 import { animateHorse, buildHorse, SEAT, type HorseRig } from './horse';
 import { COATS, HORSE } from '../rules/horse';
 import { WATER_LEVEL } from './terrain';
@@ -69,7 +70,7 @@ const arr = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
 const now = () => performance.now() / 1000;
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
-type Msg = Record<string, unknown> & { k: string };
+export type Msg = Record<string, unknown> & { k: string };
 
 /** What a kill is worth; the host sends it to everyone. */
 export interface KillInfo {
@@ -143,6 +144,12 @@ export class RemoteHero implements Hero {
   stealth = 1;
   /** Inside a trial's fog (as their game last said). */
   inTrial = false;
+  /** Their game knows player-versus-player; their glory; war mode on. */
+  pvp = false;
+  glory = 0;
+  war = false;
+  /** We fight them now (their nametag turns red). */
+  hostile = false;
   weaponId = '';
   weaponRune: RuneId | undefined;
   rig: Rig | null = null;
@@ -181,6 +188,8 @@ export class RemoteHero implements Hero {
     if (!CLASSES.has(c) || !RACES.has(r) || !ROLES.has(ro)) return;
     this.name = str(m.n).slice(0, 20) || this.name;
     this.level = num(m.lv, this.level);
+    this.pvp = num(m.pv) === 1;
+    this.glory = Math.max(0, num(m.gl));
     this.classId = c;
     this.raceId = r;
     this.roleId = ro;
@@ -233,25 +242,41 @@ export class RemoteHero implements Hero {
     }
     const canvas = document.createElement('canvas');
     canvas.width = 256;
-    canvas.height = 64;
+    canvas.height = 96;
     const ctx = canvas.getContext('2d')!;
     ctx.font = '600 30px Cinzel, Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 6;
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    const text = `${this.name}  ${this.level}`;
+    const text = `${this.hostile ? '⚔ ' : ''}${this.name}  ${this.level}`;
     ctx.strokeText(text, 128, 34);
-    ctx.fillStyle = '#9fe0ff';
+    ctx.fillStyle = this.hostile ? '#ff6a58' : '#9fe0ff';
     ctx.fillText(text, 128, 34);
+    // An arena rank under the name, once they have one.
+    const rank = rankOf(this.glory);
+    if (rank.index > 0) {
+      ctx.font = 'italic 600 21px Cinzel, Georgia, serif';
+      ctx.lineWidth = 5;
+      ctx.strokeText(rank.title, 128, 70);
+      ctx.fillStyle = '#f0c870';
+      ctx.fillText(rank.title, 128, 70);
+    }
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-    tag.scale.set(2.2, 0.55, 1);
-    tag.position.y = 2.45;
+    tag.scale.set(2.2, 0.825, 1);
+    tag.position.y = 2.31;
     tag.renderOrder = 5;
     this.rig.root.add(tag);
     this.tag = tag;
+  }
+
+  /** We start (or stop) fighting them: their nametag says so. */
+  setHostile(on: boolean) {
+    if (on === this.hostile) return;
+    this.hostile = on;
+    this.makeTag();
   }
 
   /** A state update from their game. */
@@ -288,6 +313,7 @@ export class RemoteHero implements Hero {
     this.alive = alive;
     this.stealth = Math.max(0, Math.min(1, num(m.sf, 1)));
     this.crouching = (s.flags & 2) !== 0;
+    this.war = (s.flags & 2048) !== 0;
     this.inTrial = num(m.it) === 1;
     this.anim.landing = Math.max(this.anim.landing, num(a[5]));
     const lv = num(m.lv, this.level);
@@ -690,6 +716,7 @@ export class Coop {
   private removeRemote(id: number) {
     const r = this.remotes.get(id);
     if (!r) return;
+    this.g.pvp.onLeave(id);
     r.dispose();
     this.remotes.delete(id);
     this.known.delete(id);
@@ -709,6 +736,7 @@ export class Coop {
   private backToSolo(message: string) {
     const g = this.g;
     const wasGuest = this.role === 'guest';
+    g.pvp.reset();
     this.role = 'off';
     this.busy = false;
     this.room = '';
@@ -750,6 +778,7 @@ export class Coop {
     const dressed = heroDressed(c);
     this.queue(to, {
       k: 'hi', n: this.myName, c: c.classId, sc: c.subclassId ?? '', r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '',
+      pv: 1, gl: c.pvp.glory,
       ...(isPlain(dressed) ? {} : { o: encodeOutfit(dressed) }),
     });
   }
@@ -768,6 +797,11 @@ export class Coop {
     } else this.lookTimer = window.setTimeout(() => this.announceLook(), wait * 1000);
   }
 
+  /** Player-versus-player messages (engine/pvp.ts). */
+  pvpSend(to: number | 'all', m: Msg) {
+    if (this.active) this.queue(to, m);
+  }
+
   /** Our hero's state, for everyone else to draw. */
   private sendState() {
     const g = this.g;
@@ -775,7 +809,7 @@ export class Coop {
     const a = p.anim;
     const w = p.rig.wings?.userData;
     const flags = (a.blocking ? 1 : 0) | (p.crouching ? 2 : 0) | (a.swimming ? 4 : 0) | (a.flying ? 8 : 0) | (a.airborne ? 16 : 0) | (p.sailing ? 32 : 0) | (p.unseen ? 64 : 0) |
-      (w?.enabled ? 128 : 0) | (w?.spread ? 256 : 0) | (w?.soar ? 512 : 0) | (p.riding ? 1024 : 0);
+      (w?.enabled ? 128 : 0) | (w?.spread ? 256 : 0) | (w?.soar ? 512 : 0) | (p.riding ? 1024 : 0) | (g.pvp.war ? 2048 : 0);
     const pets: number[][] = [];
     for (const al of g.allies) {
       if (pets.length >= 6 || !al.alive) continue;
@@ -811,7 +845,7 @@ export class Coop {
       if (!known || known.size > 600) this.known.set(r.id, (known = new Set()));
       const near: [number, Enemy][] = [];
       for (const e of g.enemies) {
-        if (!e.alive) continue;
+        if (!e.alive || e.pvpId) continue;
         const d = Math.abs(e.pos.x - r.pos.x) + Math.abs(e.pos.z - r.pos.z);
         if (d < RANGE * 1.3 || e instanceof Boss) near.push([e instanceof Boss ? -1 : d, e]);
       }
@@ -982,6 +1016,7 @@ export class Coop {
     const g = this.g;
     const fromHost = from === this.hostId;
     const r = this.remotes.get(from);
+    if (typeof m.k === 'string' && m.k.startsWith('pv')) return g.pvp.handle(from, m);
     switch (m.k) {
       case 'hi':
         r?.setup(m);
@@ -1001,14 +1036,14 @@ export class Coop {
         const id = str(m.s) as SongId;
         const p = arr(m.p);
         const pl = g.player;
-        if (!Object.hasOwn(SONGS, id) || !pl.alive || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > SONG.radius) return;
+        if (!Object.hasOwn(SONGS, id) || !pl.alive || g.pvp.hostile(from) || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > SONG.radius) return;
         pl.applySong(g, id, r?.name ?? 'A friend');
         return;
       }
       case 'buff': {
         const p = arr(m.p);
         const pl = g.player;
-        if (!pl.alive || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > Math.min(30, num(m.r, 12))) return;
+        if (!pl.alive || g.pvp.hostile(from) || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > Math.min(30, num(m.r, 12))) return;
         const amount = Math.max(0, Math.min(500, num(m.a)));
         if (m.b === 'ward') pl.receiveWard(g, amount, r?.name ?? 'A friend');
         else if (m.b === 'mend') pl.receiveMend(g, amount, r?.name ?? 'A friend');

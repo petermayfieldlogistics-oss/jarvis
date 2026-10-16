@@ -372,6 +372,8 @@ export class Enemy extends Actor {
   team = newTeamMemory();
   /** Co-op: set on a guest's copy, which follows the host's monster. */
   net: MirrorState | null = null;
+  /** PvP: set on a stand-in for a hostile hero (their player id); see engine/pvp.ts. */
+  pvpId = 0;
   /** The move being performed (windup/strike/recover). */
   move: Move | null = null;
   /** Thrown into the air (a cyclone kick, an earth shockwave): height above the ground and rising speed. */

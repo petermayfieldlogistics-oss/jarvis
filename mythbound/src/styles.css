@@ -1201,3 +1201,71 @@ b.legend { color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 90, 0.5); }
   .bar.full .track::after { opacity: 0; }
   .bar.hp.low::before { animation: none; opacity: 0.75; }
 }
+
+/* ---- Player against player: challenges, countdown, scoreboard, kill feed, results. */
+.pvp { position: absolute; inset: 0; pointer-events: none; font-family: var(--display); }
+.pvp-ask {
+  position: absolute; left: 50%; top: 30%; transform: translate(-50%, -8px); min-width: min(420px, 86vw); max-width: 92vw;
+  padding: 14px 20px 12px; text-align: center; background: rgba(14, 10, 8, 0.92); border: 1px solid rgba(224, 96, 72, 0.7);
+  box-shadow: 0 0 0 1px #0a0806, 0 6px 22px rgba(0, 0, 0, 0.6), inset 0 0 18px rgba(200, 60, 40, 0.18);
+  display: none;
+}
+.pvp-ask.show { display: block; transform: translate(-50%, 0); pointer-events: auto; animation: pvpIn 0.25s ease-out; }
+@keyframes pvpIn { from { opacity: 0; } to { opacity: 1; } }
+.pvp-ask .pq { font-family: var(--serif); font-size: 18px; color: var(--ink); text-shadow: 0 1px 2px #000; margin-bottom: 10px; }
+.pvp-ask .pbtns { display: flex; gap: 10px; justify-content: center; }
+.pvp-ask button { min-width: 120px; min-height: 40px; padding: 6px 16px; font-size: 15px; letter-spacing: 0.06em; border: 1px solid var(--gold-dim); background: #1c1510; color: var(--ink); touch-action: manipulation; }
+.pvp-ask button.py { border-color: #e06048; background: linear-gradient(#5a1c14, #2c0e0a); color: #ffd8c8; }
+.pvp-count {
+  /* Out of the page entirely when not counting (an invisible big glowing glyph still costs a repaint every frame). */
+  display: none; position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); opacity: 0;
+  font-size: clamp(48px, 11vw, 110px); font-weight: 700; color: #f6e2a6; letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(255, 150, 60, 0.6), 0 3px 2px #000;
+}
+.pvp-count.show { display: block; animation: pvpCount 0.9s ease-out forwards; }
+.pvp-count.go { color: #ff8a5a; text-shadow: 0 0 10px rgba(255, 80, 40, 0.8), 0 3px 2px #000; }
+@keyframes pvpCount { 0% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); } }
+.pvp-score {
+  position: absolute; left: 50%; top: max(10px, env(safe-area-inset-top)); transform: translateX(-50%); text-align: center;
+  padding: 4px 18px 6px; background: linear-gradient(90deg, transparent, rgba(10, 8, 6, 0.85) 15%, rgba(10, 8, 6, 0.85) 85%, transparent);
+  color: var(--ink); font-size: 14px; letter-spacing: 0.05em; text-shadow: 0 1px 2px #000; display: none; white-space: nowrap;
+}
+.pvp-score.show { display: block; }
+.pvp-score .ptitle b { color: #ff9a80; }
+.pvp-score .ptitle i { display: inline-block; vertical-align: middle; width: 120px; height: 7px; margin-left: 8px; background: linear-gradient(90deg, #c03020 var(--hp), rgba(255, 255, 255, 0.12) var(--hp)); border: 1px solid #0a0806; }
+.pvp-score .pclock { font-size: 12px; color: var(--gold); }
+.pvp-score ol { list-style: none; margin: 3px 0 0; padding: 0; display: flex; gap: 12px; justify-content: center; font-family: var(--serif); font-size: 13px; }
+.pvp-score li { --tc: var(--ink-dim); border-bottom: 2px solid var(--tc); padding: 0 2px; }
+.pvp-score li.me b { color: var(--gold-hi); }
+.pvp-score li span { margin-left: 5px; color: var(--ink-dim); }
+.pvp-feed { position: absolute; right: calc(max(12px, env(safe-area-inset-right)) + 8px); top: 230px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-family: var(--serif); font-size: 14px; }
+.pvp-feed .pf { padding: 2px 10px; background: rgba(10, 8, 6, 0.75); color: var(--ink); text-shadow: 0 1px 2px #000; transition: opacity 0.6s; border-right: 2px solid #c04030; }
+.pvp-feed .pf b { color: #ff9a80; }
+.pvp-feed .pf.mine { border-right-color: var(--gold); }
+.pvp-feed .pf.out { opacity: 0; }
+.pvp-down { display: none; position: absolute; left: 50%; top: 56%; transform: translateX(-50%); font-size: 22px; color: #ffd8c8; text-shadow: 0 2px 4px #000; letter-spacing: 0.08em; }
+.pvp-down.show { display: block; }
+.pvp-result {
+  position: absolute; left: 50%; top: 26%; transform: translateX(-50%); min-width: min(440px, 88vw); padding: 16px 26px; text-align: center;
+  background: rgba(12, 9, 7, 0.92); border-top: 1px solid var(--gold); border-bottom: 1px solid var(--gold);
+  display: none;
+}
+.pvp-result.show { display: block; pointer-events: auto; animation: pvpIn 0.35s ease-out; }
+.pvp-result .rt { font-size: clamp(30px, 6vw, 54px); font-weight: 700; letter-spacing: 0.14em; color: #f6e2a6; text-shadow: 0 0 8px rgba(246, 210, 120, 0.45), 0 2px 2px #000; }
+.pvp-result.loss .rt { color: #c8b8a8; text-shadow: 0 2px 2px #000; }
+.pvp-result.draw .rt { color: #b8d0e8; }
+.pvp-result .rl { font-family: var(--serif); font-size: 16px; color: var(--ink); margin-top: 4px; }
+.is-touch .pvp-feed { top: 190px; }
+.menu .pvpsec { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line); }
+.menu .pvpsec h3 { font-family: var(--display); color: #ff9a80; letter-spacing: 0.08em; margin: 4px 0 6px; font-size: 18px; }
+.menu .pvpsec .prank b { color: var(--gold-hi); font-family: var(--display); }
+.menu .pvpsec ul.duels li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
+.menu .pvpsec ul.duels li span { flex: 1 1 auto; }
+.menu .pvpsec ul.duels .why { flex-basis: 100%; color: var(--ink-dim); font-size: 13px; }
+.menu .pvpsec .arena { margin: 12px 0; padding: 10px 12px; border-left: 2px solid #c04030; background: rgba(0, 0, 0, 0.25); }
+.menu .pvpsec .arena label { display: block; margin: 6px 0; }
+.menu .pvpsec label.war { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-family: var(--display); }
+/* On touch screens the top is taken by spell slots and buttons: the scoreboard sits low, between the stick and the buttons. */
+.is-touch .pvp-score { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); font-size: 12px; max-width: calc(100vw - 360px); }
+.is-touch .pvp-score ol { flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
+.is-touch .pvp-score .ptitle i { width: 80px; }
