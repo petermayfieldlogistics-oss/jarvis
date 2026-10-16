@@ -162,6 +162,8 @@ interface BuildOpts {
   noHead?: boolean;
   extras?: (k: Kit, j: Joints, d: Dims) => void;
   posture?: Partial<Profile>;
+  /** Drawn with the heroes' ink outline (bosses). */
+  ink?: boolean;
 }
 
 // ------------------------------------------------------------ geometry --
@@ -881,7 +883,7 @@ function makeRig(look: Omit<HumanoidLook, 'scale'>, o: BuildOpts = {}): Rig {
   if (look.featherWings !== undefined) buildFeatherWings(k, j, look.featherWings);
   else if (look.wings) buildWings(k, j, look.skin);
   o.extras?.(k, j, d);
-  k.finish(root, 2.6, !!look.garb);
+  k.finish(root, 2.6, !!look.garb || !!o.ink);
   // An orc's or a dragon's head is a size bigger than a man's (everything worn on it grows with it).
   const headScale = o.noHead ? 1 : look.tusks ? 1.08 : look.horns ? 1.05 : 1;
   j.head.scale.setScalar(headScale);
@@ -995,7 +997,7 @@ function buildBody(k: Kit, j: Joints, look: Omit<HumanoidLook, 'scale'>, d: Dims
   }
 
   // A hero's own clothes are cut for their class.
-  if (buildGarb(k, j, look, d)) return;
+  if (buildGarb(k, j, look, d, o.stone)) return;
 
   // Neck.
   k.add(loft([[1.5, 0.056 * Math.sqrt(B), 0.056, -0.008], [1.62, 0.05 * Math.sqrt(B), 0.05, 0], [1.71, 0.047, 0.047, 0.006]], 8), MATTE, skin, splitY(j.head, chest, 1.62, 0.04));
@@ -2155,8 +2157,8 @@ function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig
     // Sandstone giant shot through with storm-blue crystal.
     const sand = 0x9a8a6a;
     const crystal = 0x2f8cff;
-    return makeRig({ skin: sand, armor: color, cloth: 0x6a5a40, accent: 0x7a6a4a, build: 'heavy', head: 'helmet', cape: 0x5a4a30 }, {
-      bulk: 1.3, limb: 1.4, fist: 1.35, stone: true, noHead: true, posture: { heavy: 1, hunch: 0.08 },
+    return makeRig({ skin: sand, armor: color, cloth: 0x6a5a40, accent: 0x7a6a4a, build: 'heavy', head: 'helmet', cape: 0x5a4a30, garb: 'warrior' }, {
+      bulk: 1.3, limb: 1.4, fist: 1.35, stone: true, noHead: true, ink: true, posture: { heavy: 1, hunch: 0.08 },
       extras: (k, j, d) => {
         const H = j.head;
         k.add(loft([[1.58, 0.13, 0.14, 0.01], [1.68, 0.145, 0.15, 0.014], [1.8, 0.138, 0.146, 0.01], [1.87, 0.105, 0.11, 0], [1.9, 0.05, 0.05, 0]], 7, { top: true, bottom: true }), MATTE, shade(sand, 1.05), H);
@@ -2178,10 +2180,10 @@ function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig
         }
         shards(j.chest, [[0.1, 1.55, -0.2, -0.7, -0.3], [-0.08, 1.58, -0.22, -0.8, 0.35], [0.0, 1.45, -0.24, -1.0, 0], [0.16, 1.38, -0.2, -0.9, -0.6], [-0.15, 1.36, -0.2, -0.9, 0.6]], 1.2);
         // Storm core with cracks running out of it.
-        k.add(ball(10, 8), GLOW, 0x7ac8ff, j.chest, 0, 1.36, 0.19 * d.BZ, 0, 0, 0, 0.07, 0.07, 0.04);
+        k.add(ball(10, 8), GLOW, 0x7ac8ff, j.chest, 0, 1.36, 0.25 * d.BZ, 0, 0, 0, 0.075, 0.075, 0.045);
         for (let i = 0; i < 5; i++) {
           const a = (i / 5) * TAU + 0.3;
-          k.add(cube(0.012, 0.14, 0.01), GLOW, crystal, j.chest, Math.sin(a) * 0.1, 1.36 + Math.cos(a) * 0.1, 0.18 * d.BZ, -0.1, 0, -a);
+          k.add(cube(0.014, 0.15, 0.012), GLOW, crystal, j.chest, Math.sin(a) * 0.11, 1.36 + Math.cos(a) * 0.11, 0.24 * d.BZ, -0.1, 0, -a);
         }
       },
     });
@@ -2189,8 +2191,9 @@ function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig
   if (model === 'golem') {
     // Black rock with molten seams and huge fists, hunched.
     const lava = 0xff6a20;
-    return makeRig({ skin: color, armor: shade(color, 1.3), cloth: 0x1a1210, accent: 0x5a3a2a, build: 'heavy', head: 'helmet' }, {
-      bulk: 1.45, limb: 1.55, fist: 1.9, stone: true, noHead: true, posture: { heavy: 1, hunch: 0.38 },
+    // Warm basalt plates (lighter than the body, so the shape reads) over the black rock.
+    return makeRig({ skin: color, armor: mixHex(shade(color, 1.6), 0x6a5040, 0.45), cloth: 0x1a1210, accent: 0x5a3a2a, build: 'heavy', head: 'helmet', garb: 'warrior' }, {
+      bulk: 1.45, limb: 1.55, fist: 1.9, stone: true, noHead: true, ink: true, posture: { heavy: 1, hunch: 0.38 },
       extras: (k, j, d) => {
         const H = j.head;
         const dark = shade(color, 1.15);
@@ -2212,25 +2215,26 @@ function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig
           rocks(hand, [[s * d.SX, 0.9, 0.035, 0.1, 0.11, 0.105, 0.2], [s * d.SX * 1.06, 0.95, 0.06, 0.06, 0.05, 0.06, 1.2]]);
           rocks(leg, [[s * d.HX * 1.3, 0.75, 0.04, 0.1, 0.12, 0.09, 0.7]]);
           rocks(shin, [[s * d.HX * 1.1, 0.3, 0.05, 0.08, 0.1, 0.07, 0.1]]);
-          k.add(cube(0.014, 0.18, 0.01), GLOW, lava, fore, s * d.SX * 1.18, 1.1, 0.03, 0, 0, s * 0.2);
-          k.add(cube(0.014, 0.16, 0.01), GLOW, lava, arm, s * d.SX * 1.15, 1.33, 0.03, 0, 0, -s * 0.15);
-          k.add(cube(0.014, 0.2, 0.01), GLOW, lava, leg, s * d.HX * 1.55, 0.7, 0.06, 0, 0, s * 0.15);
-          k.add(cube(0.012, 0.16, 0.01), GLOW, lava, shin, s * d.HX * 0.6, 0.3, 0.085, 0, 0, s * 0.25);
+          // Molten seams, out over the plates.
+          k.add(cube(0.018, 0.18, 0.012), GLOW, lava, fore, s * d.SX * 1.3, 1.1, 0.05, 0, 0, s * 0.2);
+          k.add(cube(0.018, 0.16, 0.012), GLOW, lava, arm, s * d.SX * 1.32, 1.33, 0.05, 0, 0, -s * 0.15);
+          k.add(cube(0.018, 0.2, 0.012), GLOW, lava, leg, s * d.HX * 1.75, 0.7, 0.1, 0, 0, s * 0.15);
+          k.add(cube(0.016, 0.16, 0.012), GLOW, lava, shin, s * d.HX * 0.75, 0.3, 0.13, 0, 0, s * 0.25);
         }
         rocks(j.chest, [[0.12, 1.5, -0.2, 0.14, 0.12, 0.1, 0.5], [-0.14, 1.46, -0.2, 0.13, 0.11, 0.1, 1.3], [0.0, 1.32, -0.22, 0.12, 0.1, 0.08, 0.2], [0.0, 1.6, -0.14, 0.12, 0.09, 0.1, 2.0]]);
         // Molten seams across chest and back, a furnace core.
         const seams = [[0.08, 1.45, 0.6], [0.14, 1.32, -0.4], [0.05, 1.2, 0.3], [-0.1, 1.42, -0.7], [-0.13, 1.25, 0.5]];
-        for (const [x, y, rz] of seams) k.add(cube(0.016, 0.14, 0.012), GLOW, lava, j.chest, x * d.B, y, 0.185 * d.BZ, -0.1, 0, rz);
-        for (const [x, y, rz] of seams.slice(0, 3)) k.add(cube(0.016, 0.14, 0.012), GLOW, lava, j.chest, -x * d.B, y, -0.17 * d.BZ, 0.1, 0, rz);
-        k.add(ball(10, 8), GLOW, 0xffb050, j.chest, 0, 1.34, 0.19 * d.BZ, 0, 0, 0, 0.075, 0.075, 0.045);
-        k.add(new THREE.TorusGeometry(1, 0.2, 4, 12), GLOW, lava, j.chest, 0, 1.34, 0.19 * d.BZ, 0, 0, 0, 0.095, 0.095, 0.05);
+        for (const [x, y, rz] of seams) k.add(cube(0.018, 0.15, 0.014), GLOW, lava, j.chest, x * d.B, y, 0.235 * d.BZ, -0.1, 0, rz);
+        for (const [x, y, rz] of seams.slice(0, 3)) k.add(cube(0.018, 0.15, 0.014), GLOW, lava, j.chest, -x * d.B, y, -0.215 * d.BZ, 0.1, 0, rz);
+        k.add(ball(10, 8), GLOW, 0xffb050, j.chest, 0, 1.34, 0.25 * d.BZ, 0, 0, 0, 0.08, 0.08, 0.05);
+        k.add(new THREE.TorusGeometry(1, 0.2, 4, 12), GLOW, lava, j.chest, 0, 1.34, 0.25 * d.BZ, 0, 0, 0, 0.1, 0.1, 0.05);
       },
     });
   }
   // Champion of Mars: ornate bronze, gold trim, red cloth, crested helm.
   const bronze = 0x8a5a2a;
   const gold = 0xd8b060;
-  return makeRig({ skin: 0xb08a6a, armor: bronze, cloth: color, accent: gold, build: 'heavy', head: 'plume', cape: 0x7a1410 }, {
+  return makeRig({ skin: 0xb08a6a, armor: bronze, cloth: color, accent: gold, build: 'heavy', head: 'plume', cape: 0x7a1410, garb: 'warrior' }, {
     bulk: 1.15, limb: 1.1, noHead: true, posture: { heavy: 0.6 },
     extras: (k, j, d) => {
       const H = j.head;
@@ -2403,12 +2407,13 @@ function shaven(look: LookIn): LookIn {
 }
 
 /** A hero's clothes, cut for their class (false: not a hero; buildBody builds them). */
-function buildGarb(k: Kit, j: Joints, look: LookIn, d: Dims): boolean {
+function buildGarb(k: Kit, j: Joints, look: LookIn, d: Dims, stone = false): boolean {
   const garb = look.garb;
   if (!garb) return false;
   switch (look.build) {
     case 'heavy':
-      buildPlate(k, j, look, d, garb === 'warrior');
+      // A stone giant's plate is plain: no tabard, sunburst or fur.
+      buildPlate(k, j, look, d, garb === 'warrior' && !stone, stone);
       return true;
     case 'gi':
       if (garb !== 'monk') return false;
@@ -2432,7 +2437,9 @@ function buildGarb(k: Kit, j: Joints, look: LookIn, d: Dims): boolean {
  * arms and flared gauntlets, tassets, poleyns and greaves. A warrior's own adds the
  * tattered tabard and scarf, a fur mantle over the shoulders and a sunburst pauldron.
  */
-function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) {
+function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean, stone = false) {
+  // A stone giant's plates are carved, not forged: matte.
+  const PLATE = stone ? MATTE : METAL;
   const { B, BZ, L, F, SX, HX } = d;
   const { skin, armor, cloth, accent } = look;
   const R = (rings: Ring[]) => bodyRings(d, rings);
@@ -2448,16 +2455,16 @@ function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) 
 
   // Gorget over a mail collar.
   k.add(loft([[1.5, 0.15 * B, 0.112 * BZ, -0.006], [1.6, 0.098, 0.086, -0.002], [1.65, 0.07, 0.068, 0.004]], 10), MATTE, mail, j.chest);
-  k.add(facet(lofted([[1.515, 0.16 * B, 0.118 * BZ, -0.004], [1.56, 0.135 * B, 0.104 * BZ, -0.004], [1.615, 0.092, 0.084, 0.0]], 12)), METAL, lo, j.chest);
+  k.add(facet(lofted([[1.515, 0.16 * B, 0.118 * BZ, -0.004], [1.56, 0.135 * B, 0.104 * BZ, -0.004], [1.615, 0.092, 0.084, 0.0]], 12)), PLATE, lo, j.chest);
 
   // Breastplate with a keel down the front, over three belly lames and a belt.
-  k.add(facet(lofted(R([[1.1, 0.19, 0.134, 0.012], [1.18, 0.2, 0.142, 0.02], [1.27, 0.218, 0.154, 0.03], [1.36, 0.234, 0.16, 0.034], [1.43, 0.236, 0.152, 0.028], [1.49, 0.224, 0.136, 0.014], [1.54, 0.192, 0.116, 0.002], [1.58, 0.135, 0.094, -0.004]]), 16, { shape: keel(1, 5, 0.09) })), METAL, armor, tw);
+  k.add(facet(lofted(R([[1.1, 0.19, 0.134, 0.012], [1.18, 0.2, 0.142, 0.02], [1.27, 0.218, 0.154, 0.03], [1.36, 0.234, 0.16, 0.034], [1.43, 0.236, 0.152, 0.028], [1.49, 0.224, 0.136, 0.014], [1.54, 0.192, 0.116, 0.002], [1.58, 0.135, 0.094, -0.004]]), 16, { shape: keel(1, 5, 0.09) })), PLATE, armor, tw);
   for (let i = 0; i < 3; i++) {
     const y = 0.975 + i * 0.048;
-    k.add(facet(lofted(R([[y, 0.2 + 0.006 * (2 - i), 0.144 + 0.004 * (2 - i), 0.01], [y + 0.058, 0.19 + 0.006 * (2 - i), 0.136 + 0.004 * (2 - i), 0.012]]), 16, { shape: keel(0, 1, 0.06) })), METAL, i === 1 ? hi : armor, tw);
+    k.add(facet(lofted(R([[y, 0.2 + 0.006 * (2 - i), 0.144 + 0.004 * (2 - i), 0.01], [y + 0.058, 0.19 + 0.006 * (2 - i), 0.136 + 0.004 * (2 - i), 0.012]]), 16, { shape: keel(0, 1, 0.06) })), PLATE, i === 1 ? hi : armor, tw);
   }
   k.add(facet(lofted(R([[0.945, 0.212, 0.152, 0.008], [0.995, 0.21, 0.15, 0.01]]), 16)), MATTE, belt, j.hips);
-  k.add(cube(0.072, 0.062, 0.02), METAL, accent, j.hips, 0, 0.97, 0.16 * BZ);
+  k.add(cube(0.072, 0.062, 0.02), PLATE, accent, j.hips, 0, 0.97, 0.16 * BZ);
   k.add(cube(0.04, 0.03, 0.02), MATTE, belt, j.hips, 0, 0.97, 0.164 * BZ);
   k.add(cube(0.03, 0.2, 0.008), MATTE, belt, skirt(j.hips, j.legL, j.legR, 0.95, 0.7, 0.4), 0.05, 0.86, 0.166 * BZ, -0.04, 0, 0.08);
 
@@ -2470,8 +2477,8 @@ function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) 
       const y0 = 0.975 - row * 0.095;
       const arc: [number, number] = s > 0 ? [0.14, 1.45] : [-1.59, 1.45];
       const g = lofted(R([[y0 - 0.16, 0.236 + row * 0.014, 0.176 + row * 0.012, 0.0], [y0, 0.21 + row * 0.012, 0.152 + row * 0.01, 0.006]]), 6, { arc });
-      k.add(facet(lining(g)), METAL, lo, ts);
-      k.add(facet(g), METAL, row ? armor : hi, ts);
+      k.add(facet(lining(g)), PLATE, lo, ts);
+      k.add(facet(g), PLATE, row ? armor : hi, ts);
     }
   }
 
@@ -2499,23 +2506,23 @@ function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) 
     const px = s * SX * 1.08;
     const tilt = -s * 0.34;
     const rx = 0.19 * B, ry = 0.15, rz = 0.178 * BZ;
-    k.add(facet(dome(12, 5)), METAL, armor, pw, px, 1.5, 0, 0, 0, tilt, rx, ry, rz);
-    k.add(new THREE.TorusGeometry(1, 0.07, 3, 13).rotateX(PI / 2), METAL, hi, pw, px, 1.5, 0, 0, 0, tilt, rx * 1.01, 0.12, rz * 1.01);
+    k.add(facet(dome(12, 5)), PLATE, armor, pw, px, 1.5, 0, 0, 0, tilt, rx, ry, rz);
+    k.add(new THREE.TorusGeometry(1, 0.07, 3, 13).rotateX(PI / 2), PLATE, hi, pw, px, 1.5, 0, 0, 0, tilt, rx * 1.01, 0.12, rz * 1.01);
     for (let i = 0; i < 2; i++) {
       const g = lofted([[-0.05 - i * 0.048, rx + 0.006 + i * 0.002, rz + 0.006 + i * 0.002], [-0.002 - i * 0.048, rx - 0.004, rz - 0.004]], 8, { arc: [s * PI / 2 - 1.55, 3.1] });
-      k.add(facet(lining(g)), METAL, lo, pw, px, 1.5, 0, 0, 0, tilt - s * 0.12 * (i + 1));
-      k.add(facet(g), METAL, i ? lo : armor, pw, px, 1.5, 0, 0, 0, tilt - s * 0.12 * (i + 1));
+      k.add(facet(lining(g)), PLATE, lo, pw, px, 1.5, 0, 0, 0, tilt - s * 0.12 * (i + 1));
+      k.add(facet(g), PLATE, i ? lo : armor, pw, px, 1.5, 0, 0, 0, tilt - s * 0.12 * (i + 1));
     }
     const ax = px - Math.sin(tilt) * ry, ay = 1.5 + Math.cos(tilt) * ry;
     if (warrior && s > 0) {
       // A raised boss in a ring of rays.
-      k.add(facet(dome(8, 3)), METAL, accent, pw, ax, ay - 0.012, 0, 0, 0, tilt, 0.032, 0.022, 0.032);
+      k.add(facet(dome(8, 3)), PLATE, accent, pw, ax, ay - 0.012, 0, 0, 0, tilt, 0.032, 0.022, 0.032);
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * TAU + 0.3;
         const r = 0.09;
         const lx = Math.cos(a) * r * 0.75, lz = Math.sin(a) * r * 0.75;
         const ly = Math.sqrt(Math.max(0, 1 - (lx / rx) ** 2 - (lz / rz) ** 2)) * ry - 0.004;
-        k.add(cube(0.012, 0.008, 0.07), METAL, hi, pw, px + lx * Math.cos(tilt) - ly * Math.sin(tilt), 1.5 + lx * Math.sin(tilt) + ly * Math.cos(tilt), lz, 0, -a + PI / 2, tilt);
+        k.add(cube(0.012, 0.008, 0.07), PLATE, hi, pw, px + lx * Math.cos(tilt) - ly * Math.sin(tilt), 1.5 + lx * Math.sin(tilt) + ly * Math.cos(tilt), lz, 0, -a + PI / 2, tilt);
       }
     }
     if (orc) {
@@ -2523,7 +2530,7 @@ function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) 
       for (const [u, v, len] of [[-0.35, 0.0, 0.11], [0.15, 0.25, 0.13], [0.15, -0.3, 0.1]]) {
         const lx = u * rx, lz = v * rz;
         const ly = Math.sqrt(Math.max(0, 1 - (lx / rx) ** 2 - (lz / rz) ** 2)) * ry;
-        k.add(spike(0.02, len, 5), METAL, hi, pw, px + lx * Math.cos(tilt) - ly * Math.sin(tilt), 1.5 + lx * Math.sin(tilt) + ly * Math.cos(tilt) + len * 0.4, lz, 0, 0, tilt * 1.6);
+        k.add(spike(0.02, len, 5), PLATE, hi, pw, px + lx * Math.cos(tilt) - ly * Math.sin(tilt), 1.5 + lx * Math.sin(tilt) + ly * Math.cos(tilt) + len * 0.4, lz, 0, 0, tilt * 1.6);
       }
     }
   }
@@ -2568,13 +2575,13 @@ function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) 
     const elbow = splitY(arm, fore, 1.205, 0.08);
     k.add(loft([[1.13, 0.05 * L, 0.048 * L, 0.004], [1.205, 0.05 * L, 0.048 * L], [1.32, 0.056 * L, 0.054 * L], [1.44, 0.065 * L, 0.061 * L], [1.51, 0.06 * L, 0.056 * L], [1.555, 0.03, 0.03]], 8, { top: true }).translate(x, 0, 0), MATTE, bare ? skin : mail, aw);
     if (bare && torn) seamAt(k, arm, x, 1.36, 0.056 * L, skin);
-    if (!bare) k.add(facet(lofted([[1.25, 0.061 * L, 0.059 * L], [1.33, 0.067 * L, 0.065 * L], [1.415, 0.069 * L, 0.067 * L]], 10, { shape: (a) => ridgeAt(a, s * PI / 2, 0.6, 0.1) }).translate(x, 0, 0)), METAL, armor, arm);
-    k.add(facet(ball(7, 5)), METAL, hi, elbow, x, 1.205, -0.012, 0, 0, 0, 0.058 * L, 0.054 * L, 0.06 * L);
-    k.add(facet(dome(8, 3)), METAL, armor, elbow, x + s * 0.05 * L, 1.205, -0.008, 0, 0, -s * PI / 2, 0.064, 0.026, 0.07);
-    k.add(facet(lofted([[0.985, 0.05 * L, 0.047 * L, 0.004], [1.07, 0.056 * L, 0.053 * L, 0.006], [1.165, 0.061 * L, 0.058 * L, 0.004]], 10, { shape: (a) => ridgeAt(a, s * PI / 2, 0.6, 0.14) }).translate(x, 0, 0)), METAL, armor, fore);
-    k.add(facet(lofted([[0.925, 0.054 * L, 0.052 * L, 0.014], [0.96, 0.062 * L, 0.06 * L, 0.012], [1.005, 0.074 * L, 0.071 * L, 0.006]], 10)), METAL, hi, fore, x);
-    garbFist(k, x, hand, lo, METAL, F, 1.08);
-    k.add(cube(0.016, 0.046 * F, 0.06 * F), METAL, hi, hand, x + s * 0.046 * F, 0.905, 0.03);
+    if (!bare) k.add(facet(lofted([[1.25, 0.061 * L, 0.059 * L], [1.33, 0.067 * L, 0.065 * L], [1.415, 0.069 * L, 0.067 * L]], 10, { shape: (a) => ridgeAt(a, s * PI / 2, 0.6, 0.1) }).translate(x, 0, 0)), PLATE, armor, arm);
+    k.add(facet(ball(7, 5)), PLATE, hi, elbow, x, 1.205, -0.012, 0, 0, 0, 0.058 * L, 0.054 * L, 0.06 * L);
+    k.add(facet(dome(8, 3)), PLATE, armor, elbow, x + s * 0.05 * L, 1.205, -0.008, 0, 0, -s * PI / 2, 0.064, 0.026, 0.07);
+    k.add(facet(lofted([[0.985, 0.05 * L, 0.047 * L, 0.004], [1.07, 0.056 * L, 0.053 * L, 0.006], [1.165, 0.061 * L, 0.058 * L, 0.004]], 10, { shape: (a) => ridgeAt(a, s * PI / 2, 0.6, 0.14) }).translate(x, 0, 0)), PLATE, armor, fore);
+    k.add(facet(lofted([[0.925, 0.054 * L, 0.052 * L, 0.014], [0.96, 0.062 * L, 0.06 * L, 0.012], [1.005, 0.074 * L, 0.071 * L, 0.006]], 10)), PLATE, hi, fore, x);
+    garbFist(k, x, hand, lo, PLATE, F, 1.08);
+    k.add(cube(0.016, 0.046 * F, 0.06 * F), PLATE, hi, hand, x + s * 0.046 * F, 0.905, 0.03);
   }
 
   // Legs: mail chausses, ridged cuisses, winged poleyns, greaves and laminated sabatons.
@@ -2582,12 +2589,12 @@ function buildPlate(k: Kit, j: Joints, look: LookIn, d: Dims, warrior: boolean) 
     const x = s * HX;
     const knee = splitY(leg, shin, 0.5, 0.06);
     k.add(loft(LEG_RINGS(L), 8).translate(x, 0, 0), MATTE, mail, legSkin(j.hips, leg, shin, foot));
-    k.add(facet(lofted([[0.58, 0.08 * L, 0.084 * L, 0.01], [0.71, 0.091 * L, 0.096 * L, 0.01], [0.85, 0.098 * L, 0.102 * L, 0.004]], 10, { shape: (a) => ridgeAt(a, 0, 0.6, 0.1) }).translate(x, 0, 0)), METAL, armor, leg);
-    k.add(facet(ball(7, 5)), METAL, hi, knee, x, 0.505, 0.045, 0, 0, 0, 0.07 * L, 0.066 * L, 0.06 * L);
-    k.add(facet(dome(8, 3)), METAL, armor, knee, x + s * 0.05 * L, 0.5, 0.02, 0, 0, -s * PI / 2, 0.062, 0.024, 0.066);
-    k.add(facet(lofted([[0.1, 0.06 * L, 0.066 * L, 0.006], [0.24, 0.073 * L, 0.081 * L, 0.0], [0.36, 0.075 * L, 0.081 * L, 0.002], [0.46, 0.068 * L, 0.072 * L, 0.01]], 10, { shape: (a) => ridgeAt(a, 0, 0.6, 0.12) }).translate(x, 0, 0)), METAL, armor, shin);
-    garbBoot(k, x, foot, lo, METAL, L, { flat: true, s: 1.12 });
-    for (let i = 0; i < 2; i++) k.add(facet(cube(0.106 * L, 0.014, 0.03)), METAL, i ? armor : hi, foot, x, 0.094 - i * 0.016, 0.085 + i * 0.045, 0.25 + i * 0.15);
+    k.add(facet(lofted([[0.58, 0.08 * L, 0.084 * L, 0.01], [0.71, 0.091 * L, 0.096 * L, 0.01], [0.85, 0.098 * L, 0.102 * L, 0.004]], 10, { shape: (a) => ridgeAt(a, 0, 0.6, 0.1) }).translate(x, 0, 0)), PLATE, armor, leg);
+    k.add(facet(ball(7, 5)), PLATE, hi, knee, x, 0.505, 0.045, 0, 0, 0, 0.07 * L, 0.066 * L, 0.06 * L);
+    k.add(facet(dome(8, 3)), PLATE, armor, knee, x + s * 0.05 * L, 0.5, 0.02, 0, 0, -s * PI / 2, 0.062, 0.024, 0.066);
+    k.add(facet(lofted([[0.1, 0.06 * L, 0.066 * L, 0.006], [0.24, 0.073 * L, 0.081 * L, 0.0], [0.36, 0.075 * L, 0.081 * L, 0.002], [0.46, 0.068 * L, 0.072 * L, 0.01]], 10, { shape: (a) => ridgeAt(a, 0, 0.6, 0.12) }).translate(x, 0, 0)), PLATE, armor, shin);
+    garbBoot(k, x, foot, lo, PLATE, L, { flat: true, s: 1.12 });
+    for (let i = 0; i < 2; i++) k.add(facet(cube(0.106 * L, 0.014, 0.03)), PLATE, i ? armor : hi, foot, x, 0.094 - i * 0.016, 0.085 + i * 0.045, 0.25 + i * 0.15);
   }
 }
 
