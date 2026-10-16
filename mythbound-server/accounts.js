@@ -19,6 +19,21 @@ const USERNAME = /^[A-Za-z0-9_]{3,16}$/;
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const SCRYPT = { N: 16384, r: 8, p: 1 };
 
+/**
+ * Admins (builder mode and the admin panel): these usernames, but only the
+ * accounts that already existed when admin was handed out, so nobody can take
+ * an unclaimed name later and become admin. ADMINS and ADMIN_BEFORE (a date)
+ * in the server's environment change them.
+ */
+const ADMINS = (process.env.ADMINS ?? 'R88,Rock').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const ADMIN_BEFORE = process.env.ADMIN_BEFORE ? Date.parse(process.env.ADMIN_BEFORE) : Date.UTC(2026, 9, 17);
+/** A build's link id: 8 letters and digits (about 40 random bits). */
+const BUILD_ID = /^[a-z0-9]{8}$/;
+const BUILD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+const MAX_BUILD = 300 * 1024;
+const MAX_BUILDS = 50;
+const MAX_EDITS = 4000;
+
 async function hashSecret(secret) {
   const salt = randomBytes(16);
   const key = /** @type {Buffer} */ (await scrypt(secret, salt, 32, SCRYPT));
@@ -103,7 +118,41 @@ class Limiter {
  * the request.
  * @param {import('./store.js').Store} store
  */
-export function accountsApi(store, { now = () => Date.now() } = {}) {
+export function accountsApi(store, { now = () => Date.now(), admins = ADMINS, adminBefore = ADMIN_BEFORE } = {}) {
+  const adminSet = new Set(admins.map((a) => a.toLowerCase()));
+  /** @param {import('./store.js').User} user */
+  const isAdmin = (user) => adminSet.has(user.username.toLowerCase()) && Number(user.createdAt) < adminBefore;
+
+  async function admin(req) {
+    const a = await auth(req);
+    if (!isAdmin(a.user)) throw new HttpError(403, 'not-admin', 'Only admins can do that.');
+    return a;
+  }
+
+  /** A build's edits: a list of small flat objects (the game checks each one again when it loads them). */
+  function cleanBuild(body) {
+    const name = String(body.name ?? 'My build').trim().slice(0, 40) || 'My build';
+    const edits = Array.isArray(body.edits) ? body.edits : null;
+    if (!edits || edits.length > MAX_EDITS) throw new HttpError(400, 'bad-build', 'A build is a list of up to 4000 changes.');
+    const clean = edits.map((e) => {
+      const o = {};
+      if (!e || typeof e !== 'object') return o;
+      for (const [k, v] of Object.entries(e).slice(0, 12)) {
+        if (typeof v === 'number' && Number.isFinite(v)) o[String(k).slice(0, 12)] = Math.round(v * 1000) / 1000;
+        else if (typeof v === 'string') o[String(k).slice(0, 12)] = v.slice(0, 32);
+      }
+      return o;
+    });
+    const data = JSON.stringify(clean);
+    if (data.length > MAX_BUILD) throw new HttpError(413, 'too-big', 'This build is too large.');
+    return { name, data };
+  }
+
+  const newBuildId = () => Array.from({ length: 8 }, () => BUILD_ALPHABET[randomInt(BUILD_ALPHABET.length)]).join('');
+  const buildId = (s) => {
+    if (!BUILD_ID.test(String(s))) throw new HttpError(404, 'no-build', 'There is no such build.');
+    return String(s);
+  };
   const perIp = new Limiter(240, 60_000);
   const authPerIp = new Limiter(30, 10 * 60_000);
   // Families and friends often share one address: room for a few accounts each.
@@ -144,9 +193,9 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
       if (password.length < 6 || password.length > 128) throw new HttpError(400, 'password', 'Passwords need at least 6 characters.');
       if (!signupPerIp.hit(ip, now())) throw new HttpError(429, 'slow-down', 'Too many new accounts from here. Try again later.');
       const recovery = newRecoveryCode();
-      const id = await store.createUser({ username, passHash: await hashSecret(password), recoveryHash: hashCode(normCode(recovery)) });
+      const id = await store.createUser({ username, passHash: await hashSecret(password), recoveryHash: hashCode(normCode(recovery)), createdAt: now() });
       if (id === null) throw new HttpError(409, 'taken', 'That username is taken. If you just made it, use Log in instead; otherwise try another name.');
-      return [201, { token: await newSession(id), username, recovery }];
+      return [201, { token: await newSession(id), username, recovery, admin: isAdmin({ username, createdAt: now() }) }];
     },
 
     async 'POST /api/login'(req, body) {
@@ -160,7 +209,7 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
         throw new HttpError(401, 'wrong', 'Wrong username or password.');
       }
       failsPerUser.clear(key);
-      return [200, { token: await newSession(user.id), username: user.username }];
+      return [200, { token: await newSession(user.id), username: user.username, admin: isAdmin(user) }];
     },
 
     async 'POST /api/recover'(req, body) {
@@ -190,7 +239,7 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
 
     async 'GET /api/me'(req) {
       const { user } = await auth(req);
-      return [200, { username: user.username, profile: user.profile ?? {} }];
+      return [200, { username: user.username, profile: user.profile ?? {}, admin: isAdmin(user) }];
     },
 
     async 'PUT /api/me'(req, body) {
@@ -228,6 +277,46 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
     async 'DELETE /api/slot'(req, body, ip, n) {
       const { user } = await auth(req);
       await store.deleteSlot(user.id, slotNumber(n));
+      return [200, { ok: true }];
+    },
+
+    // Builder mode's saved worlds: anyone with the link can play one; admins make and save them.
+    async 'GET /api/build'(req, body, ip, id) {
+      const b = await store.getBuild(buildId(id));
+      if (!b) throw new HttpError(404, 'no-build', 'There is no such build.');
+      return [200, { id: b.id, name: b.name, owner: b.owner, edits: JSON.parse(b.data), updatedAt: b.updatedAt }];
+    },
+
+    async 'GET /api/builds'(req) {
+      const { user } = await admin(req);
+      return [200, { builds: await store.listBuilds(user.id) }];
+    },
+
+    async 'POST /api/builds'(req, body) {
+      const { user } = await admin(req);
+      if ((await store.listBuilds(user.id)).length >= MAX_BUILDS) throw new HttpError(409, 'full', `You have ${MAX_BUILDS} builds already. Delete one first.`);
+      const { name, data } = cleanBuild(body);
+      for (let tries = 0; tries < 5; tries++) {
+        const id = newBuildId();
+        if (await store.createBuild({ id, ownerId: user.id, name, data, now: now() })) return [201, { id, name, updatedAt: now() }];
+      }
+      throw new HttpError(503, 'unavailable', 'Could not save the build. Try again.');
+    },
+
+    async 'PUT /api/build'(req, body, ip, id) {
+      const { user } = await admin(req);
+      const b = await store.getBuild(buildId(id));
+      if (!b) throw new HttpError(404, 'no-build', 'There is no such build.');
+      if (b.ownerId !== user.id) throw new HttpError(403, 'not-yours', 'This build belongs to someone else. Save it as a new build instead.');
+      const { name, data } = cleanBuild(body);
+      return [200, { id: b.id, name, updatedAt: await store.putBuild(b.id, name, data, now()) }];
+    },
+
+    async 'DELETE /api/build'(req, body, ip, id) {
+      const { user } = await admin(req);
+      const b = await store.getBuild(buildId(id));
+      if (b && b.ownerId !== user.id) throw new HttpError(403, 'not-yours', 'This build belongs to someone else.');
+      if (b) await store.deleteBuild(b.id);
       return [200, { ok: true }];
     },
   };
@@ -287,11 +376,12 @@ export function accountsApi(store, { now = () => Date.now() } = {}) {
     try {
       if (!perIp.hit(ip, now())) throw new HttpError(429, 'slow-down', 'Too many requests. Slow down a little.');
       const slot = /^\/api\/slots\/(\d+)$/.exec(path);
-      const route = routes[slot ? `${req.method} /api/slot` : `${req.method} ${path}`];
+      const build = /^\/api\/builds\/([^/]+)$/.exec(path);
+      const route = routes[slot ? `${req.method} /api/slot` : build ? `${req.method} /api/build` : `${req.method} ${path}`];
       if (!route) throw new HttpError(404, 'not-found', 'Not found.');
       if (/^\/api\/(signup|login|recover)$/.test(path) && !authPerIp.hit(ip, now())) throw new HttpError(429, 'slow-down', 'Too many tries. Wait a few minutes.');
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await readBody(req);
-      const [status, out] = await route(req, body, ip, slot?.[1]);
+      const [status, out] = await route(req, body, ip, slot?.[1] ?? build?.[1]);
       send(res, status, out);
       log(status, out?.error);
     } catch (err) {

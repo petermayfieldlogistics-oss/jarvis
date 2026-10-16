@@ -11,6 +11,23 @@ import { detailTexture, groundTile, heightAt, inLava, LAVA_LEVEL, normalAt, POOL
 
 export type Quality = 'low' | 'medium' | 'high';
 
+/** What builder mode can place: building blocks, props of the town, and the wild's trees and rocks. */
+export type PropKind =
+  | 'stone-block' | 'wood-block' | 'wall' | 'floor' | 'pillar' | 'stairs' | 'roof' | 'tower' | 'arch'
+  | 'house' | 'big-house' | 'barrel' | 'crate' | 'banner' | 'fence' | 'brazier' | 'lamp' | 'statue' | 'well' | 'tent' | 'campfire'
+  | PlantKind;
+
+/** A plant out in the wild that builder mode can pick up (its tile's mesh and its place in it). */
+export interface PlantHit {
+  mesh: THREE.InstancedMesh;
+  index: number;
+  kind: PlantKind;
+  x: number;
+  z: number;
+  scale: number;
+  turn: number;
+}
+
 export interface Collider {
   x: number;
   z: number;
@@ -57,8 +74,10 @@ class Batcher {
   private p = new THREE.Vector3();
   private s = new THREE.Vector3();
   private c = new THREE.Color();
-  readonly matte = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 });
-  readonly metal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.65 });
+  constructor(
+    readonly matte = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }),
+    readonly metal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.65 }),
+  ) {}
 
   private place(geo: THREE.BufferGeometry, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number, rx: number, rz: number) {
     this.e.set(rx, ry, rz);
@@ -127,6 +146,13 @@ const ROOF = (() => {
 })();
 
 const TAU = Math.PI * 2;
+/** Where a wild plant grew, to a tenth of a metre (the same on every player's machine). */
+const spotKey = (x: number, z: number) => `${Math.round(x * 10)},${Math.round(z * 10)}`;
+const PLANT_KINDS: string[] = ['pine', 'oak', 'birch', 'bush', 'grass', 'flowers', 'reeds', 'toadstool', 'mushroom', 'crystal', 'dead', 'ashtree', 'cactus', 'palm', 'rock'];
+/** How a placed plant looks (the wild ones take their colours from their land). */
+const PLANT_TINT: Partial<Record<PlantKind, number>> = {
+  oak: 0x5a6a30, birch: 0xb8b848, pine: 0xd8e8d0, bush: 0x5a6232, palm: 0x5a9a34, flowers: 0xffd040, toadstool: 0xb83a2a, mushroom: 0x60c0ff, crystal: 0xa070ff, rock: 0x8a8478,
+};
 const hash = (n: number) => {
   const s = Math.sin(n * 127.1) * 43758.5453;
   return s - Math.floor(s);
@@ -406,7 +432,7 @@ const GRASS: Partial<Record<ZoneId, number>> = {
   peaks: 0x7a8a62, elderwood: 0x3e5a28, jungle: 0x3a7a24, ocean: 0x8a9a54,
 };
 
-type PlantKind = 'pine' | 'oak' | 'birch' | 'bush' | 'grass' | 'flowers' | 'reeds' | 'toadstool' | 'mushroom' | 'crystal' | 'dead' | 'ashtree' | 'cactus' | 'palm' | 'rock';
+export type PlantKind = 'pine' | 'oak' | 'birch' | 'bush' | 'grass' | 'flowers' | 'reeds' | 'toadstool' | 'mushroom' | 'crystal' | 'dead' | 'ashtree' | 'cactus' | 'palm' | 'rock';
 const SMALL: PlantKind[] = ['grass', 'flowers', 'reeds', 'toadstool', 'mushroom'];
 const TREES: PlantKind[] = ['pine', 'oak', 'birch', 'dead', 'ashtree', 'cactus', 'palm'];
 
@@ -898,6 +924,13 @@ export class World {
   private animated: { obj: THREE.Object3D; kind: 'spin' | 'bob' | 'flicker'; base: number }[] = [];
   private batch = new Batcher();
   private rand = mulberry32(42);
+  /** Building a prop for builder mode: at the origin, with no collider, smoke or light of its own. */
+  private propMode = false;
+  /** Wild plants builder mode has taken away (by where they grew), so their tiles leave them out. */
+  private cuts = new Set<string>();
+  /** The wild plants' colliders, by where they grew (so a cut plant stops blocking). */
+  private plantCol = new Map<string, Collider>();
+  private cutKept = new Map<string, { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[]>();
   private detail = detailTexture();
   private time = { value: 0 };
   private wind = { value: new THREE.Vector2(0.2, 0.1) };
@@ -982,8 +1015,15 @@ export class World {
   // ------------------------------------------------------------ colliders --
 
   addCollider(x: number, z: number, r: number, top = heightAt(x, z) + 8) {
+    if (this.propMode) return { x, z, r, top };
     const c = { x, z, r, top };
     this.colliders.push(c);
+    this.gridAdd(c);
+    return c;
+  }
+
+  private gridAdd(c: Collider) {
+    const { x, z, r } = c;
     const cx0 = Math.floor((x - r) / 16), cx1 = Math.floor((x + r) / 16);
     const cz0 = Math.floor((z - r) / 16), cz1 = Math.floor((z + r) / 16);
     for (let cx = cx0; cx <= cx1; cx++)
@@ -993,6 +1033,16 @@ export class World {
         if (!list) this.grid.set(k, (list = []));
         list.push(c);
       }
+  }
+
+  /** Takes a collider away again (a placed prop moved or deleted, a wild plant cut). */
+  removeCollider(c: Collider) {
+    const i = this.colliders.indexOf(c);
+    if (i >= 0) this.colliders.splice(i, 1);
+    for (const list of this.grid.values()) {
+      const k = list.indexOf(c);
+      if (k >= 0) list.splice(k, 1);
+    }
   }
 
   /** Pushes a circle out of static colliders. */
@@ -1062,10 +1112,213 @@ export class World {
     return false;
   }
 
+  // ---------------------------------------------------------- builder mode --
+
+  /** Builds one prop as a model of its own, its foot at the origin (for builder mode). */
+  makeProp(kind: PropKind): THREE.Group {
+    const g = new THREE.Group();
+    if (PLANT_KINDS.includes(kind)) {
+      g.add(this.makePlant(kind as PlantKind));
+      return g;
+    }
+    const saved = this.batch, savedRand = this.rand;
+    this.batch = new Batcher(saved.matte, saved.metal);
+    this.rand = mulberry32(kind.length * 977 + kind.charCodeAt(0));
+    this.propMode = true;
+    try {
+      this.paintProp(kind);
+      this.batch.build(g, this.quality !== 'low');
+    } finally {
+      this.propMode = false;
+      this.rand = savedRand;
+      this.batch = saved;
+    }
+    return g;
+  }
+
+  /** One plant, drawn the way the wild ones are (they sway in the wind). */
+  private makePlant(kind: PlantKind): THREE.Object3D {
+    const { geos, plantMat, rockMat } = this.plants;
+    const mesh = new THREE.InstancedMesh(kind === 'rock' ? ROCK : geos[kind as Exclude<PlantKind, 'rock'>], kind === 'rock' ? rockMat : plantMat, 1);
+    mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, kind === 'rock' ? -0.3 : -0.1, 0));
+    mesh.setColorAt(0, new THREE.Color(PLANT_TINT[kind] ?? 0xffffff));
+    mesh.computeBoundingSphere();
+    mesh.castShadow = this.quality !== 'low';
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  /** The building blocks and props builder mode places (painted like the town's own). */
+  private paintProp(kind: PropKind) {
+    const b = this.batch;
+    const stone = 0x7a746a, dark = 0x5a554c, wood = 0x7a5a36, timber = 0x3e2a1a;
+    switch (kind) {
+      case 'house':
+        return this.house(0, 0, 0);
+      case 'big-house':
+        return this.house(0, 0, 0, 9, 7, 4.8);
+      case 'barrel':
+        return this.barrel(0, 0);
+      case 'crate':
+        return this.crate(0, 0, 0, 1);
+      case 'banner':
+        return this.banner(0, 0, 0);
+      case 'fence':
+        return this.fence(-2.4, 0, 2.4, 0);
+      case 'brazier':
+        return this.brazier(0, 0);
+      case 'stone-block':
+        b.paint(BOX, stone, 0, 1, 0, 0, 2, 2, 2);
+        for (const y of [0.02, 1.98]) b.paint(BOX, dark, 0, y, 0, 0, 2.04, 0.08, 2.04);
+        return;
+      case 'wood-block':
+        b.paint(BOX, wood, 0, 1, 0, 0, 2, 2, 2);
+        for (const y of [0.5, 1.0, 1.5]) b.paint(BOX, timber, 0, y, 0, 0, 2.03, 0.05, 2.03);
+        for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.paint(BOX, timber, x * 0.97, 1, z * 0.97, 0, 0.14, 2.02, 0.14);
+        return;
+      case 'wall':
+        b.paint(BOX, stone, 0, 1.5, 0, 0, 4, 3, 0.7);
+        b.paint(BOX, dark, 0, 3.08, 0, 0, 4.2, 0.18, 0.9);
+        for (let i = 0; i < 3; i++) b.paint(BOX, 0x6e685e, -1.4 + i * 1.4, 0.75 + (i % 2) * 1.2, 0.36, 0, 1.1, 0.5, 0.04);
+        return;
+      case 'floor':
+        b.paint(BOX, wood, 0, 0.12, 0, 0, 4, 0.24, 4);
+        for (let i = 0; i < 5; i++) b.paint(BOX, timber, -1.6 + i * 0.8, 0.245, 0, 0, 0.04, 0.02, 4);
+        return;
+      case 'pillar':
+        b.paint(BOX, dark, 0, 0.2, 0, 0, 1.3, 0.4, 1.3);
+        b.paint(CYL, stone, 0, 2.2, 0, 0, 0.9, 3.6, 0.9);
+        b.paint(BOX, dark, 0, 4.2, 0, 0, 1.3, 0.4, 1.3);
+        return;
+      case 'stairs':
+        for (let i = 0; i < 4; i++) b.paint(BOX, stone, 0, 0.25 + i * 0.5, -1.5 + i * 1, 0, 3, 0.5 + i * 1, 1);
+        for (let i = 0; i < 4; i++) b.paint(BOX, dark, 0, 0.5 + i * 1, -1.5 + i * 1, 0, 3.02, 0.06, 1.02);
+        return;
+      case 'roof':
+        b.paint(ROOF, 0x4a2e22, 0, 0, 0, 0, 2.6, 2, 4.4);
+        b.paint(BOX, timber, 0, 2, 0, 0, 0.16, 0.16, 4.6);
+        return;
+      case 'tower':
+        b.paint(CYL, stone, 0, 4, 0, 0, 4, 8, 4);
+        b.paint(CYL, dark, 0, 8.2, 0, 0, 4.6, 0.5, 4.6);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU;
+          b.paint(BOX, stone, Math.cos(a) * 2.1, 8.9, Math.sin(a) * 2.1, -a, 0.7, 0.9, 0.7);
+        }
+        b.paint(BOX, 0x1a1612, 0, 1.2, 2.0, 0, 1.2, 2.4, 0.1);
+        for (const y of [4, 6.2]) b.paint(BOX, 0x1a1612, 2.02, y, 0, Math.PI / 2, 0.5, 0.9, 0.08);
+        return;
+      case 'arch':
+        for (const x of [-1.8, 1.8]) {
+          b.paint(BOX, stone, x, 2, 0, 0, 0.9, 4, 0.9);
+          b.paint(BOX, dark, x, 0.15, 0, 0, 1.1, 0.3, 1.1);
+        }
+        b.paint(BOX, stone, 0, 4.3, 0, 0, 4.6, 0.7, 1);
+        b.paint(BOX, dark, 0, 4.75, 0, 0, 4.8, 0.2, 1.1);
+        return;
+      case 'lamp': {
+        b.paint(CYL6, 0x2a2622, 0, 1.6, 0, 0, 0.14, 3.2, 0.14, 0, 0, true);
+        b.paint(BOX, 0x2a2622, 0.3, 3.15, 0, 0, 0.7, 0.08, 0.08, 0, 0, true);
+        b.paint(BOX, 0x2a2622, 0.6, 2.85, 0, 0, 0.36, 0.06, 0.36, 0, 0, true);
+        b.add(BOX, mat(0xffd080, { emissive: 0xffb040, emissiveIntensity: 2 }), 0.6, 2.62, 0, 0, 0.26, 0.4, 0.26);
+        return;
+      }
+      case 'statue':
+        b.paint(BOX, dark, 0, 0.6, 0, 0, 2, 1.2, 2);
+        b.paint(CYL, 0x9a968c, 0, 2.3, 0, 0, 0.9, 2.2, 0.7);
+        b.paint(ICO, 0x9a968c, 0, 3.75, 0, 0, 0.42, 0.48, 0.42);
+        for (const s of [-1, 1]) b.paint(CYL, 0x9a968c, s * 0.62, 2.7, 0, 0, 0.26, 1.4, 0.26, 0, s * 0.35);
+        b.paint(CYL6, 0x8a867c, 0.9, 2.6, 0.1, 0, 0.1, 3.6, 0.1);
+        return;
+      case 'well':
+        b.paint(CYL, stone, 0, 0.5, 0, 0, 2.4, 1, 2.4);
+        b.paint(CYL, 0x1a2a3a, 0, 0.9, 0, 0, 1.9, 0.12, 1.9);
+        for (const x of [-1.05, 1.05]) b.paint(BOX, timber, x, 1.6, 0, 0, 0.16, 2.2, 0.16);
+        b.paint(ROOF, 0x4a2e22, 0, 2.6, 0, 0, 1.2, 0.8, 1.6);
+        b.paint(CYL, timber, 0, 2.2, 0, 0, 0.12, 2.1, 0.12, 0, Math.PI / 2);
+        return;
+      case 'tent':
+        b.paint(CONE4, 0xb8a888, 0, 1.4, 0, Math.PI / 4, 3.4, 2.8, 3.4);
+        b.paint(BOX, 0x1a1612, 0, 0.6, 1.25, 0, 0.8, 1.2, 0.04);
+        b.paint(CYL6, timber, 0, 3.0, 0, 0, 0.08, 0.5, 0.08);
+        return;
+      case 'campfire': {
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU;
+          b.paint(ROCK, 0x6a645a, Math.cos(a) * 0.8, 0.1, Math.sin(a) * 0.8, a, 0.25, 0.2, 0.25);
+        }
+        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x3a2a1c, 0, 0.18, 0, (i / 3) * Math.PI, 0.14, 1.1, 0.14, Math.PI / 2 - 0.2, 0);
+        b.add(CONE8, mat(0xff9030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), 0, 0.5, 0, 0, 0.6, 0.8, 0.6);
+        return;
+      }
+    }
+  }
+
+  /** The wild trees, rocks and bushes drawn near the hero (what builder mode can pick up). */
+  pickablePlants(near: THREE.Vector3, r: number): THREE.InstancedMesh[] {
+    const reach = r + TILE * 0.71;
+    return this.plantTiles
+      .filter((t) => t.mesh.visible && Math.hypot(t.x - near.x, t.z - near.z) < reach && !SMALL.includes(t.mesh.userData.kind) && t.mesh.userData.kind !== 'grass')
+      .map((t) => t.mesh);
+  }
+
+  /** What a ray from the camera hit among the plants: which plant, and where it grew. */
+  plantHit(mesh: THREE.InstancedMesh, index: number): PlantHit | null {
+    const at = mesh.userData.at as number[] | undefined;
+    if (!at || index * 4 + 3 >= at.length) return null;
+    return { mesh, index, kind: mesh.userData.kind, x: at[index * 4], z: at[index * 4 + 1], scale: at[index * 4 + 2], turn: at[index * 4 + 3] };
+  }
+
+  /** Takes a wild plant away (it stops blocking, and its tile leaves it out if built again). */
+  cutPlant(x: number, z: number) {
+    const key = spotKey(x, z);
+    if (this.cuts.has(key)) return;
+    this.cuts.add(key);
+    const c = this.plantCol.get(key);
+    if (c) this.removeCollider(c);
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const kept: { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[] = [];
+    for (const t of this.plantTiles) {
+      if (Math.abs(t.x - x) > TILE || Math.abs(t.z - z) > TILE) continue;
+      const at = t.mesh.userData.at as number[] | undefined;
+      if (!at) continue;
+      for (let i = 0; i < at.length; i += 4) {
+        if (spotKey(at[i], at[i + 1]) !== key) continue;
+        const m = new THREE.Matrix4();
+        t.mesh.getMatrixAt(i / 4, m);
+        kept.push({ mesh: t.mesh, i: i / 4, m });
+        t.mesh.setMatrixAt(i / 4, zero);
+        t.mesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+    this.cutKept.set(key, kept);
+  }
+
+  /** Puts a cut plant back (undo in builder mode). */
+  uncutPlant(x: number, z: number) {
+    const key = spotKey(x, z);
+    if (!this.cuts.delete(key)) return;
+    const c = this.plantCol.get(key);
+    if (c) {
+      this.colliders.push(c);
+      this.gridAdd(c);
+    }
+    for (const { mesh, i, m } of this.cutKept.get(key) ?? []) {
+      mesh.setMatrixAt(i, m);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.cutKept.delete(key);
+  }
+
+  /** Forgets every cut (loading another build): tiles built from now on grow them back. */
+  clearCuts() {
+    this.cuts.clear();
+  }
+
   // -------------------------------------------------------------- builders --
 
   private groundY(x: number, z: number) {
-    return heightAt(x, z);
+    return this.propMode ? 0 : heightAt(x, z);
   }
 
   /**
@@ -1223,17 +1476,19 @@ export class World {
     const key = tileKey(cx, cz);
     const collide = !this.collided.has(key);
     const rand = mulberry32((((cx + 64) * 73856093) ^ ((cz + 64) * 19349663)) >>> 0);
-    const sets = new Map<PlantKind, { mats: THREE.Matrix4[]; colors: THREE.Color[] }>();
+    const sets = new Map<PlantKind, { mats: THREE.Matrix4[]; colors: THREE.Color[]; at: number[] }>();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     const put = (kind: PlantKind, x: number, z: number, s: number, color: THREE.Color, sink: number, turn: number, tall: number) => {
       if (!meshes) return;
       let set = sets.get(kind);
-      if (!set) sets.set(kind, (set = { mats: [], colors: [] }));
+      if (!set) sets.set(kind, (set = { mats: [], colors: [], at: [] }));
       const y = this.groundY(x, z) - sink * s;
       set.mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, turn * TAU), new THREE.Vector3(s, s * (0.85 + tall * 0.3), s)));
       set.colors.push(color);
+      set.at.push(x, z, s, turn * TAU);
     };
+    const col = (x: number, z: number, r: number, top?: number) => this.plantCol.set(spotKey(x, z), this.addCollider(x, z, r, top));
     const avoid = (x: number, z: number, pad: number) => {
       if (Math.hypot(x - TOWN.x, z - TOWN.z) < TOWN.radius + pad) return true;
       // The Arena of Ares is open ground (heroes fight there).
@@ -1271,6 +1526,8 @@ export class World {
           if (kind !== 'grass' && kind !== 'rock' && slope < 0.8) continue;
           if (kind === 'reeds' && y > 3) continue;
           if (avoid(x, z, small ? -6 : 2)) continue;
+          // Taken away in builder mode.
+          if (!small && kind !== 'grass' && this.cuts.size && this.cuts.has(spotKey(x, z))) continue;
           const pal = PALETTES[kind]?.[zone];
           const color = pal ? new THREE.Color(pal[Math.floor(pick * pal.length)]) : new THREE.Color(1, 1, 1);
           color.multiplyScalar(0.9 + shade * 0.2);
@@ -1280,14 +1537,14 @@ export class World {
           } else if (kind === 'rock') {
             const s = 0.6 + size * ((pick * 3.7) % 1) * 4;
             put('rock', x, z, s, color.setHex(ZONES[zone].rock).multiplyScalar(1.15 + shade * 0.3), 0.35, turn, tall);
-            if (s > 1.8 && collide) this.addCollider(x, z, s * 0.85, this.groundY(x, z) + s * 0.8);
+            if (s > 1.8 && collide) col(x, z, s * 0.85, this.groundY(x, z) + s * 0.8);
           } else if (small || kind === 'bush' || kind === 'crystal') {
             put(kind, x, z, (kind === 'bush' ? 0.8 : 0.7) + size * 0.6, color, kind === 'crystal' ? 0.1 : 0.05, turn, tall);
-            if (kind === 'crystal' && collide) this.addCollider(x, z, 0.6);
+            if (kind === 'crystal' && collide) col(x, z, 0.6);
           } else {
             const s = (0.8 + size * 0.6) * (kind === 'palm' ? 1 : giant);
             put(kind, x, z, s, color, 0.2, turn, tall);
-            if (tree && collide) this.addCollider(x, z, (kind === 'oak' ? 0.8 : kind === 'palm' ? 0.5 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
+            if (tree && collide) col(x, z, (kind === 'oak' ? 0.8 : kind === 'palm' ? 0.5 : 0.7) * s, this.groundY(x, z) + (kind === 'cactus' ? 3.4 : 9) * s);
           }
         }
       }
@@ -1302,6 +1559,8 @@ export class World {
       set.mats.forEach((m, i) => mesh.setMatrixAt(i, m));
       set.colors.forEach((c, i) => mesh.setColorAt(i, c));
       mesh.computeBoundingSphere();
+      mesh.userData.kind = kind;
+      mesh.userData.at = set.at;
       mesh.castShadow = this.quality !== 'low' && (TREES.includes(kind) || kind === 'rock');
       mesh.receiveShadow = true;
       mesh.visible = false;
@@ -1953,7 +2212,7 @@ export class World {
     }
     b.add(CYL, mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y + 1.72, z, 0, 1.05, 0.06, 1.05);
     this.smokeSource(x, y + 1.8, z, 1);
-    this.emitters.push({ pos: new THREE.Vector3(x, y + 2.4, z), color: 0xff8030, intensity: 10, distance: 16, flicker: 0.35 });
+    if (!this.propMode) this.emitters.push({ pos: new THREE.Vector3(x, y + 2.4, z), color: 0xff8030, intensity: 10, distance: 16, flicker: 0.35 });
     this.addCollider(x, z, 0.65);
   }
 
@@ -2271,6 +2530,7 @@ export class World {
   }
 
   private smokeSource(x: number, y: number, z: number, kind: 0 | 1 | 2) {
+    if (this.propMode) return;
     const count = SMOKE[kind].n[this.quality === 'low' ? 0 : 1];
     const first = this.smokeSrc.length ? this.smokeSrc[this.smokeSrc.length - 1].first + this.smokeSrc[this.smokeSrc.length - 1].count : 0;
     this.smokeSrc.push({ x, y, z, kind, first, count, seed: this.rand(), on: false });
