@@ -63,6 +63,13 @@ export const newAnim = (): AnimState => ({
 
 export const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
+/**
+ * Gait phase (radians) per metre travelled at this ground speed. Walks keep
+ * 1.9; faster runs take longer strides at a quicker cadence, as runners do:
+ * about 1.8 strides a second at 7 m/s and 2.2 in an 11 m/s sprint.
+ */
+export const strideRate = (speed: number) => 1.9 - 0.75 * Math.min(1, Math.max(0, (speed - 4) / 8));
+
 // Timings shared by a boss's gameplay and its animator, so a co-op guest (who
 // only receives anim.attack) poses the same moment the host decided.
 

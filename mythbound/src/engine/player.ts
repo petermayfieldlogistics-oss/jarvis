@@ -20,7 +20,7 @@ import {
 } from '../rules/classes';
 import { buildShield, buildWeapon, buildWraps, compact, disposeObject, setBowString } from './models';
 import { animateHumanoid, buildHumanoid, type Rig } from './humanoid';
-import { FLURRY_AT, newAnim, type AnimState, type AttackStyle } from './anim';
+import { FLURRY_AT, newAnim, strideRate, type AnimState, type AttackStyle } from './anim';
 import {
   BURST, BURST_COLOR, BURST_ELEMENT, burstEffects, burstFor, burstScale, chargeKind, chargeLevel, empowerPower, POWER, spellBurst, strikePower, type Burst,
 } from '../rules/power';
@@ -3131,7 +3131,7 @@ export class Player {
     a.speed = this.sailing ? 0 : speed;
     a.moving = Math.min(1, speed / 4);
     // Steps per metre from the speed alone, so a friend's copy of this hero strides the same.
-    a.phase += speed * dt * (1.9 - 0.3 * Math.min(1, Math.max(0, (speed - 8.5) / 2)));
+    a.phase += speed * dt * strideRate(speed);
     // Travel in the rig's own frame: x along its local +X, z forward (the
     // same frame entities.ts writes and humanoid.ts turns the hips toward).
     if (speed > 0.05 && !this.sailing) {
