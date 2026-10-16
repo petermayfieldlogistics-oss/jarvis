@@ -5,7 +5,7 @@ import { BURST_COLOR, type Burst } from '../rules/power';
 import { HORSE } from '../rules/horse';
 import { foodCount } from '../rules/food';
 import { FRUITS } from '../data/goods';
-import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, WORLD_HALF, ZONES, lairShown, type QuestId } from '../data/world';
+import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, WORLD_HALF, ZONES, type QuestId } from '../data/world';
 import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
 import { Boss } from '../engine/entities';
@@ -801,7 +801,7 @@ export class Hud {
     };
     for (const s of SHRINES) if (g.state.shrinesFound.includes(s.id)) dot(s.x, s.z, '#ffd070', 3);
     for (const t of TRIALS) dot(t.x, t.z, g.state.trialsDone.includes(t.id) ? '#8a8a8a' : '#ff5a40', 3.5);
-    for (const l of LAIRS) if (lairShown(l, g.state.quests, g.state.flags)) dot(l.x, l.z, g.state.flags[`hunted-${l.boss}`] ? '#8a8a8a' : '#c080ff', 3.5);
+    if (g.state.quests.hunts.state !== 'none') for (const l of LAIRS) dot(l.x, l.z, '#c080ff', 3.5);
     if (g.state.flags.eyesRevealed) dot(EYES_RUINS.x, EYES_RUINS.z, '#60ff90', 3.5);
     for (const e of g.enemies) if (e.alive && e.aware) dot(e.pos.x, e.pos.z, '#e03020', 2);
     if (g.state.lostEmbers) dot(g.state.lostEmbers.x, g.state.lostEmbers.z, '#ffb040', 3);

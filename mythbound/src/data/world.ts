@@ -136,30 +136,17 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
 
 // ------------------------------------------------------------------ bosses --
 
-export type BossId =
-  | 'cernunna' | 'thalassor' | 'zephyron' | 'ignaroth' | 'champion' | 'hecate-shade' | 'leviathan' | 'sea-queen' | 'elder-dragon' | 'reaper' | 'giant-spider'
-  // The beasts of legend, hunted in their lairs across the land (Orrin's bestiary).
-  | 'bandit-king' | 'erymanthian-boar' | 'satyr-king' | 'teumessian-fox' | 'captain-skarr' | 'talos' | 'nemean-lion' | 'scorpion-king'
-  | 'hydra' | 'empusa' | 'cacus' | 'orthrus' | 'cerberus' | 'alecto' | 'minotaur' | 'bronze-bull'
-  | 'frost-king' | 'lykaon' | 'callisto' | 'chimera' | 'ash-lord' | 'salamander' | 'sandworm' | 'sphinx' | 'memnon' | 'manticore'
-  | 'dryas' | 'argus' | 'orion' | 'python' | 'medusa' | 'arachne' | 'polyphemus' | 'celaeno' | 'karkinos';
+export type BossId = 'cernunna' | 'thalassor' | 'zephyron' | 'ignaroth' | 'champion' | 'hecate-shade' | 'leviathan' | 'sea-queen' | 'elder-dragon' | 'reaper' | 'giant-spider';
 export type BossAttack =
   | 'sweep' | 'charge' | 'slam' | 'volley' | 'strikes' | 'summon' | 'teleport' | 'leap' | 'ring' | 'combo'
   // The elder foes' and the hunted foes' own moves (engine/bosses.ts).
-  | 'bite' | 'claw' | 'breath' | 'gust' | 'flight' | 'strike' | 'tail' | 'dive' | 'wave' | 'whirlpool' | 'trident' | 'geyser' | 'reap' | 'drain' | 'web'
-  // The Sandworm dives under the sand and bursts up beneath you; the Gorgon's stare turns you to stone.
-  | 'burrow' | 'gaze';
-
-/** What a boss is built as: its own model, or a body plan shared by several (each one dressed by its id). */
-export type BossModel =
-  | 'stag' | 'crab' | 'colossus' | 'golem' | 'champion' | 'witch' | 'serpent' | 'dragon' | 'siren' | 'reaper' | 'spider'
-  | 'humanoid' | 'lion' | 'bear' | 'bull' | 'canine' | 'boar' | 'scorpion' | 'hydra' | 'wyrm' | 'drider' | 'naga' | 'salamander' | 'hermit';
+  | 'bite' | 'claw' | 'breath' | 'gust' | 'flight' | 'strike' | 'tail' | 'dive' | 'wave' | 'whirlpool' | 'trident' | 'geyser' | 'reap' | 'drain' | 'web';
 
 export interface BossDef {
   id: BossId;
   name: string;
   title: string;
-  model: BossModel;
+  model: 'stag' | 'crab' | 'colossus' | 'golem' | 'champion' | 'witch' | 'serpent' | 'dragon' | 'siren' | 'reaper' | 'spider';
   hp: number;
   damage: number;
   level: number;
@@ -172,30 +159,14 @@ export interface BossDef {
   speed: number;
   attacks: BossAttack[];
   summon?: EnemyId;
-  projectile: 'arrow' | 'fireball' | 'orb' | 'water' | 'lightning' | 'boulder';
-  /** A trial's weapon or relic, left in its arena; a hunted foe's unique drop (a weapon, or a trophy to keep or sell). */
+  projectile: 'arrow' | 'fireball' | 'orb' | 'water' | 'lightning';
+  /** A trial's weapon or relic, left in its arena; a hunted foe's unique drop. */
   reward: string;
   /** Hunted, not a trial: it haunts a lair (LAIRS) with no fog, and returns a while after it falls. */
   mini?: boolean;
   /** Shouted when it is enraged (below half health). */
   rage?: string;
-  /** Its body's reach in metres (hits land within it); otherwise worked out from its size. */
-  radius?: number;
-  /** Bronze, wood, bone and ash: no blood. */
-  bloodless?: boolean;
-  /** Its bite poisons. */
-  venom?: boolean;
 }
-
-/** A hunted foe's numbers by its level (each def can still set its own). */
-const hunted = (level: number) => ({
-  level,
-  hp: Math.round(105 * level + 80),
-  damage: Math.round(1.8 * level + 7),
-  xp: Math.round(70 * level + 50),
-  gold: Math.round(25 * level + 40),
-  mini: true as const,
-});
 
 export const BOSSES: Record<BossId, BossDef> = {
   cernunna: {
@@ -249,197 +220,6 @@ export const BOSSES: Record<BossId, BossDef> = {
     xp: 380, gold: 140, scale: 2.3, color: 0x2a221c, speed: 7.5, attacks: ['bite', 'leap', 'web', 'summon'], summon: 'spiderling', projectile: 'arrow', reward: 'venomfang', mini: true,
     rage: 'Broodmother shrieks, and the hollow crawls with her young!',
   },
-
-  // ---- The beasts of legend: two in each land of the heartland, three or four in each outer land.
-  // The Golden Reach.
-  'bandit-king': {
-    id: 'bandit-king', name: 'Lykon', title: 'the Bandit King', model: 'humanoid', ...hunted(4), affinity: 'none', dark: false,
-    scale: 1.35, color: 0x6a2a1e, speed: 6.5, attacks: ['combo', 'sweep', 'charge', 'leap', 'summon'], summon: 'bandit', projectile: 'arrow', reward: 'kingslayer',
-    rage: 'Lykon roars: "Nobody takes my crown!"',
-  },
-  'erymanthian-boar': {
-    id: 'erymanthian-boar', name: 'The Erymanthian Boar', title: 'Terror of the Reach', model: 'boar', ...hunted(5), affinity: 'earth', dark: false,
-    scale: 2.6, color: 0x4a3426, speed: 7.5, attacks: ['charge', 'bite', 'ring', 'summon'], summon: 'boar', projectile: 'arrow', reward: 'boar-tusk', radius: 1.9,
-    rage: 'The Great Boar paws the earth, foaming!',
-  },
-  // Whisperwood.
-  'satyr-king': {
-    id: 'satyr-king', name: 'Silvanus', title: 'the Satyr King', model: 'humanoid', ...hunted(6), affinity: 'earth', dark: false,
-    scale: 1.45, color: 0x5a3c22, speed: 7, attacks: ['combo', 'sweep', 'volley', 'leap', 'summon'], summon: 'wolf', projectile: 'orb', reward: 'thyrsus',
-    rage: 'Silvanus plays a wild tune, and the wood answers!',
-  },
-  'teumessian-fox': {
-    id: 'teumessian-fox', name: 'The Teumessian Fox', title: 'the Uncatchable', model: 'canine', ...hunted(6), affinity: 'fire', dark: false,
-    scale: 2.1, color: 0xc8581c, speed: 10.5, attacks: ['bite', 'leap', 'teleport', 'volley'], projectile: 'fireball', reward: 'fox-pelt', radius: 1.5,
-    rage: 'Foxfire blazes along the fox’s tail!',
-  },
-  // The Sunken Coast.
-  'captain-skarr': {
-    id: 'captain-skarr', name: 'Captain Skarr', title: 'Terror of the Sunken Coast', model: 'humanoid', ...hunted(7), affinity: 'water', dark: false,
-    scale: 1.35, color: 0x7a1c18, speed: 6.5, attacks: ['combo', 'sweep', 'charge', 'volley', 'summon'], summon: 'drowned', projectile: 'arrow', reward: 'skarrs-cutlass',
-    rage: 'Skarr bellows: "All hands! Drown the lot of them!"',
-  },
-  talos: {
-    id: 'talos', name: 'Talos', title: 'the Bronze Sentinel', model: 'humanoid', ...hunted(8), affinity: 'fire', dark: false,
-    scale: 2.8, color: 0xb07a3a, speed: 5, attacks: ['slam', 'sweep', 'volley', 'ring', 'charge'], projectile: 'boulder', reward: 'bronze-nail', bloodless: true,
-    rage: 'Talos glows red-hot, ichor hissing from his heel!',
-  },
-  // The Ashen Dunes.
-  'nemean-lion': {
-    id: 'nemean-lion', name: 'The Nemean Lion', title: 'the Golden Bane', model: 'lion', ...hunted(8), affinity: 'earth', dark: false,
-    scale: 2.3, color: 0xc89a4a, speed: 9.5, attacks: ['claw', 'bite', 'leap', 'ring'], projectile: 'arrow', reward: 'nemean-pelt', radius: 1.8,
-    rage: 'The Nemean Lion roars, and the dunes shake!',
-  },
-  'scorpion-king': {
-    id: 'scorpion-king', name: 'Skorpios', title: 'the Scorpion King', model: 'scorpion', ...hunted(8), affinity: 'earth', dark: false,
-    scale: 2.4, color: 0x3a2a1c, speed: 6.5, attacks: ['claw', 'bite', 'volley', 'summon', 'ring'], summon: 'scorpion', projectile: 'orb', reward: 'scorpion-crown', radius: 2.1, venom: true,
-    rage: 'Skorpios rattles its golden crown!',
-  },
-  // The Weeping Mire.
-  hydra: {
-    id: 'hydra', name: 'The Lernaean Hydra', title: 'the Many-Headed', model: 'hydra', ...hunted(10), affinity: 'earth', dark: false,
-    scale: 2.1, color: 0x2e4a2a, speed: 4.5, attacks: ['bite', 'breath', 'ring', 'volley'], projectile: 'orb', reward: 'hydra-fang', radius: 2.4, venom: true,
-    rage: 'The Hydra hisses from every throat!',
-  },
-  empusa: {
-    id: 'empusa', name: 'Empusa', title: 'Hag of the Mire', model: 'humanoid', ...hunted(9), affinity: 'dark', dark: true,
-    scale: 1.3, color: 0x2a3a2a, speed: 6, attacks: ['volley', 'teleport', 'summon', 'ring', 'sweep'], summon: 'wraith', projectile: 'orb', reward: 'hag-lantern',
-    rage: 'Empusa cackles, and her lantern burns green!',
-  },
-  // Molten Peak.
-  cacus: {
-    id: 'cacus', name: 'Cacus', title: 'the Smoke-Breathing Giant', model: 'humanoid', ...hunted(11), affinity: 'fire', dark: false,
-    scale: 2.9, color: 0x2a201c, speed: 5.5, attacks: ['slam', 'sweep', 'volley', 'ring', 'summon'], summon: 'fire-imp', projectile: 'fireball', reward: 'cacus-ember',
-    rage: 'Cacus belches black smoke and fire!',
-  },
-  orthrus: {
-    id: 'orthrus', name: 'Orthrus', title: 'the Two-Headed Hound', model: 'canine', ...hunted(11), affinity: 'fire', dark: false,
-    scale: 2.2, color: 0x2a1a16, speed: 9.5, attacks: ['bite', 'breath', 'charge', 'leap'], projectile: 'fireball', reward: 'orthrus-collar', radius: 1.8,
-    rage: 'Both of Orthrus’s heads howl as one!',
-  },
-  // Hecate's Crossroads.
-  cerberus: {
-    id: 'cerberus', name: 'Cerberus', title: 'Hound of Hades', model: 'canine', ...hunted(13), affinity: 'dark', dark: true,
-    scale: 2.8, color: 0x1a1618, speed: 9, attacks: ['bite', 'breath', 'ring', 'charge', 'summon'], summon: 'skeleton', projectile: 'orb', reward: 'cerberus-chain', radius: 2.3,
-    rage: 'Cerberus strains at its chains, all three heads baying!',
-  },
-  alecto: {
-    id: 'alecto', name: 'Alecto', title: 'the Unresting Fury', model: 'humanoid', ...hunted(12), affinity: 'dark', dark: true,
-    scale: 1.45, color: 0x2a1424, speed: 7, attacks: ['teleport', 'volley', 'sweep', 'summon', 'strikes'], summon: 'wraith', projectile: 'orb', reward: 'fury-scourge',
-    rage: 'Alecto shrieks, her serpents writhing!',
-  },
-  // The Field of Mars.
-  minotaur: {
-    id: 'minotaur', name: 'Asterion', title: 'the Minotaur', model: 'humanoid', ...hunted(13), affinity: 'earth', dark: false,
-    scale: 2.2, color: 0x3a2418, speed: 7.5, attacks: ['charge', 'combo', 'slam', 'sweep', 'ring'], projectile: 'arrow', reward: 'labrys',
-    rage: 'Asterion lowers his horns and bellows!',
-  },
-  'bronze-bull': {
-    id: 'bronze-bull', name: 'Khalkotauros', title: 'the Bronze Bull', model: 'bull', ...hunted(12), affinity: 'fire', dark: false,
-    scale: 2.3, color: 0xa8743a, speed: 8, attacks: ['charge', 'breath', 'ring', 'slam'], projectile: 'fireball', reward: 'bronze-heart', radius: 2, bloodless: true,
-    rage: 'The Bronze Bull’s furnace roars white-hot!',
-  },
-  // The Frostspine.
-  'frost-king': {
-    id: 'frost-king', name: 'Hrimgar', title: 'the Frost Troll King', model: 'humanoid', ...hunted(15), affinity: 'water', dark: false,
-    scale: 2.3, color: 0x7a96aa, speed: 5.5, attacks: ['slam', 'sweep', 'ring', 'summon', 'volley'], summon: 'frost-wolf', projectile: 'water', reward: 'rimecrusher',
-    rage: 'Hrimgar roars, and the air turns to ice!',
-  },
-  lykaon: {
-    id: 'lykaon', name: 'Lykaon', title: 'the White Wolf', model: 'canine', ...hunted(14), affinity: 'water', dark: false,
-    scale: 2.5, color: 0xe4e8ee, speed: 10.5, attacks: ['bite', 'leap', 'breath', 'summon', 'charge'], summon: 'frost-wolf', projectile: 'water', reward: 'white-pelt', radius: 1.9,
-    rage: 'Lykaon howls, and the pack answers!',
-  },
-  callisto: {
-    id: 'callisto', name: 'Callisto', title: 'the Great Bear', model: 'bear', ...hunted(14), affinity: 'earth', dark: false,
-    scale: 2.3, color: 0x5a3e2a, speed: 7, attacks: ['claw', 'slam', 'charge', 'ring', 'bite'], projectile: 'arrow', reward: 'star-fur', radius: 2,
-    rage: 'Seven stars blaze on the Great Bear’s back!',
-  },
-  // The Cinderwaste.
-  chimera: {
-    id: 'chimera', name: 'The Chimera', title: 'Lion, Goat and Serpent', model: 'lion', ...hunted(16), affinity: 'fire', dark: false,
-    scale: 2.5, color: 0xa8662a, speed: 8.5, attacks: ['breath', 'bite', 'claw', 'volley', 'leap'], projectile: 'fireball', reward: 'chimera-horn', radius: 2, venom: true,
-    rage: 'All three of the Chimera’s heads roar fire!',
-  },
-  'ash-lord': {
-    id: 'ash-lord', name: 'Pyrrhus', title: 'Lord of Ashes', model: 'humanoid', ...hunted(16), affinity: 'fire', dark: true,
-    scale: 1.6, color: 0x2a1e1a, speed: 6.5, attacks: ['combo', 'sweep', 'ring', 'summon', 'volley'], summon: 'ash-revenant', projectile: 'fireball', reward: 'cinderbrand', bloodless: true,
-    rage: 'Pyrrhus’s crown flares: "Burn, as I burned!"',
-  },
-  salamander: {
-    id: 'salamander', name: 'Salamandra', title: 'Mother of Embers', model: 'salamander', ...hunted(15), affinity: 'fire', dark: false,
-    scale: 2.2, color: 0x2a1410, speed: 6, attacks: ['breath', 'bite', 'charge', 'ring', 'summon'], summon: 'fire-imp', projectile: 'fireball', reward: 'ember-scale', radius: 2,
-    rage: 'Lava wells up through Salamandra’s spots!',
-  },
-  // The Sea of Sand.
-  sandworm: {
-    id: 'sandworm', name: 'The Great Sandworm', title: 'Devourer of Caravans', model: 'wyrm', ...hunted(14), affinity: 'earth', dark: false,
-    scale: 2, color: 0xa88a62, speed: 6, attacks: ['burrow', 'bite', 'ring', 'volley'], projectile: 'orb', reward: 'worm-tooth', radius: 2.2,
-    rage: 'The Sandworm thrashes, and the dunes slide!',
-  },
-  sphinx: {
-    id: 'sphinx', name: 'The Sphinx', title: 'Keeper of Riddles', model: 'lion', ...hunted(14), affinity: 'wind', dark: false,
-    scale: 2.4, color: 0xd0a860, speed: 8, attacks: ['claw', 'gust', 'strikes', 'volley', 'leap'], projectile: 'lightning', reward: 'riddle-stone', radius: 1.9,
-    rage: 'The Sphinx speaks: "Wrong answer."',
-  },
-  memnon: {
-    id: 'memnon', name: 'Memnon', title: 'the Sunken King', model: 'humanoid', ...hunted(13), affinity: 'dark', dark: true,
-    scale: 1.6, color: 0xc8b890, speed: 5.5, attacks: ['combo', 'summon', 'teleport', 'ring', 'volley'], summon: 'skeleton', projectile: 'orb', reward: 'khopesh', bloodless: true,
-    rage: 'Memnon’s wrappings tear loose, and the sand rises!',
-  },
-  manticore: {
-    id: 'manticore', name: 'The Manticore', title: 'Eater of Men', model: 'lion', ...hunted(15), affinity: 'earth', dark: false,
-    scale: 2.4, color: 0x8a3a24, speed: 9, attacks: ['volley', 'bite', 'claw', 'leap'], projectile: 'arrow', reward: 'manticore-spine', radius: 1.9, venom: true,
-    rage: 'The Manticore rattles its tail of spines!',
-  },
-  // The Elderwood.
-  dryas: {
-    id: 'dryas', name: 'Dryas', title: 'the Eldest Treant', model: 'humanoid', ...hunted(14), affinity: 'earth', dark: false,
-    scale: 2.7, color: 0x4a3a2a, speed: 4.5, attacks: ['slam', 'sweep', 'ring', 'volley'], projectile: 'arrow', reward: 'heartwood', bloodless: true,
-    rage: 'Dryas groans, and the roots of the wood stir!',
-  },
-  argus: {
-    id: 'argus', name: 'Argus Panoptes', title: 'the All-Seeing', model: 'humanoid', ...hunted(13), affinity: 'wind', dark: false,
-    scale: 2.7, color: 0x8a7a9a, speed: 5.5, attacks: ['sweep', 'slam', 'volley', 'strikes', 'ring'], projectile: 'orb', reward: 'argus-eye',
-    rage: 'A hundred eyes open at once!',
-  },
-  orion: {
-    id: 'orion', name: 'Orion', title: 'the Giant Huntsman', model: 'humanoid', ...hunted(14), affinity: 'none', dark: false,
-    scale: 2.6, color: 0x3a4a2a, speed: 6.5, attacks: ['volley', 'sweep', 'leap', 'summon', 'charge'], summon: 'frost-wolf', projectile: 'arrow', reward: 'orions-bow',
-    rage: 'Orion’s belt blazes with three stars!',
-  },
-  // The Verdant Tangle.
-  python: {
-    id: 'python', name: 'Python', title: 'the Earth Serpent', model: 'wyrm', ...hunted(14), affinity: 'earth', dark: false,
-    scale: 2.1, color: 0x3a5a2a, speed: 7.5, attacks: ['bite', 'sweep', 'ring', 'charge', 'volley'], projectile: 'orb', reward: 'python-scale', radius: 2.1, venom: true,
-    rage: 'Python rears up, hissing like a storm!',
-  },
-  medusa: {
-    id: 'medusa', name: 'Medusa', title: 'the Gorgon', model: 'naga', ...hunted(15), affinity: 'earth', dark: false,
-    scale: 1.6, color: 0x3a5a3a, speed: 6, attacks: ['volley', 'gaze', 'sweep', 'teleport'], projectile: 'arrow', reward: 'gorgon-eye', radius: 1.2, venom: true,
-    rage: 'Medusa’s serpents hiss: "Look at me!"',
-  },
-  arachne: {
-    id: 'arachne', name: 'Arachne', title: 'the Weaver Queen', model: 'drider', ...hunted(14), affinity: 'earth', dark: false,
-    scale: 1.9, color: 0x2a1e2a, speed: 8, attacks: ['web', 'bite', 'leap', 'summon', 'volley'], summon: 'tangle-spider', projectile: 'orb', reward: 'weaver-silk', radius: 1.8, venom: true,
-    rage: 'Arachne’s loom-song turns to a shriek!',
-  },
-  // The Wine-Dark Sea.
-  polyphemus: {
-    id: 'polyphemus', name: 'Polyphemus', title: 'the Cyclops', model: 'humanoid', ...hunted(15), affinity: 'earth', dark: false,
-    scale: 3, color: 0x8a6a4a, speed: 5.5, attacks: ['slam', 'sweep', 'volley', 'ring', 'charge'], projectile: 'boulder', reward: 'cyclops-bell',
-    rage: 'Polyphemus roars: "Nobody is hurting me!"',
-  },
-  celaeno: {
-    id: 'celaeno', name: 'Celaeno', title: 'the Harpy Queen', model: 'humanoid', ...hunted(14), affinity: 'wind', dark: false,
-    scale: 1.5, color: 0x4a3a5a, speed: 8, attacks: ['volley', 'leap', 'sweep', 'strikes'], projectile: 'lightning', reward: 'storm-plume',
-    rage: 'Celaeno screams, and the storm answers!',
-  },
-  karkinos: {
-    id: 'karkinos', name: 'Karkinos', title: 'the Great Crab', model: 'hermit', ...hunted(14), affinity: 'water', dark: false,
-    scale: 1.7, color: 0x9a3a28, speed: 4.5, attacks: ['slam', 'sweep', 'ring', 'volley'], projectile: 'water', reward: 'karkinos-claw', radius: 2.8,
-    rage: 'Karkinos clacks its great claw!',
-  },
 };
 
 // ------------------------------------------------------------------ places --
@@ -485,65 +265,13 @@ export interface LairDef {
   /** Only there after dark. */
   night?: boolean;
   hint: string;
-  /** One of the beasts of legend in Orrin's bestiary (the rest are Quill's two bounties). */
-  legend?: boolean;
-  /** How the lair is dressed (engine/world.ts). */
-  look?: LairLook;
 }
-
-/** A lair's dressing: a camp, a den of bones, ruins, a nest, a burrow in the sand... */
-export type LairLook = 'camp' | 'den' | 'ruins' | 'grove' | 'shipwreck' | 'pool' | 'cave' | 'gate' | 'labyrinth' | 'forge' | 'ice' | 'pit' | 'tomb' | 'nest' | 'hunt' | 'web' | 'temple' | 'reef';
 
 /** Where the hunted great foes dwell. */
 export const LAIRS: LairDef[] = [
   { id: 'hollow', name: 'Silken Hollow', boss: 'giant-spider', x: -220, z: -115, leash: 30, hint: 'Deep in Whisperwood, webs as wide as sails. Look up.' },
   { id: 'graves', name: 'Mourner’s Rest', boss: 'reaper', x: -290, z: 140, leash: 32, night: true, hint: 'A graveyard in the Weeping Mire. The Reaper walks it after dark.' },
-  // The beasts of legend.
-  { id: 'robbers-roost', name: 'Robbers’ Roost', boss: 'bandit-king', x: 80, z: -150, leash: 30, legend: true, look: 'camp', hint: 'The bandits’ camp north of the Arena, on the Golden Reach. Their king sits on a throne of stolen chests.' },
-  { id: 'wallow', name: 'The Great Wallow', boss: 'erymanthian-boar', x: -60, z: -90, leash: 32, legend: true, look: 'den', hint: 'A trampled mud wallow north-west of Hearthhold. Broken spears stick out of the boar that made it.' },
-  { id: 'satyr-dell', name: 'Satyr’s Dell', boss: 'satyr-king', x: -420, z: 0, leash: 30, legend: true, look: 'grove', hint: 'Pipes and laughter at the western end of Whisperwood, where the old wood begins.' },
-  { id: 'foxfire', name: 'Foxfire Glade', boss: 'teumessian-fox', x: -380, z: 90, leash: 34, legend: true, look: 'grove', hint: 'A glade in south-western Whisperwood where orange flames dance and never burn the grass. The fox that lights them has never been caught.' },
-  { id: 'smugglers', name: 'Smugglers’ Bluff', boss: 'captain-skarr', x: 170, z: 130, leash: 30, legend: true, look: 'shipwreck', hint: 'A wreck dragged up a bluff on the Sunken Coast, east of the docks. Its captain never left.' },
-  { id: 'bronze-watch', name: 'Bronze Watch', boss: 'talos', x: 410, z: 120, leash: 32, legend: true, look: 'ruins', hint: 'A bronze giant guards the coast where the desert meets the sea, far to the south-east.' },
-  { id: 'lion-rock', name: 'Lion’s Rock', boss: 'nemean-lion', x: 420, z: -100, leash: 34, legend: true, look: 'den', hint: 'A rock in the eastern Ashen Dunes, littered with the bones of heroes. No blade pierces the lion’s hide.' },
-  { id: 'scorpion-throne', name: 'The Scorpion Throne', boss: 'scorpion-king', x: 220, z: -60, leash: 30, legend: true, look: 'pit', hint: 'A sunken court in the Ashen Dunes, south of the Field of Mars, ruled by a crowned scorpion.' },
-  { id: 'lerna', name: 'Lerna Spring', boss: 'hydra', x: -440, z: 190, leash: 32, legend: true, look: 'pool', hint: 'A black spring at the western end of the Weeping Mire. Count the heads before you swing.' },
-  { id: 'witchlight', name: 'Witchlight Fen', boss: 'empusa', x: -450, z: 330, leash: 30, legend: true, look: 'grove', hint: 'A green lantern bobs over the fen past the Weeping Mire’s eye-ruins. Don’t follow it.' },
-  { id: 'cacus-cave', name: 'Cacus’ Cave', boss: 'cacus', x: -150, z: -280, leash: 32, legend: true, look: 'cave', hint: 'Smoke pours from a cave on the western foot of Molten Peak. Its giant breathes it.' },
-  { id: 'kennel', name: 'The Burnt Kennel', boss: 'orthrus', x: 100, z: -450, leash: 32, legend: true, look: 'den', hint: 'Behind Molten Peak, on the northern side, two heads keep watch over a ring of charred bones.' },
-  { id: 'hades-gate', name: 'Gate of Hades', boss: 'cerberus', x: -420, z: -210, leash: 34, legend: true, look: 'gate', hint: 'A gate in the rock at the western edge of Hecate’s Crossroads. Its three-headed hound lets no one out.' },
-  { id: 'fury-perch', name: 'Fury’s Perch', boss: 'alecto', x: -390, z: -390, leash: 30, legend: true, look: 'ruins', hint: 'Broken altars in the far corner of the Crossroads, beneath the mountains. Something winged punishes the guilty there.' },
-  { id: 'labyrinth', name: 'The Labyrinth', boss: 'minotaur', x: 400, z: -340, leash: 30, legend: true, look: 'labyrinth', hint: 'Ruined maze walls at the eastern end of the Field of Mars. Listen for hooves.' },
-  { id: 'bronze-field', name: 'Field of the Bronze Bull', boss: 'bronze-bull', x: 290, z: -430, leash: 34, legend: true, look: 'forge', hint: 'A scorched field at the northern edge of the Field of Mars, ploughed by a bull of fire-breathing bronze.' },
-  { id: 'frost-hall', name: 'Hall of the Frost King', boss: 'frost-king', x: -330, z: -760, leash: 32, legend: true, look: 'ice', hint: 'At the far end of the Frostspine Pass, a throne of ice and its troll king.' },
-  { id: 'howling-ridge', name: 'Howling Ridge', boss: 'lykaon', x: -530, z: -440, leash: 34, legend: true, look: 'ice', hint: 'A ridge in the western Frostspine where a white wolf leads the pack.' },
-  { id: 'bear-den', name: 'The Great Bear’s Den', boss: 'callisto', x: -120, z: -540, leash: 32, legend: true, look: 'cave', hint: 'A den at the foot of the Frostspine Pass. At night, seven stars shine on the bear’s back.' },
-  { id: 'chimera-den', name: 'Chimera’s Den', boss: 'chimera', x: 720, z: -780, leash: 34, legend: true, look: 'den', hint: 'In the far north-east of the Cinderwaste, among the cinder cones. Lion, goat and serpent in one.' },
-  { id: 'ash-throne', name: 'Throne of Ashes', boss: 'ash-lord', x: 490, z: -690, leash: 30, legend: true, look: 'tomb', hint: 'A burnt throne in the western Cinderwaste, where a king who burned with his city still sits.' },
-  { id: 'ember-pools', name: 'The Ember Pools', boss: 'salamander', x: 690, z: -530, leash: 32, legend: true, look: 'forge', hint: 'Among the lava pools of the eastern Cinderwaste, the Mother of Embers basks.' },
-  { id: 'devourer', name: 'The Devourer’s Sands', boss: 'sandworm', x: 800, z: -100, leash: 36, legend: true, look: 'pit', hint: 'Far east in the Sea of Sand, where caravans vanish. Watch the sand for ripples.' },
-  { id: 'sphinx-gate', name: 'Sphinx’s Gate', boss: 'sphinx', x: 540, z: -200, leash: 32, legend: true, look: 'temple', hint: 'A ruined gate at the edge of the Sea of Sand. Its keeper asks one riddle.' },
-  { id: 'sunken-tomb', name: 'The Sunken Tomb', boss: 'memnon', x: 610, z: 100, leash: 30, legend: true, look: 'tomb', hint: 'A pharaoh’s tomb half-buried near the southern oasis of the Sea of Sand.' },
-  { id: 'manticore-bluff', name: 'Manticore Bluff', boss: 'manticore', x: 700, z: -230, leash: 34, legend: true, look: 'nest', hint: 'A bluff in the northern Sea of Sand ringed with spines as long as spears.' },
-  { id: 'eldest-ring', name: 'Ring of the Eldest', boss: 'dryas', x: -570, z: -120, leash: 30, legend: true, look: 'grove', hint: 'A ring of standing trees near the Eldest Oak in the Elderwood. One of them walks.' },
-  { id: 'argus-watch', name: 'Argus’ Watch', boss: 'argus', x: -780, z: -80, leash: 32, legend: true, look: 'ruins', hint: 'At the far western edge of the Elderwood, a giant with a hundred eyes keeps watch.' },
-  { id: 'hunters-camp', name: 'The Huntsman’s Camp', boss: 'orion', x: -690, z: 150, leash: 34, legend: true, look: 'hunt', hint: 'Antlers and pelts hang in the south of the Elderwood, at the giant huntsman’s camp.' },
-  { id: 'python-coil', name: 'Python’s Coil', boss: 'python', x: -580, z: 400, leash: 32, legend: true, look: 'temple', hint: 'An overgrown oracle’s temple at the northern edge of the Verdant Tangle, coiled about by a serpent.' },
-  { id: 'gorgon-temple', name: 'Temple of the Gorgon', boss: 'medusa', x: -370, z: 710, leash: 30, legend: true, look: 'temple', hint: 'In the southern Tangle, a temple full of stone heroes. Don’t meet her eyes.' },
-  { id: 'weavers-hollow', name: 'Weaver’s Hollow', boss: 'arachne', x: -690, z: 670, leash: 32, legend: true, look: 'web', hint: 'Golden webs in the far south-west of the Verdant Tangle, where the Weaver Queen spins.' },
-  { id: 'cyclops-isle', name: 'Isle of the Cyclops', boss: 'polyphemus', x: -60, z: 720, leash: 34, legend: true, look: 'cave', hint: 'An island in the Wine-Dark Sea, far south of Hearthhold. A one-eyed shepherd lives there. Take a boat.' },
-  { id: 'strophades', name: 'The Strophades', boss: 'celaeno', x: 700, z: 790, leash: 32, legend: true, look: 'nest', hint: 'A storm-wracked island in the far south-east of the Wine-Dark Sea, home of the harpies. Take a boat.' },
-  { id: 'crab-reef', name: 'Karkinos Reef', boss: 'karkinos', x: 640, z: 470, leash: 32, legend: true, look: 'reef', hint: 'An island off the Sea of Sand’s southern shore, where a crab the size of a house wears a shell like a tower.' },
 ];
-
-/** The beasts of legend in Orrin's bestiary, and Quill's two bounties. */
-export const LEGEND_LAIRS = LAIRS.filter((l) => l.legend);
-export const BOUNTY_LAIRS = LAIRS.filter((l) => !l.legend);
-
-/** Whether a lair is on the map: once its quest is taken up, or (a beast of legend's) once a hero has come across it. */
-export function lairShown(l: LairDef, quests: Record<QuestId, { state: string }>, flags: Record<string, boolean>): boolean {
-  return l.legend ? quests.legends.state !== 'none' || !!flags[`seen-${l.id}`] : quests.hunts.state !== 'none';
-}
 
 export interface ShrineDef {
   id: string;
@@ -848,7 +576,7 @@ export const FISHING_SPOTS = [{ x: 30, z: 158 }, { x: -110, z: 158 }, { x: 160, 
 
 // ------------------------------------------------------------------ quests --
 
-export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts' | 'harvest' | 'legends';
+export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts' | 'harvest';
 
 export interface QuestDef {
   id: QuestId;
@@ -909,11 +637,6 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     id: 'harvest', name: "Wren's Field", giver: 'wren', goal: 4,
     description: 'Plant, water and bring in four harvests from the seed beds in Wren’s field.',
     reward: { gold: 80, xp: 150, item: 'seed-pumpkin' },
-  },
-  legends: {
-    id: 'legends', name: 'Beasts of Legend', giver: 'orrin', goal: 35,
-    description: 'Orrin’s bestiary names thirty-five beasts of legend, from the Golden Reach to the Wine-Dark Sea. Hunt them all in their lairs (they are marked on your map).',
-    reward: { gold: 5000, xp: 8000 },
   },
 };
 

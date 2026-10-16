@@ -1,7 +1,7 @@
 // Conversations and everything the hero can interact with.
 
 import { ANCIENT_GLYPH, CLASSES, RACES, RELICS, ROLES, RUNES, SPELLS, WEAPONS, type ClassId, type RaceId, type RuneId, type ShopId, type SpellId } from '../data/defs';
-import { BOSSES, BOUNTY_LAIRS, ELDER_TRIALS, ITEMS, LEGEND_LAIRS, LORE, PAGES, plotCentre, QUESTS, SHRINES, TOMES, TRIALS, WEAPON_TRIALS, ZONES, type QuestId } from '../data/world';
+import { BOSSES, ELDER_TRIALS, ITEMS, LAIRS, LORE, PAGES, plotCentre, QUESTS, SHRINES, TOMES, TRIALS, WEAPON_TRIALS, type QuestId } from '../data/world';
 import { isRelic, rewardName } from './bosses';
 import { canLearnSpell, dracoFlightHours, learnSpell, lightHealMultiplier, MAX_WEAPON_LEVEL, shopPrice, upgradeCost, type Character } from '../rules/character';
 import { canWield, isLightSealed } from '../rules/combat';
@@ -17,7 +17,6 @@ import { DYES, GARMENTS, MATERIALS, STATIONS, STATION_NAME, type RecipeDef, type
 import { buyLook, knowsDye, ownsGarment } from '../rules/outfit';
 import { batches, craft, fishingPerks, hasMade, hasTool, lacking, makesName, recipeGold, recipesAt, sellAll, sellValue } from '../rules/crafting';
 import { hours } from './farm';
-import { zoneAt } from './terrain';
 
 /** What the chronicler mutters on meeting the newer races. */
 const CHRONICLER_ASIDE: Partial<Record<RaceId, string>> = {
@@ -182,37 +181,10 @@ export class Story {
     if (id === 'tomes') st.progress = TOMES.filter((t) => this.g.state.taken.includes(`tome-${t.spell}`)).length;
     if (id === 'trials') st.progress = this.trialsWon(false);
     if (id === 'elders') st.progress = this.trialsWon(true);
-    if (id === 'hunts') st.progress = BOUNTY_LAIRS.filter((l) => this.g.state.flags[`hunted-${l.boss}`]).length;
-    if (id === 'legends') st.progress = this.legendsSlain();
+    if (id === 'hunts') st.progress = LAIRS.filter((l) => this.g.state.flags[`hunted-${l.boss}`]).length;
     // The quest bar follows the newest quest.
     this.g.state.tracked = id;
     this.g.hud.toast(`New quest: ${QUESTS[id].name}`, 'quest');
-  }
-
-  /** Beasts of legend slain (each counts the first time it falls). */
-  private legendsSlain() {
-    return LEGEND_LAIRS.filter((l) => this.g.state.flags[`hunted-${l.boss}`]).length;
-  }
-
-  /** Orrin's bestiary: every beast of legend, where it dwells, and which have fallen (the heartland first, then the outer lands). */
-  private bestiary(page = 0) {
-    const g = this.g;
-    const outer = (z: string) => ['peaks', 'cinder', 'dunes', 'elderwood', 'jungle', 'ocean'].includes(z);
-    const lairs = LEGEND_LAIRS.map((l) => ({ l, zone: zoneAt(l.x, l.z) })).filter((x) => outer(x.zone) === (page === 1));
-    this.open({
-      title: page === 0 ? 'The Bestiary: the heartland' : 'The Bestiary: the outer lands',
-      text: lairs
-        .map(({ l, zone }) => {
-          const b = BOSSES[l.boss];
-          const done = g.state.flags[`hunted-${l.boss}`] ? ' ✔' : '';
-          return `• ${b.name}, ${b.title}${done}: ${l.name}, ${ZONES[zone].name}. Level ${b.level}.`;
-        })
-        .join('\n'),
-      options: [
-        { label: page === 0 ? 'The outer lands…' : 'The heartland…', action: () => this.bestiary(1 - page) },
-        { label: 'Back', action: () => this.talk('orrin') },
-      ],
-    });
   }
 
   /** Weapon trials (or elder foes) conquered. */
@@ -260,7 +232,6 @@ export class Story {
       case 'orrin': {
         if (this.quest('trials').state === 'active') this.quest('trials').progress = this.trialsWon(false);
         if (this.quest('elders').state === 'active') this.quest('elders').progress = this.trialsWon(true);
-        if (this.quest('legends').state === 'active') this.quest('legends').progress = this.legendsSlain();
         const historian = c.roleId === 'historian';
         return this.open({
           title: 'Orrin',
@@ -280,16 +251,6 @@ export class Story {
               'Elder foes',
               'orrin',
             ),
-            this.tellOf(
-              'legends',
-              'Do you keep a bestiary?',
-              'Beasts of Legend',
-              "My bestiary names thirty-five beasts of legend, each in a lair of its own: two in every part of the heartland, three or four in each of the outer lands beyond it. They wake when you come near, follow you only so far, and come back a while after they fall. The first time each one falls it leaves a trophy, or the weapon it fought with.\n\nThe gentlest, Lykon the Bandit King and the Erymanthian Boar, are on the Golden Reach (level 4 or so). The worst, out in the Cinderwaste, would trouble a hero of level 16. Every lair is on your map.",
-              'Every beast in the bestiary has fallen.',
-              'Beasts of legend',
-              'orrin',
-            ),
-            this.quest('legends').state !== 'none' ? { label: 'Let me read the bestiary.', action: () => this.bestiary(0) } : null,
             {
               label: 'Where are the trials?',
               action: () =>
