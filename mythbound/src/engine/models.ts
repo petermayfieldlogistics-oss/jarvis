@@ -2,7 +2,7 @@
 // weapons and props. Characters live in humanoid.ts and creatures.ts.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RUNES, type RuneId, type WeaponKind } from '../data/defs';
 
 const matCache = new Map<string, THREE.Material>();
@@ -61,6 +61,68 @@ export function compact(root: THREE.Object3D): THREE.Object3D {
  * Frees the GPU memory of a model that is gone for good. Materials from the
  * shared caches stay; one-off sprite materials go.
  */
+let outlineMat: THREE.MeshBasicMaterial | null = null;
+/** The heroes' ink line for rigid models: a dark shell a hair larger, its inner faces drawn (bolder on bigger models, as on the heroes). */
+function outlineMaterial(): THREE.MeshBasicMaterial {
+  if (!outlineMat) {
+    outlineMat = new THREE.MeshBasicMaterial({ color: 0x0e0b10, side: THREE.BackSide });
+    outlineMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', /* glsl */ `#include <begin_vertex>
+        float inkDepth = -(modelViewMatrix * vec4(position, 1.0)).z;
+        transformed += normal * clamp(inkDepth * 0.0021, 0.0042, 0.03);`);
+    };
+    outlineMat.customProgramCacheKey = () => 'rigid-ink';
+  }
+  return outlineMat;
+}
+
+const welded = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+/** A copy with its corners welded and normals averaged, so the ink shell has no cracks at hard edges (skin weights kept). */
+function weldedCopy(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  let w = welded.get(g);
+  if (!w) {
+    const p = new THREE.BufferGeometry();
+    for (const name of ['position', 'skinIndex', 'skinWeight']) if (g.attributes[name]) p.setAttribute(name, g.attributes[name]);
+    if (g.index) p.setIndex(g.index);
+    w = mergeVertices(p, 1e-4);
+    w.computeVertexNormals();
+    welded.set(g, w);
+  }
+  return w;
+}
+
+/** Outlines a model (a creature boss) in ink like the heroes. Glowing and see-through parts are left bare. */
+export function outline(root: THREE.Object3D) {
+  const list: THREE.Mesh[] = [];
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || m.userData.noInk || Array.isArray(m.material)) return;
+    const mat = m.material as THREE.MeshStandardMaterial;
+    if (mat.transparent || (mat.emissiveIntensity > 0.5 && mat.emissive && mat.emissive.getHex() !== 0)) return;
+    list.push(m);
+  });
+  for (const m of list) {
+    const geo = weldedCopy(m.geometry);
+    let ink: THREE.Mesh;
+    const sk = m as THREE.SkinnedMesh;
+    if (sk.isSkinnedMesh) {
+      // Bound to the same bones, so the line bends with the body.
+      const s = new THREE.SkinnedMesh(geo, outlineMaterial());
+      s.bind(sk.skeleton, sk.bindMatrix);
+      if (sk.boundingSphere) s.boundingSphere = sk.boundingSphere.clone();
+      m.parent!.add(s);
+      ink = s;
+    } else {
+      ink = new THREE.Mesh(geo, outlineMaterial());
+      m.add(ink);
+    }
+    ink.castShadow = false;
+    ink.userData.noInk = true;
+    ink.userData.keep = true;
+    ink.raycast = () => {};
+  }
+}
+
 export function disposeObject(root: THREE.Object3D) {
   root.traverse((o) => {
     const m = o as THREE.Mesh;
@@ -181,6 +243,27 @@ function bentTube(pts: number[][], radii: number[], m: THREE.Material, parent: T
   }
 }
 
+/** A tube along a smooth curve through `pts`, its radius r(t) (t from 0 to 1 along it), scaled by `wide` across x and `deep` along z. */
+function taperTube(pts: number[][], r: (t: number) => number, seg = 16, radial = 6, wide = 1, deep = 1): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+  const geo = new THREE.TubeGeometry(curve, seg, 1, radial, false);
+  const pos = geo.attributes.position;
+  const c = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i <= seg; i++) {
+    curve.getPointAt(i / seg, c);
+    const k = r(i / seg);
+    for (let j = 0; j <= radial; j++) {
+      const n = i * (radial + 1) + j;
+      v.fromBufferAttribute(pos, n).sub(c).multiplyScalar(k);
+      v.x *= wide;
+      v.z *= deep;
+      pos.setXYZ(n, c.x + v.x, c.y + v.y, c.z + v.z);
+    }
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
 /** Strokes of each rune's glyph, x and y from -0.5 to 0.5. */
 const GLYPHS: Record<RuneId, number[][]> = {
   fire: [[0.25, 0.5, -0.25, 0], [-0.25, 0, 0.25, -0.5]],
@@ -295,7 +378,7 @@ export function buildWraps(variant: string, left: boolean, rune?: RuneId): THREE
   return g;
 }
 
-export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId): THREE.Group {
+export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId, id?: string): THREE.Group {
   const g = new THREE.Group();
   // The animator reads this to carry the weapon the right way.
   g.userData.kind = kind;
@@ -315,8 +398,71 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
   const fuller = (w: number, y0: number, y1: number, face: number) => {
     for (const z of [-1, 1]) part(box(w, y1 - y0, 0.002), darkSteel, 0, (y0 + y1) / 2, z * face, g);
   };
+  // Where a rune would glow; a weapon shaped unlike the rest of its kind moves it.
+  let spots = RUNE_SPOTS[kind];
   switch (kind) {
     case 'sword': {
+      if (id === 'duelist-saber') {
+        // A slim blade curving back toward its spine, and brass round the
+        // hand: a knuckle bow from the guard down to the pommel, and a back
+        // quillon curled toward the blade.
+        const bend = (y: number) => 0.062 * Math.max(0, y - 0.12) ** 2;
+        const edge: [number, number][] = [], spine: [number, number][] = [];
+        for (let i = 0; i <= 8; i++) {
+          const y = 0.12 + i * 0.125, w = 1 - i * 0.03;
+          edge.push([bend(y) - 0.022 * w, y]);
+          spine.push([bend(y) + 0.017 * w, y]);
+        }
+        part(bladeGeo([...edge, [bend(1.22) + 0.006, 1.22], ...spine.reverse()], 0.012), steel, 0, 0, 0, g);
+        for (let i = 0; i < 3; i++) {
+          const y = 0.3 + i * 0.2;
+          for (const z of [-1, 1]) part(box(0.007, 0.2, 0.002), darkSteel, bend(y) + 0.005, y, z * 0.0172, g).rotation.z = -Math.atan(0.124 * (y - 0.12));
+        }
+        part(cyl(0.019, 0.022, 0.2, 8), wrap, 0, 0, 0, g);
+        cord(0.0225, [-0.07, -0.035, 0, 0.035, 0.07], brass);
+        part(box(0.055, 0.028, 0.038), brass, -0.002, 0.108, 0, g);
+        part(taperTube([[-0.02, 0.108, 0], [-0.06, 0.1, 0], [-0.086, 0.04, 0], [-0.08, -0.05, 0], [-0.05, -0.118, 0], [-0.012, -0.135, 0]], () => 0.0085, 18, 5), brass, 0, 0, 0, g);
+        part(taperTube([[0.02, 0.108, 0], [0.06, 0.115, 0], [0.084, 0.142, 0], [0.078, 0.168, 0], [0.062, 0.162, 0]], (t) => 0.0085 - t * 0.003, 12, 5), brass, 0, 0, 0, g);
+        part(sphere(0.012, 6, 4), brass, 0.062, 0.162, 0, g);
+        part(cyl(0.024, 0.018, 0.03, 8), brass, 0, -0.115, 0, g);
+        part(sphere(0.023, 8, 6), brass, 0, -0.14, 0, g).scale.y = 0.8;
+        const x = bend(0.42) - 0.0025;
+        spots = [[x, 0.42, 0.0175, 0.06, 0], [x, 0.42, -0.0175, 0.06, 0]];
+        break;
+      }
+      if (id === 'reapers-edge') {
+        // Forged from the Reaper's scythe: a black blade that hooks at its
+        // point the way the scythe did, its edge lit with the pale green of
+        // the souls it reaped. A bone guard, a grip of vertebrae, and a skull
+        // for a pommel whose eyes still glow.
+        const black = mat(0x4a4858, { rough: 0.35, metal: 0.2 });
+        const bone = mat(0xd8d0b8, { rough: 0.7 });
+        const soul = mat(0x70ffb0, { emissive: 0x40ff90, emissiveIntensity: 1.8 });
+        const edge: [number, number][] = [[-0.032, 0.13], [-0.034, 0.45], [-0.037, 0.8], [-0.042, 0.95], [-0.052, 1.04], [-0.072, 1.1], [-0.1, 1.125], [-0.125, 1.11]];
+        const back: [number, number][] = [[-0.148, 1.065], [-0.137, 1.14], [-0.11, 1.195], [-0.075, 1.225], [-0.03, 1.22], [0.005, 1.17], [0.025, 1.08], [0.03, 0.95], [0.028, 0.13]];
+        part(bladeGeo([...edge, ...back], 0.016), black, 0, 0, 0, g);
+        // The lit edge: a strip just inside the edge on both faces, round into the hook.
+        const inner = (d: number) => edge.slice(1, 7).map(([x, y], i, a) => {
+          const [px, py] = a[Math.max(0, i - 1)], [nx, ny] = a[Math.min(a.length - 1, i + 1)];
+          const len = Math.hypot(nx - px, ny - py);
+          return [x + ((ny - py) / len) * d, y - ((nx - px) / len) * d] as [number, number];
+        });
+        const strip = bladeGeo([...inner(0.003), ...inner(0.011).reverse()], 0.001);
+        for (const z of [-1, 1]) part(strip, soul, 0, 0, z * 0.0206, g).castShadow = false;
+        part(taperTube([[-0.115, 0.188, 0], [-0.078, 0.128, 0], [-0.032, 0.104, 0], [0, 0.1, 0], [0.032, 0.104, 0], [0.078, 0.128, 0], [0.115, 0.188, 0]], (t) => 0.004 + 0.02 * Math.sin(PI * t), 18, 6, 1, 0.85), bone, 0, 0, 0, g);
+        for (const z of [-1, 1]) part(sphere(0.014, 8, 6), soul, 0, 0.104, z * 0.016, g).scale.z = 0.5;
+        part(cyl(0.017, 0.017, 0.2, 6), black, 0, 0, 0, g);
+        for (let i = 0; i < 5; i++) {
+          const y = -0.08 + i * 0.04;
+          part(cyl(0.024, 0.024, 0.024, 8), bone, 0, y, 0, g);
+          part(box(0.062, 0.008, 0.014), bone, 0, y, 0, g);
+        }
+        // The skull looks out over the blade's face.
+        part(sphere(0.032, 10, 8), bone, 0, -0.148, 0, g).scale.set(0.9, 1, 1.05);
+        part(box(0.034, 0.018, 0.03), bone, 0, -0.176, 0.01, g);
+        for (const x of [-1, 1]) part(sphere(0.0085, 6, 4), soul, x * 0.012, -0.146, 0.027, g);
+        break;
+      }
       // Corded grip, wheel pommel set with a stone.
       part(cyl(0.022, 0.026, 0.2, 8), wrap, 0, 0.0, 0, g);
       cord(0.0262, [-0.065, -0.022, 0.022, 0.065]);
@@ -347,6 +493,39 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       break;
     }
     case 'dagger': {
+      if (id === 'venomfang') {
+        // The Giant Spider's fang: dark at the root, pale toward its point,
+        // a channel of venom glowing down both faces and a drop of it at the
+        // tip. Mandibles for a guard; spider silk binds the grip.
+        const chitin = mat(0x2a2018, { rough: 0.45, metal: 0.1 });
+        const ivory = mat(0xd8d8b0, { rough: 0.35 });
+        const venom = mat(0x9aff60, { emissive: 0x50e020, emissiveIntensity: 1.8 });
+        const silk = mat(0xe0dcd0, { rough: 0.9 });
+        const at = (t: number) => [-0.09 * t * t, 0.07 + 0.46 * t, 0];
+        const r = (t: number) => 0.03 * (1 - t) ** 0.8 + 0.002;
+        const along = (a: number, b: number, z = (_t: number) => 0) => Array.from({ length: 7 }, (_, i) => {
+          const t = a + ((b - a) * i) / 6, p = at(t);
+          return [p[0], p[1], z(t)];
+        });
+        part(taperTube(along(0, 0.5), (t) => r(t * 0.5), 10, 7, 1, 0.7), chitin, 0, 0, 0, g);
+        part(taperTube(along(0.48, 1), (t) => r(0.48 + t * 0.52), 12, 7, 1, 0.7), ivory, 0, 0, 0, g);
+        for (const s of [-1, 1]) part(taperTube(along(0.12, 0.86, (t) => s * (r(t) * 0.7 - 0.0025)), (t) => 0.0042 - t * 0.0025, 12, 4), venom, 0, 0, 0, g).castShadow = false;
+        const tip = at(1);
+        part(sphere(0.0075, 6, 5), venom, tip[0] - 0.002, tip[1] - 0.006, 0, g).scale.y = 1.5;
+        const drop = glowSprite(0x80ff40, 0.1, 0.7);
+        drop.position.set(tip[0], tip[1], 0);
+        g.add(drop);
+        part(cyl(0.036, 0.028, 0.03, 8), chitin, 0, 0.072, 0, g);
+        for (const s of [-1, 1]) part(taperTube([[s * 0.02, 0.07, 0], [s * 0.05, 0.085, 0], [s * 0.066, 0.12, 0], [s * 0.058, 0.152, 0]], (t) => 0.011 - t * 0.008, 8, 5), chitin, 0, 0, 0, g);
+        part(cyl(0.018, 0.021, 0.13, 8), wrap, 0, 0, 0, g);
+        cord(0.0215, [-0.048, -0.024, 0, 0.024, 0.048], silk);
+        for (const s of [-1, 1]) part(box(0.004, 0.11, 0.003), silk, 0, 0, s * 0.0205, g).rotation.z = s * 0.35;
+        part(new THREE.OctahedronGeometry(0.028, 0), chitin, 0, -0.085, 0, g).scale.set(1, 1.25, 0.8);
+        for (const z of [-1, 1]) part(sphere(0.01, 6, 4), venom, 0, -0.085, z * 0.02, g).scale.z = 0.5;
+        const x = at(0.326)[0];
+        spots = [[x, 0.22, 0.0185, 0.045, 0], [x, 0.22, -0.0185, 0.045, 0]];
+        break;
+      }
       part(cyl(0.018, 0.022, 0.13, 8), wrap, 0, 0, 0, g);
       cord(0.0222, [-0.04, 0, 0.04]);
       // Faceted pommel; quillons swept toward the blade, a stone in the middle.
@@ -366,12 +545,18 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       part(cyl(0.032, 0.032, 0.16, 8), wrap, 0, -0.02, 0, g);
       cord(0.0345, [-0.08, -0.035, 0.01, 0.05]);
       part(cyl(0.036, 0.03, 0.04, 8), darkSteel, 0, -0.12, 0, g);
-      // Bearded head: a broad curved edge in front, a spike behind. The
-      // forge-dark middle is thicker than the polished edge.
-      const head = bladeGeo([[0.02, 0.66], [0.2, 0.6], [0.3, 0.68], [0.33, 0.8], [0.3, 0.94], [0.2, 0.98], [0.02, 0.9]], 0.035);
-      head.rotateY(-PI / 2);
-      part(head, legendary ? glow : steel, 0, 0, 0, g);
-      const cheek = bladeGeo([[0.02, 0.68], [0.13, 0.655], [0.17, 0.8], [0.13, 0.935], [0.02, 0.89]], 0.05);
+      // Bearded head: the edge sweeps down into a hooked beard, ground bright
+      // along a forged grey body that thickens into a dark cheek at the haft.
+      // A spike behind.
+      const inner: [number, number][] = [[0.17, 0.565], [0.215, 0.595], [0.26, 0.66], [0.285, 0.75], [0.285, 0.83], [0.26, 0.895], [0.215, 0.935]];
+      const edgeArc: [number, number][] = [[0.24, 0.975], [0.29, 0.925], [0.322, 0.84], [0.322, 0.74], [0.292, 0.64], [0.24, 0.56], [0.18, 0.515]];
+      const body = bladeGeo([[0.02, 0.69], [0.06, 0.68], [0.1, 0.64], [0.14, 0.585], ...inner, [0.16, 0.948], [0.08, 0.925], [0.02, 0.91]], 0.03);
+      body.rotateY(-PI / 2);
+      part(body, mat(0x8e9298, { rough: 0.45, metal: 0.4 }), 0, 0, 0, g);
+      const bit = bladeGeo([...edgeArc, ...inner], 0.02);
+      bit.rotateY(-PI / 2);
+      part(bit, legendary ? glow : steel, 0, 0, 0, g);
+      const cheek = bladeGeo([[0.02, 0.69], [0.12, 0.675], [0.16, 0.8], [0.12, 0.925], [0.02, 0.9]], 0.05);
       cheek.rotateY(-PI / 2);
       part(cheek, darkSteel, 0, 0, 0, g);
       part(box(0.075, 0.16, 0.085), darkSteel, 0, 0.8, 0, g);
@@ -388,51 +573,184 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       cord(0.0425, [-0.1, -0.055, -0.01, 0.035]);
       part(sphere(0.045, 8, 6), brass, 0, -0.16, 0, g);
       for (const y of [0.3, 0.62]) part(cyl(0.042, 0.042, 0.03, 8), darkSteel, 0, y, 0, g);
-      // Iron-bound head with stepped striking faces, rivets and a top spike.
-      part(box(0.24, 0.22, 0.4), mat(0x3a3634, { rough: 0.45, metal: 0.35 }), 0, 0.98, 0, g);
+      // An octagonal forged head: flared striking faces at both ends, iron
+      // bands, a collar round the haft and a spike on top. Hephaestus's own
+      // glows from a forge seam round its middle.
+      const iron = mat(legendary ? 0x4a3a34 : 0x4a4644, { rough: 0.45, metal: 0.4 });
+      const along = (geo: THREE.BufferGeometry, z: number, m: THREE.Material) => part(geo, m, 0, 0.98, z, g).rotation.set(PI / 2, PI / 8, 0);
+      along(cyl(0.122, 0.122, 0.34, 8), 0, iron);
       for (const z of [-1, 1]) {
-        part(box(0.26, 0.24, 0.02), darkSteel, 0, 0.98, z * 0.205, g);
-        part(box(0.2, 0.18, 0.04), darkSteel, 0, 0.98, z * 0.23, g);
+        along(cyl(0.142, 0.122, 0.05, 8).rotateX(z > 0 ? 0 : PI), z * 0.19, darkSteel);
+        along(cyl(0.118, 0.142, 0.03, 8).rotateX(z > 0 ? 0 : PI), z * 0.228, darkSteel);
+        along(cyl(0.128, 0.128, 0.028, 8), z * 0.105, legendary ? brass : darkSteel);
       }
-      part(box(0.25, 0.05, 0.41), legendary ? glow : brass, 0, 0.98, 0, g);
-      for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) part(sphere(0.016, 5, 4), brass, x * 0.122, 0.98 + y * 0.075, z * 0.13, g);
-      part(cone(0.05, 0.14, 6), darkSteel, 0, 1.16, 0, g);
-      for (const x of [-1, 1]) part(box(0.012, 0.26, 0.035), darkSteel, x * 0.036, 0.78, 0, g);
+      along(cyl(0.126, 0.126, 0.05, 8), 0, legendary ? glow : brass);
+      if (legendary) {
+        for (const z of [-1, 1]) glyph('fire', mat(0xa83a10, { emissive: 0xff5a10, emissiveIntensity: 1.6 }), g, 0.124, 0.98, z * 0.06, 0.09, PI / 2);
+        const ember = glowSprite(0xff8030, 0.55, 0.7);
+        ember.position.set(0, 0.98, 0);
+        g.add(ember);
+      }
+      part(cyl(0.05, 0.06, 0.07, 8), darkSteel, 0, 0.85, 0, g);
+      part(cone(0.05, 0.16, 6), darkSteel, 0, 1.17, 0, g);
+      for (const x of [-1, 1]) part(box(0.012, 0.26, 0.035), darkSteel, x * 0.036, 0.73, 0, g);
       break;
     }
     case 'staff': {
-      const wood = mat(legendary ? 0x221830 : 0x5a3e22, { rough: 0.8 });
-      const metal = legendary ? mat(0x221830) : brass;
-      part(cyl(0.03, 0.04, 1.7), wood, 0, 0.5, 0, g);
-      // Bands down the shaft, a ferrule at the foot, a collar under the head.
-      for (const [y, r] of [[0.05, 0.044], [0.6, 0.041], [1.1, 0.038]]) part(cyl(r, r, 0.035, 8), metal, 0, y, 0, g);
-      part(cone(0.04, 0.1, 8), metal, 0, -0.39, 0, g).rotation.x = PI;
-      part(cyl(0.045, 0.032, 0.09, 8), metal, 0, 1.3, 0, g);
-      const orb = part(sphere(0.1), mat(legendary ? 0xb080ff : 0x80c0ff, { emissive: legendary ? 0x8040ff : 0x3080ff, emissiveIntensity: 2 }), 0, 1.42, 0, g);
-      orb.castShadow = false;
-      for (let i = 0; i < 3; i++) part(cone(0.025, 0.26), metal, Math.cos(i * 2.1) * 0.1, 1.42, Math.sin(i * 2.1) * 0.1, g).rotation.set(Math.sin(i * 2.1) * 0.5, 0, -Math.cos(i * 2.1) * 0.5);
-      // A ring round the orb, a finial and ribbons tied under the collar.
-      part(new THREE.TorusGeometry(0.135, 0.008, 4, 20), metal, 0, 1.42, 0, g).rotation.x = PI / 2;
-      part(cone(0.015, 0.08, 5), metal, 0, 1.57, 0, g);
-      const ribbon = mat(legendary ? 0xd8c8ff : 0x8a1c18, { rough: 0.9 });
-      part(box(0.035, 0.3, 0.006), ribbon, 0.045, 1.12, 0.02, g).rotation.z = 0.12;
-      part(box(0.03, 0.22, 0.006), ribbon, 0.03, 1.15, -0.03, g).rotation.set(0.2, 0.5, 0.18);
+      if (legendary) {
+        // Hecate's staff: black wood bound in silver, a silver crescent moon
+        // cradling a violet orb, her torches burning on its horns, and a key
+        // to every door hanging from it.
+        const ebony = mat(0x221830, { rough: 0.6 });
+        const silver = mat(0xc8ccd8, { rough: 0.3, metal: 0.5 });
+        const violet = mat(0xc890ff, { emissive: 0x9040ff, emissiveIntensity: 2.2 });
+        part(cyl(0.03, 0.04, 1.7, 8), ebony, 0, 0.5, 0, g);
+        part(cyl(0.042, 0.042, 0.24, 8), wrap, 0, 0, 0, g);
+        cord(0.044, [-0.08, -0.04, 0, 0.04, 0.08], silver);
+        for (const [y, r] of [[0.2, 0.042], [0.62, 0.038], [1.16, 0.035]]) part(cyl(r, r, 0.03, 8), silver, 0, y, 0, g);
+        part(cone(0.04, 0.1, 8), silver, 0, -0.4, 0, g).rotation.x = PI;
+        part(cyl(0.036, 0.03, 0.06, 8), silver, 0, 1.34, 0, g);
+        // The crescent, horns up: its outer arc round the bottom, its inner
+        // arc back across, meeting in points.
+        const moon: [number, number][] = [];
+        for (let i = 0; i <= 12; i++) {
+          const a = ((160 + (220 * i) / 12) * PI) / 180;
+          moon.push([Math.cos(a) * 0.12, 1.47 + Math.sin(a) * 0.12]);
+        }
+        for (let i = 0; i <= 10; i++) {
+          const a = ((372 - (204 * i) / 10) * PI) / 180;
+          moon.push([Math.cos(a) * 0.11, 1.5 + Math.sin(a) * 0.11]);
+        }
+        part(bladeGeo(moon, 0.008), silver, 0, 0, 0, g);
+        const orb = part(sphere(0.062, 12, 10), violet, 0, 1.5, 0, g);
+        orb.castShadow = false;
+        const glowAt = (x: number, y: number, size: number, o: number) => {
+          const sp = glowSprite(0xb070ff, size, o);
+          sp.position.set(x, y, 0);
+          g.add(sp);
+        };
+        glowAt(0, 1.5, 0.45, 0.75);
+        for (const sd of [-1, 1]) {
+          const x = sd * 0.108;
+          part(cyl(0.014, 0.01, 0.03, 6), silver, x, 1.525, 0, g);
+          part(cone(0.016, 0.07, 6), violet, x, 1.565, 0, g).castShadow = false;
+          glowAt(x, 1.56, 0.16, 0.8);
+        }
+        // The key, on two links of chain under the left horn.
+        for (let i = 0; i < 2; i++) part(new THREE.TorusGeometry(0.008, 0.0025, 4, 8), silver, -0.08, 1.4 - i * 0.016, 0, g).rotation.y = i * PI_2;
+        part(new THREE.TorusGeometry(0.014, 0.004, 4, 10), silver, -0.08, 1.37, 0, g);
+        part(box(0.007, 0.07, 0.007), silver, -0.08, 1.322, 0, g);
+        for (const y of [1.296, 1.31]) part(box(0.02, 0.007, 0.007), silver, -0.07, y, 0, g);
+        spots = [[0, 1.0, 0.035, 0.08, 0], [0, 1.0, -0.035, 0.08, PI]];
+        break;
+      }
+      // A gnarled oak staff: its head splits into three roots that wind up
+      // round a floating ice-blue crystal, with leaves still growing at the
+      // fork.
+      const oak = mat(0x6a4a2a, { rough: 0.85 });
+      const bark = mat(0x4a3220, { rough: 0.95 });
+      const leaf = mat(0x5a8a3a, { rough: 0.8 });
+      // The shaft wanders a little, as a grown branch does (straight at the hand).
+      part(taperTube([[0, -0.4, 0], [0, 0, 0], [-0.009, 0.5, 0.006], [0, 1.0, 0], [0.006, 1.12, -0.004], [0, 1.22, 0]], (t) => 0.034 - t * 0.004, 24, 7), oak, 0, 0, 0, g);
+      for (const [x, y, z] of [[0.028, 0.36, 0.008], [-0.03, 0.78, -0.006]]) part(sphere(0.016, 6, 5), bark, x, y, z, g).scale.set(1, 1.5, 1);
+      part(cyl(0.04, 0.04, 0.24, 8), wrap, 0, 0, 0, g);
+      cord(0.042, [-0.08, -0.04, 0, 0.04, 0.08]);
+      part(cyl(0.039, 0.039, 0.03, 8), brass, 0, 0.16, 0, g);
+      part(cone(0.036, 0.1, 8), brass, 0, -0.43, 0, g).rotation.x = PI;
+      for (let k = 0; k < 3; k++) {
+        const a0 = 0.3 + (k * 2 * PI) / 3;
+        const root = [0, 1, 2, 3, 4, 5].map((i) => {
+          const a = a0 + i * 0.28, rr = [0.012, 0.05, 0.085, 0.092, 0.065, 0.02][i];
+          return [Math.cos(a) * rr, 1.19 + i * 0.075, Math.sin(a) * rr];
+        });
+        part(taperTube(root, (t) => 0.024 - t * 0.017, 16, 5), oak, 0, 0, 0, g);
+        const sprig = part(bladeGeo([[0, 0], [0.018, 0.03], [0.012, 0.062], [0, 0.078], [-0.012, 0.062], [-0.018, 0.03]], 0.003), leaf, Math.cos(a0 + 1) * 0.04, 1.24, Math.sin(a0 + 1) * 0.04, g);
+        sprig.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.cos(a0 + 1), 0.35, Math.sin(a0 + 1)).normalize());
+      }
+      const crystal = part(new THREE.OctahedronGeometry(0.05, 0), mat(0x9ad8ff, { rough: 0.15, emissive: 0x3a9aff, emissiveIntensity: 1.6 }), 0, 1.42, 0, g);
+      crystal.scale.set(1, 1.7, 1);
+      crystal.rotation.y = 0.4;
+      crystal.castShadow = false;
+      const shine = glowSprite(0x60b0ff, 0.36, 0.7);
+      shine.position.set(0, 1.42, 0);
+      g.add(shine);
+      const ribbon = mat(0x8a1c18, { rough: 0.9 });
+      part(box(0.035, 0.3, 0.006), ribbon, 0.045, 1.02, 0.02, g).rotation.z = 0.12;
+      part(box(0.03, 0.22, 0.006), ribbon, 0.03, 1.05, -0.03, g).rotation.set(0.2, 0.5, 0.18);
+      part(cyl(0.036, 0.036, 0.03, 8), ribbon, 0, 1.15, 0, g);
+      spots = [[0, 1.0, 0.0345, 0.08, 0], [0, 1.0, -0.0345, 0.08, PI]];
       break;
     }
     case 'trident': {
-      part(cyl(0.03, 0.03, 1.9), mat(0x2a6a7a, { rough: 0.35, metal: 0.4 }), 0, 0.6, 0, g);
+      // Poseidon's own is sea-green bronze and gold, with scallop shells on
+      // its socket and sea water glowing down its points. The Drowned and the
+      // fishers carry plain iron on driftwood, lashed on with rope.
+      const shaft = legendary ? mat(0x2a6a7a, { rough: 0.35, metal: 0.4 }) : mat(0x6e5a44, { rough: 0.9 });
+      const iron = legendary ? steel : mat(0x7a7e84, { rough: 0.45, metal: 0.45 });
+      const rope = mat(0x9a8a62, { rough: 0.95 });
+      part(cyl(0.028, 0.032, 1.9, 8), shaft, 0, 0.6, 0, g);
       part(cyl(0.036, 0.036, 0.26, 8), wrap, 0, 0, 0, g);
       cord(0.039, [-0.09, -0.03, 0.03, 0.09]);
-      for (const y of [0.7, 1.4]) part(cyl(0.037, 0.037, 0.03, 8), brass, 0, y, 0, g);
-      part(cone(0.03, 0.12, 6), steel, 0, -0.41, 0, g).rotation.x = PI;
-      // Socket, curved arms out to the side tines, and barbs on every tine.
-      part(cyl(0.04, 0.032, 0.1, 8), steel, 0, 1.5, 0, g);
-      for (const s of [-1, 1]) part(box(0.15, 0.035, 0.035), steel, s * 0.06, 1.565, 0, g).rotation.z = s * 0.53;
-      const tine = legendary ? glow : steel;
-      for (const x of [-0.12, 0, 0.12]) {
-        const y = 1.68 + (x === 0 ? 0.06 : 0);
-        part(cone(0.035, 0.32), tine, x, y, 0, g);
-        for (const s of x === 0 ? [-1, 1] : [Math.sign(x)]) part(cone(0.016, 0.07, 4), tine, x + s * 0.028, y + 0.05, 0, g).rotation.z = -s * 2.62;
+      if (legendary) {
+        // Gold bands, a gold spiral up to the head, and a pearl at the foot.
+        for (const y of [0.18, 0.7]) part(cyl(0.036, 0.036, 0.03, 8), brass, 0, y, 0, g);
+        const coil: number[][] = [];
+        for (let i = 0; i <= 36; i++) {
+          const a = i * 0.45;
+          coil.push([Math.cos(a) * 0.029, 1.08 + i * 0.0102, Math.sin(a) * 0.029]);
+        }
+        part(taperTube(coil, () => 0.0055, 44, 4), brass, 0, 0, 0, g);
+        part(cyl(0.036, 0.03, 0.05, 8), brass, 0, -0.37, 0, g);
+        part(sphere(0.04, 8, 6), mat(0xf4ece0, { rough: 0.22, metal: 0.1 }), 0, -0.42, 0, g);
+      } else {
+        // An iron shoe at the foot, and rope lashing under the socket.
+        part(cone(0.033, 0.11, 6), iron, 0, -0.405, 0, g).rotation.x = PI;
+        cord(0.031, [0.7, 0.715, 1.36, 1.375, 1.39, 1.405], rope);
+      }
+      // The socket, and the head forged in one piece: the outer tines sweep
+      // out from it and up, each ending in a flat barbed point.
+      part(cyl(0.04, 0.03, 0.12, 8), iron, 0, 1.5, 0, g);
+      part(new THREE.TorusGeometry(0.034, 0.008, 5, 12), legendary ? brass : iron, 0, 1.445, 0, g).rotation.x = PI / 2;
+      for (const s of [-1, 1]) {
+        const arm = [[0, 1.552, 0], [s * 0.05, 1.56, 0], [s * 0.105, 1.592, 0], [s * 0.135, 1.65, 0], [s * 0.142, 1.74, 0], [s * 0.138, 1.83, 0]];
+        part(taperTube(arm, (t) => 0.021 - t * 0.008, 16, 5), iron, 0, 0, 0, g);
+      }
+      part(cyl(0.014, 0.021, 0.33, 6), iron, 0, 1.715, 0, g);
+      const tine = legendary ? glow : iron;
+      // Center point: barbed on both sides. Outer points: barbed outward only.
+      part(bladeGeo([[-0.015, 0], [-0.05, -0.04], [-0.034, 0.035], [0, 0.15], [0.034, 0.035], [0.05, -0.04], [0.015, 0]], 0.008), tine, 0, 1.875, 0, g);
+      for (const s of [-1, 1]) {
+        const tip: [number, number][] = [[-0.013, 0], [-0.028, 0.03], [0, 0.125], [0.03, 0.03], [0.046, -0.036], [0.013, 0]];
+        part(bladeGeo(tip.map(([x, y]) => [x * s, y] as [number, number]), 0.007), tine, s * 0.138, 1.825, 0, g);
+      }
+      if (legendary) {
+        // A gold scallop shell on each face of the socket, ribbed, with a
+        // pearl at its hinge.
+        const fan: [number, number][] = [[0, 0]];
+        for (let i = 0; i <= 12; i++) {
+          const a = 0.15 + (i / 12) * (PI - 0.3);
+          const r = i % 2 ? 0.072 : 0.06;
+          fan.push([Math.cos(a) * r, Math.sin(a) * r]);
+        }
+        const pearl = mat(0xf4ece0, { rough: 0.22, metal: 0.1 });
+        for (const z of [-1, 1]) {
+          const shell = pivot(g, 0, 1.445, z * 0.034);
+          shell.rotation.x = z * 0.1;
+          part(bladeGeo(fan, 0.006), brass, 0, 0, 0, shell);
+          for (let i = 1; i < 12; i += 2) {
+            const a = 0.15 + (i / 12) * (PI - 0.3);
+            part(box(0.006, 0.058, 0.004), steel, Math.cos(a) * 0.035, Math.sin(a) * 0.035, z * 0.009, shell).rotation.z = a - PI / 2;
+          }
+          part(sphere(0.016, 8, 6), pearl, 0, 0.006, z * 0.012, shell);
+        }
+        // Water runs down the middle of each point.
+        const sea = mat(0x7ae8f0, { rough: 0.15, emissive: 0x20b8e0, emissiveIntensity: 1.8 });
+        for (const [x, y, h, face] of [[0, 1.935, 0.075, 0.0122], [-0.138, 1.885, 0.055, 0.0108], [0.138, 1.885, 0.055, 0.0108]]) {
+          for (const z of [-1, 1]) part(box(0.008, h, 0.002), sea, x, y, z * face, g).castShadow = false;
+        }
+        const swell = glowSprite(0x40d8ff, 0.5, 0.55);
+        swell.position.set(0, 1.6, 0);
+        g.add(swell);
       }
       break;
     }
@@ -478,22 +796,57 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       break;
     }
     case 'bow': {
-      // Vertical along local y, limbs curving back toward -z; the group is
-      // turned so it sits upright in a raised left hand.
-      const wood = legendary ? mat(0xe8e4d8, { emissive: 0xa0b0ff, emissiveIntensity: 0.6 }) : mat(0x6a4426, { rough: 0.75 });
-      const sinew = legendary ? brass : mat(0x2e1c10, { rough: 0.8 });
-      const horn = mat(0xe8dcc0, { rough: 0.5 });
+      // Vertical along local y: a riser in the hand, limbs curving back toward
+      // -z to the string's ends at z -0.191, and recurved tips past them. The
+      // group is turned so it sits upright in a raised left hand.
+      const make = legendary ? 'moon' : id === 'copper-bow' ? 'copper' : id === 'elven-bow' ? 'elven' : 'hunting';
+      const look = {
+        hunting: { wood: 0x6a4426, dark: 0x3e2614, band: 0x4a3420, metal: false, grip: 0x3a2a1c, tip: 0xe8dcc0, wide: 1.5, r0: 0.027 },
+        copper: { wood: 0x7a3a20, dark: 0x4a2010, band: 0xc8743c, metal: true, grip: 0x5a1c14, tip: 0xc8743c, wide: 1.5, r0: 0.028 },
+        elven: { wood: 0xd0bc8c, dark: 0x8a7448, band: 0xd8b060, metal: true, grip: 0x3a5a3a, tip: 0xd8b060, wide: 1.25, r0: 0.024 },
+        moon: { wood: 0xece8dc, dark: 0xa8b0d0, band: 0xd8dce8, metal: true, grip: 0x3a4a7a, tip: 0xd8dce8, wide: 1.35, r0: 0.026 },
+      }[make];
+      const wood = make === 'moon' ? mat(look.wood, { rough: 0.35, emissive: 0x8090ff, emissiveIntensity: 0.45 }) : mat(look.wood, { rough: 0.7 });
+      const back = mat(look.dark, { rough: 0.8 });
+      const band = look.metal ? mat(look.band, { rough: 0.35, metal: 0.55 }) : mat(look.band, { rough: 0.9 });
+      const tipMat = look.metal ? band : mat(look.tip, { rough: 0.5 });
+      const leather = mat(look.grip, { rough: 0.95 });
+      // One limb, bottom to top (mirrored for the lower one): out of the riser, back to
+      // the string's end at (0.74, -0.191), then curling forward again.
+      const limb = [[0, 0.08, 0.004], [0, 0.26, -0.036], [0, 0.44, -0.097], [0, 0.6, -0.156], [0, 0.7, -0.187], [0, 0.742, -0.192], [0, 0.785, -0.172], [0, 0.82, -0.132]];
+      const taper = (t: number) => look.r0 * (1 - 0.62 * t) * (1 + 0.25 * Math.max(0, 1 - Math.abs(t - 0.05) * 8));
       for (const s of [-1, 1]) {
-        part(box(0.035, 0.75, 0.045), wood, 0, s * 0.36, -0.08, g).rotation.x = -s * 0.3;
-        // A darker backing strip, recurved tips and horn caps past the string.
-        part(box(0.022, 0.7, 0.008), sinew, 0, s * 0.368, -0.055, g).rotation.x = -s * 0.3;
-        part(box(0.03, 0.1, 0.035), wood, 0, s * 0.758, -0.161, g).rotation.x = s * 0.64;
-        part(cone(0.02, 0.05, 5), horn, 0, s * 0.81, -0.122, g).rotation.x = s > 0 ? 0.64 : PI - 0.64;
-        part(box(0.058, 0.02, 0.068), brass, 0, s * 0.1, 0, g);
+        const pts = limb.map(([x, y, z]) => [x, s * y, z]);
+        part(taperTube(pts, taper, 18, 6, look.wide), wood, 0, 0, 0, g);
+        // A darker backing strip down the limb's back (the side facing away from the archer).
+        part(taperTube(pts.slice(0, 6).map(([x, y, z]) => [x, y, z + 0.012]), (t) => look.r0 * 0.55 * (1 - 0.6 * t), 12, 4, look.wide * 1.1), back, 0, 0, 0, g);
+        // Tip caps where the string loops on, and a band where the limb meets the riser.
+        const tip = part(cone(look.r0 * 0.5, 0.06, 5), tipMat, 0, s * 0.836, -0.118, g);
+        tip.rotation.x = s > 0 ? 0.75 : PI - 0.75;
+        part(cyl(look.r0 * 1.25, look.r0 * 1.25, 0.022, 8), band, 0, s * 0.125, -0.002, g).scale.x = look.wide * 0.9;
+        if (make === 'elven') {
+          // Leaf blades at the tips.
+          const leaf = bladeGeo([[0, 0], [0.028, 0.05], [0, 0.12], [-0.028, 0.05]], 0.004);
+          const lf = part(leaf, band, 0, s * 0.8, -0.15, g);
+          lf.rotation.set(s > 0 ? 0.9 : PI - 0.9, PI / 2, 0);
+        }
       }
-      part(box(0.05, 0.18, 0.06), wrap, 0, 0, 0, g);
+      // The riser: a shaped grip with a leather wrap and an arrow shelf.
+      part(cyl(0.03, 0.03, 0.26, 8), mat(look.dark, { rough: 0.75 }), 0, 0, 0.004, g).scale.set(look.wide * 0.85, 1, 1);
+      part(cyl(0.033, 0.033, 0.13, 8), leather, 0, -0.01, 0.004, g).scale.set(look.wide * 0.85, 1, 1);
+      for (const y of [-0.06, -0.02, 0.02]) part(cyl(0.035, 0.035, 0.008, 8), band, 0, y, 0.004, g).scale.set(look.wide * 0.85, 1, 1);
+      part(box(0.03, 0.02, 0.05), band, 0, 0.065, -0.012, g);
+      if (make === 'moon') {
+        // Artemis's crescent above the grip, and a moonlit glow.
+        const crescent = new THREE.TorusGeometry(0.075, 0.012, 5, 14, PI * 1.25);
+        const cm = part(crescent, mat(0xf0f4ff, { emissive: 0xa8b8ff, emissiveIntensity: 1.6 }), 0, 0.1, 0.03, g);
+        cm.rotation.set(0, PI / 2, -PI * 0.12);
+        const halo = glowSprite(0xb8c8ff, 0.5, 0.5);
+        halo.position.set(0, 0.1, 0.03);
+        g.add(halo);
+      }
       // The string is two segments meeting at the nock, so it can be drawn back.
-      const stringMat = mat(0xe8e2d0, { rough: 0.9 });
+      const stringMat = mat(make === 'moon' ? 0xdfe8ff : 0xe8e2d0, { rough: 0.9, ...(make === 'moon' ? { emissive: 0x8090ff, emissiveIntensity: 0.6 } : {}) });
       const seg = () => {
         const m = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1, 3).translate(0, 0.5, 0), stringMat);
         m.userData.keep = true;
@@ -509,7 +862,7 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       for (let i = 0; i < 3; i++) part(box(0.002, 0.08, 0.03), mat(0xd8d0c0), 0, 0.06, 0, arrow).rotation.y = (i * Math.PI * 2) / 3;
       arrow.visible = false;
       g.add(arrow);
-      g.userData.bow = { top, bottom, arrow, tipTop: new THREE.Vector3(0, 0.718, -0.191), tipBottom: new THREE.Vector3(0, -0.718, -0.191) };
+      g.userData.bow = { top, bottom, arrow, tipTop: new THREE.Vector3(0, 0.742, -0.191), tipBottom: new THREE.Vector3(0, -0.742, -0.191) };
       setBowString(g, new THREE.Vector3(0, 0, -0.191), false);
       g.rotation.x = Math.PI / 2;
       break;
@@ -567,26 +920,32 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       // A red horsehair tassel under a bronze collar.
       part(cone(0.052, 0.15, 8), mat(0x8a1c18, { rough: 1 }), 0, 1.28, 0, g);
       part(cyl(0.031, 0.028, 0.04, 8), brass, 0, 1.37, 0, g);
-      // Socket with small wings, and a leaf head with a raised midrib.
-      part(cyl(0.02, 0.028, 0.13, 8), steel, 0, 1.45, 0, g);
-      part(box(0.1, 0.014, 0.014), steel, 0, 1.42, 0, g);
-      part(bladeGeo([[0, 1.47], [0.048, 1.56], [0.042, 1.66], [0, 1.82], [-0.042, 1.66], [-0.048, 1.56]], 0.01), legendary ? glow : steel, 0, 0, 0, g);
-      part(box(0.012, 0.3, 0.032), steel, 0, 1.64, 0, g);
+      // Socket with flared wings, and a broad leaf head with a raised midrib.
+      part(cyl(0.022, 0.03, 0.15, 8), darkSteel, 0, 1.45, 0, g);
+      part(bladeGeo([[-0.075, 1.405], [0.075, 1.405], [0.03, 1.44], [-0.03, 1.44]], 0.014), darkSteel, 0, 0, 0, g);
+      part(bladeGeo([[0, 1.47], [0.068, 1.57], [0.058, 1.69], [0, 1.9], [-0.058, 1.69], [-0.068, 1.57]], 0.012), legendary ? glow : steel, 0, 0, 0, g);
+      part(box(0.014, 0.36, 0.034), steel, 0, 1.68, 0, g);
       break;
     }
     case 'quarterstaff': {
-      // A plain fighting staff held at its middle, shod with iron at both ends.
-      const wood = mat(0x7a5634, { rough: 0.8 });
+      // A plain fighting staff held at its middle, shod with iron at both
+      // ends; ironwood is near black and bound in brass.
+      const ironwood = id === 'ironwood-staff';
+      const wood = mat(ironwood ? 0x3a2a20 : 0x9a7448, { rough: ironwood ? 0.55 : 0.8 });
+      const shoe = ironwood ? brass : darkSteel;
       part(cyl(0.028, 0.028, 1.9, 8), wood, 0, 0.1, 0, g);
       part(cyl(0.032, 0.032, 0.28, 8), wrap, 0, 0, 0, g);
       cord(0.0335, [-0.12, -0.06, 0, 0.06, 0.12]);
       for (const y of [-0.85, 1.05]) {
-        part(cyl(0.034, 0.034, 0.12, 8), darkSteel, 0, y, 0, g);
-        part(cyl(0.036, 0.036, 0.02, 8), brass, 0, y + (y > 0 ? -0.07 : 0.07), 0, g);
+        part(cyl(0.034, 0.034, 0.12, 8), shoe, 0, y, 0, g);
+        part(cyl(0.036, 0.036, 0.02, 8), ironwood ? darkSteel : brass, 0, y + (y > 0 ? -0.07 : 0.07), 0, g);
+        // Rivets through the shoe.
+        for (const a of [0, PI_2, PI, -PI_2]) part(sphere(0.006, 4, 3), ironwood ? darkSteel : brass, Math.cos(a) * 0.034, y + (y > 0 ? 0.02 : -0.02), Math.sin(a) * 0.034, g);
       }
-      part(sphere(0.034, 8, 5), darkSteel, 0, 1.11, 0, g);
-      part(sphere(0.034, 8, 5), darkSteel, 0, -0.91, 0, g);
+      part(sphere(0.034, 8, 5), shoe, 0, 1.11, 0, g);
+      part(sphere(0.034, 8, 5), shoe, 0, -0.91, 0, g);
       for (const y of [-0.45, 0.65]) part(cyl(0.031, 0.031, 0.018, 8), brass, 0, y, 0, g);
+      if (ironwood) for (const y of [-0.6, -0.3, 0.5, 0.8]) part(cyl(0.03, 0.03, 0.012, 8), brass, 0, y, 0, g);
       break;
     }
     case 'wraps':
@@ -599,11 +958,17 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
       cord(0.0355, [-0.11, -0.06, -0.01, 0.04]);
       part(cyl(0.038, 0.03, 0.05, 8), darkSteel, 0, -0.19, 0, g);
       part(sphere(0.032, 8, 6), brass, 0, -0.23, 0, g);
-      // Two crescent bits back to back, each with a forge-dark cheek.
-      const bit = [[0.03, 0.85], [0.12, 0.82], [0.19, 0.74], [0.235, 0.69], [0.27, 0.78], [0.285, 0.93], [0.27, 1.08], [0.235, 1.17], [0.19, 1.12], [0.12, 1.04], [0.03, 1.01]];
+      // Two crescent bits back to back, forged grey with a bright ground
+      // edge, each with a forge-dark cheek.
+      const inner: [number, number][] = [[0.215, 1.14], [0.24, 1.07], [0.252, 0.93], [0.24, 0.79], [0.215, 0.72]];
+      const body: [number, number][] = [[0.03, 0.85], [0.12, 0.82], [0.19, 0.74], ...inner.slice().reverse(), [0.19, 1.12], [0.12, 1.04], [0.03, 1.01]];
+      const ground: [number, number][] = [[0.235, 0.69], [0.27, 0.78], [0.285, 0.93], [0.27, 1.08], [0.235, 1.17], ...inner];
       const cheek = [[0.03, 0.86], [0.11, 0.85], [0.15, 0.93], [0.11, 1.01], [0.03, 1.0]];
       for (const s of [-1, 1]) {
-        const edge = bladeGeo(bit as [number, number][], 0.028);
+        const forged = bladeGeo(body, 0.028);
+        forged.rotateY(-s * PI_2);
+        part(forged, mat(0x8e9298, { rough: 0.45, metal: 0.4 }), 0, 0, 0, g);
+        const edge = bladeGeo(ground, 0.018);
         edge.rotateY(-s * PI_2);
         part(edge, legendary ? glow : steel, 0, 0, 0, g);
         const ch = bladeGeo(cheek as [number, number][], 0.046);
@@ -760,7 +1125,7 @@ export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId):
     // An inscribed rune glows on the weapon.
     const c = RUNES[rune].color;
     const m = mat(c, { emissive: c, emissiveIntensity: 2.2 });
-    for (const [x, y, z, s, turn] of RUNE_SPOTS[kind]) glyph(rune, m, g, x, y, z, s, turn);
+    for (const [x, y, z, s, turn] of spots) glyph(rune, m, g, x, y, z, s, turn);
   }
   // Many small parts, few draw calls.
   compact(g);

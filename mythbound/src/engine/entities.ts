@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ENEMIES, type Affinity, type BossAttack, type BossDef, type EnemyDef, type EnemyId } from '../data/world';
 import type { CreatureKind, DamageElement } from '../data/defs';
-import { buildShield, buildWeapon, compact } from './models';
+import { buildShield, buildWeapon, compact, outline } from './models';
 import { animateHumanoid, buildBossHumanoid, buildHumanoid, type Rig } from './humanoid';
 import { animateCreature, buildCrab, buildDragon, buildFloater, buildImp, buildInsect, buildQuad, buildReaper, buildSerpent, buildSiren, buildSpider, type CreatureRig } from './creatures';
 import { newAnim, type AnimState, type AttackStyle } from './anim';
@@ -105,6 +105,13 @@ export function enemyModel(def: EnemyDef): Model {
 }
 
 export function bossModel(def: BossDef): Model {
+  const m = bossBody(def);
+  // Creature bosses get the heroes' ink line (the humanoid ones have it already; the dragon is drawn its own way).
+  if (m.creature && def.model !== 'dragon') outline(m.root);
+  return m;
+}
+
+function bossBody(def: BossDef): Model {
   switch (def.model) {
     case 'stag':
       return creatureModel(buildQuad(def.color, 'stag', def.scale));
@@ -124,7 +131,8 @@ export function bossModel(def: BossDef): Model {
       return creatureModel(buildSpider(def.color, def.scale));
     default: {
       const rig = buildBossHumanoid(def.model, def.color, def.scale);
-      const weapon = def.model === 'champion' ? buildWeapon('sword') : def.model === 'golem' ? buildWeapon('hammer') : buildWeapon('bolt');
+      // Each wields the legendary it drops.
+      const weapon = def.model === 'champion' ? buildWeapon('sword', true, undefined, 'sword-of-mars') : def.model === 'golem' ? buildWeapon('hammer', true, undefined, 'hammer-of-hephaestus') : buildWeapon('bolt', true);
       rig.handR.add(weapon);
       if (def.model === 'champion') rig.handL.add(buildShield());
       return humanoidModel(rig);

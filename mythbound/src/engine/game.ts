@@ -1094,7 +1094,7 @@ export class Game {
     const g = new THREE.Group();
     if (isRelic(weaponId)) g.add(buildRelic(weaponId));
     else {
-      const w = buildWeapon(WEAPONS[weaponId].kind, true);
+      const w = buildWeapon(WEAPONS[weaponId].kind, true, undefined, weaponId);
       w.position.y = 0.4;
       g.add(w);
       const glow = glowSprite(0xffd070, 3);

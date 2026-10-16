@@ -231,7 +231,10 @@ is what was chosen; each is easy to change:
     cape over leathers, with a quiver; mages a pointed hat, a stand-up collar and a split robe; rogues sleek leathers,
     crossed straps with throwing knives, a peaked hood and a mask. A body garment keeps the class's cut where it can.
     Heroes are drawn with a thin ink outline, and every humanoid catches the sky's light on its edges and shadowed
-    side, so dark clothes keep their shape.
+    side, so dark clothes keep their shape. Bosses share the ink line (on the creature bosses it bends with them);
+    the humanoid bosses wear the heroes' plate and wield the legendaries they drop. Reaper's Edge is a black hooked
+    blade with a soul-lit edge and a skull pommel, Venomfang a curved spider fang dripping venom, and the Duelist's
+    Saber a curved blade with a brass knuckle bow.
 - **Eating**: X / 🐟 eats the right food: the smallest heal when lightly hurt, the biggest below 40% health (as with
   golden fish), mana food at full health; it heals over a moment, a bite a second at most. The Gear tab has an Eat
   button by each food. X never eats fruit or sweets (see below).

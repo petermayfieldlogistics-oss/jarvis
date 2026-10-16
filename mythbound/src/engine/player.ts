@@ -3267,7 +3267,7 @@ export function attachGear(rig: Rig, classId: ClassId, weaponId: string, rune?: 
     rig.handL.add(left);
     return { weapon, shield: left };
   }
-  const weapon = compact(buildWeapon(w.kind, !!w.legendary, rune));
+  const weapon = compact(buildWeapon(w.kind, !!w.legendary, rune, weaponId));
   if (isOffhand(w.kind)) rig.handL.add(weapon);
   else rig.handR.add(weapon);
   let shield: THREE.Object3D | null = null;
