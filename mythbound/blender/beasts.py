@@ -783,30 +783,46 @@ def skull(bt, c, r, head, bone_rgb, eye_rgb, jaw=True, sockets=0x050408):
 
 @builder('wraith', 0x6c6290)
 def wraith(bt):
-    """A wraith: a hooded, skull-faced spirit in a ragged robe that ends in fluttering tatters, bony hands reaching."""
+    """A wraith: a tall hooded shade, a void for a face with two cold points of light, a robe dissolving into tatters, bony hands reaching."""
     n, B = bt.n, bt.B
     body, chest, head = n['body'], n['chest'], n['head']
     Bo, C, Hd = B[body], B[chest], B[head]
-    robe = dict(fade=(0.6, 1.9, 0.45), mottle=0.2, stiff=3.5)
-    # Shoulders and a robe narrowing at the waist and flaring to the hem.
-    bt.blob(gv(C, 0, 0.16, -0.01), 0.25, 0.09, 0.15, bones=[chest], **robe)
-    bt.capsule(gv(C, 0, 0.16, 0), gv(C, 0, -0.1, 0), 0.15, 0.17, bones=[chest], **robe)
-    bt.capsule(gv(C, 0, -0.1, 0), gv(Bo, 0, 0.12, 0), 0.17, 0.2, bones=[chest, body], **robe)
-    bt.capsule(gv(Bo, 0, 0.12, 0), gv(Bo, 0, -0.04, 0), 0.2, 0.25, bones=[body], **robe)
-    # Folds down the skirt into each tatter.
-    for st in n['strands']:
-        R = B[st[0]]
-        bt.capsule(Vector((R.x * 0.6, R.y * 0.6, Bo.z + 0.2)), R + Vector((0, 0, 0.02)), 0.05, 0.05, bones=[body, st[0]], **robe)
-    tatters(bt, n['strands'], 0.13, 'ghost', (0.2, 1.6, 0.35))
-    # The hood: a deep cowl with its face hollowed out, a peak falling back.
-    bt.blob(gv(Hd, 0, 0.02, -0.02), 0.17, 0.18, 0.19, bones=[head], **robe)
-    bt.capsule(gv(Hd, 0, 0.08, -0.1), gv(Hd, 0, 0.0, -0.28), 0.09, 0.03, bones=[head], **robe)
-    bt.blob(gv(Hd, 0, -0.03, 0.17), 0.12, 0.14, 0.14, bones=[head], neg=True)
-    bt.hard.append(('fur', _ball(gv(Hd, 0, 0.0, -0.02), 0.13, (1, 1.05, 0.9)), Part([head], slot=FIXED, rgb=0x050408)))
-    skull(bt, gv(Hd, 0, -0.03, 0.02), 0.1, head, 0xcfc7ad, 0x80b0ff)
-    # Sleeves and skeletal hands.
+    robe = dict(fade=(0.3, 2.0, 0.3), mottle=0.2, stiff=3.5)
+    bone = 0xcfc7ad
+    # Narrow shoulders under a cowl, a robe that falls straight and flares at the hem.
+    bt.blob(gv(C, 0, 0.17, -0.01), 0.24, 0.07, 0.14, bones=[chest], **robe)
+    bt.capsule(gv(C, 0, 0.16, 0), gv(C, 0, -0.12, 0), 0.14, 0.15, bones=[chest], **robe)
+    bt.capsule(gv(C, 0, -0.12, 0), gv(Bo, 0, 0.1, 0), 0.15, 0.18, bones=[chest, body], **robe)
+    bt.capsule(gv(Bo, 0, 0.1, 0), gv(Bo, 0, -0.08, 0), 0.18, 0.25, bones=[body], **robe)
+    bt.capsule(gv(Bo, 0, -0.08, 0), gv(Bo, 0, -0.03, 0), 0.25, 0.27, bones=[body], **robe)
+    tatters(bt, n['strands'], 0.13, 'ghost', (0.1, 1.5, 0.25))
+    # A mantle hanging from the shoulders over the back.
+    for x in (-0.12, 0.0, 0.12):
+        a0 = gv(C, x, 0.15, -0.12)
+        bt.tube(curve([a0, a0 + G(x * 0.3, -0.35, -0.08), a0 + G(x * 0.5, -0.75, -0.1)], 3), lambda t: 0.09 * (1 - 0.6 * t) + 0.01, [chest, body], surface='ghost', n=8, squash=0.16, wide=Vector((1, 0, 0)), part=Part([chest, body], slot=MAIN, fade=(0.3, 2.0, 0.3), mottle=0.2))
+    # The hood: tall and peaked, its face hollowed out, a void within.
+    bt.blob(gv(Hd, 0, 0.03, -0.03), 0.16, 0.18, 0.18, bones=[head], **robe)
+    bt.capsule(gv(Hd, 0, 0.1, -0.08), gv(Hd, 0, 0.12, -0.3), 0.08, 0.02, bones=[head], **robe)
+    bt.blob(gv(Hd, 0, -0.01, 0.13), 0.11, 0.13, 0.12, bones=[head], neg=True)
+    bt.hard.append(('fur', _ball(gv(Hd, 0, 0.0, -0.02), 0.14, (1, 1.05, 0.85)), Part([head], slot=FIXED, rgb=0x050408)))
+    for sd in (-1, 1):
+        bt.eye(gv(Hd, sd * 0.045, 0.02, 0.115), 0.02, [head], rgb=0x80b0ff, squash=0.6)
+    bt.tube([gv(Hd, 0, -0.1, 0.05), gv(Hd, 0, -0.12, 0.1)], lambda t: 0.04 - 0.01 * t, [head], surface='fur', rgb=0x6a6658, n=8, squash=0.4, wide=Vector((1, 0, 0)))
+    # Long sleeves, ragged at the cuff, and skeletal hands.
     for arm in n['arms']:
-        sleeve_arm(bt, arm, 0.05, 0.12, 0xcfc7ad, robe=robe)
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        S, E, W = B[up], B[mid], B[low]
+        cloth = Part([up, mid], slot=MAIN, fade=(0.3, 2.0, 0.3), mottle=0.2)
+        cuff = E.lerp(W, 0.7)
+        bt.tube(curve([S + G(0, 0.02, 0), E, cuff], 3), lambda t: 0.05 + 0.065 * t ** 1.6, [up, mid], surface='ghost', n=10, part=cloth)
+        bt.tube([E, E.lerp(W, 0.5), W], lambda t: 0.024 - 0.006 * t, [mid], surface='fur', rgb=bone, n=6)
+        bt.hard.append(('fur', _ball(W, 0.032, (1, 1, 0.8)), Part([low], slot=FIXED, rgb=bone)))
+        for f in range(4):
+            sp = (f - 1.5) * 0.034
+            k0 = W + G(sp, -0.02, 0.025)
+            k1 = k0 + G(sp * 0.6, -0.1, 0.06)
+            k2 = k1 + G(0, -0.08, 0.07)
+            bt.tube(curve([k0, k1, k2], 2), lambda t: 0.012 * (1 - t) + 0.002, [low], surface='fur', rgb=bone, n=5)
     return bt.build(0.0075, 7000, ('CLOUDS', 0.04, 0.006), surface='ghost'), ['ghost', 'fur', 'glow']
 
 
