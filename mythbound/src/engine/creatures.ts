@@ -102,7 +102,7 @@ type Weights = [THREE.Object3D, number][];
 const SURFACES: Record<Exclude<Surface, 'glow'>, THREE.MeshStandardMaterialParameters> = {
   fur: { roughness: 0.88 },
   shell: { roughness: 0.42, metalness: 0.2 },
-  scale: { roughness: 0.6, metalness: 0.08, flatShading: true },
+  scale: { roughness: 0.6, metalness: 0.08 },
   membrane: { roughness: 0.8, side: THREE.DoubleSide },
   ghost: { roughness: 0.95, transparent: true, depthWrite: false },
 };

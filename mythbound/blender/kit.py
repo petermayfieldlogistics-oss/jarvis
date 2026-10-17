@@ -46,7 +46,7 @@ def hexrgb(h):
 class Part:
     """A body part: where it is, how it's coloured and which bones it follows."""
 
-    def __init__(self, bones, slot=MAIN, rgb=0xffffff, belly=False, mottle=0.0, stripes=None, back=None, light=None, under=LIGHT):
+    def __init__(self, bones, slot=MAIN, rgb=0xffffff, belly=False, mottle=0.0, stripes=None, back=None, light=None, under=LIGHT, fade=None):
         self.bones = list(bones)
         self.slot = slot
         self.rgb = rgb
@@ -57,6 +57,8 @@ class Part:
         self.back = back
         self.light = light
         self.under = under
+        # (y0, y1, k): darker toward y0 (game height), down to k of the shade.
+        self.fade = fade
 
     def dist(self, p):
         raise NotImplementedError
@@ -166,8 +168,12 @@ class Beast:
 
     # --------------------------------------------------------------- hard --
 
-    def tube(self, pts, radius, bones, surface='shell', slot=FIXED, rgb=0xd8d0b8, n=8, cap=True, flat=False, squash=1.0):
-        """A tapered tube along points (horns, claws, antlers, teeth, spikes); radius is a function of t or a number."""
+    def tube(self, pts, radius, bones, surface='shell', slot=FIXED, rgb=0xd8d0b8, n=8, cap=True, flat=False, squash=1.0, wide=None, part=None):
+        """
+        A tapered tube along points (horns, claws, antlers, teeth, spikes,
+        cloth strips); radius is a function of t or a number. With `squash`
+        it flattens; `wide` (a vector) keeps the full width along it.
+        """
         pts = [Vector(p) for p in pts]
         bm = bmesh.new()
         rings = []
@@ -178,6 +184,8 @@ class Beast:
             a = pts[max(0, k - 1)]
             b = pts[min(len(pts) - 1, k + 1)]
             t = (b - a).normalized()
+            if wide is not None:
+                nrm = Vector(wide)
             nrm = (nrm - t * nrm.dot(t)).normalized()
             bn = t.cross(nrm).normalized()
             r = radius(k / (len(pts) - 1)) if callable(radius) else radius
@@ -192,7 +200,7 @@ class Beast:
             bm.faces.new(rings[-1])
         for f in bm.faces:
             f.smooth = not flat
-        self.hard.append((surface, bm, Part(bones, slot=slot, rgb=rgb)))
+        self.hard.append((surface, bm, part or Part(bones, slot=slot, rgb=rgb)))
 
     def cone(self, base, tip, r, bones, **kw):
         self.tube([base, Vector(base).lerp(Vector(tip), 0.5), tip], lambda t: r * (1 - t) ** 1.2, bones, **kw)
@@ -263,12 +271,13 @@ class Beast:
             e.rotation = q
             e.stiffness = stiff
             e.use_negative = neg
-            # A lone metaball shows at 0.575 of its radius (threshold 0.6, stiffness 2): ask for what is meant.
+            # A lone metaball shows at part of its radius (0.575 at threshold 0.6, stiffness 2): ask for what is meant.
+            vis = math.sqrt(1 - (0.6 / stiff) ** (1 / 3))
             if kind == 'CAPSULE':
-                e.radius = r / 0.575
+                e.radius = r / vis
                 e.size_x = max(size[0], 1e-4)
             else:
-                e.radius = 1 / 0.575
+                e.radius = 1 / vis
                 e.size_x, e.size_y, e.size_z = size
         dg = bpy.context.evaluated_depsgraph_get()
         me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
@@ -403,6 +412,9 @@ class Beast:
             slot = LIGHT
         if part.mottle:
             s *= 1 - part.mottle * noise3(v * 9.0)
+        if part.fade:
+            y0, y1, k = part.fade
+            s *= lerp(k, 1.0, max(0.0, min(1.0, (v.z - y0) / (y1 - y0))))
         if part.stripes and slot == MAIN:
             axis, freq, width = part.stripes
             if math.sin(v.dot(Vector(axis)) * freq + noise3(v * 4) * 2) > 1 - width * 2:

@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402,I001
 from mathutils import Vector  # noqa: E402
 
-from kit import DARK, FIXED, GLOW, LIGHT, MAIN, Beast, G, lerp, look, pack  # noqa: E402
+from kit import DARK, FIXED, GLOW, LIGHT, MAIN, Beast, G, Part, lerp, look, pack  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RIGS = os.path.join(HERE, 'rigs')
@@ -724,6 +724,591 @@ def crab(bt):
         bt.cone(q, q + G(0, 0.06, 0.08), 0.03, [mid], rgb=spike_rgb)
     return bt.build(0.016, 11000, ('VORONOI', 0.06, 0.012), surface='shell'), ['shell', 'fur', 'glow']
 
+
+# ------------------------------------------------------------- robed spirits --
+
+
+def tatters(bt, strands, width, surface, fade, slot=MAIN, bones_of=None, flare=1.0):
+    """Ragged cloth strips hanging along chains of joints, flat side outward, frayed to a point."""
+    B = bt.B
+    for st in strands:
+        pts = [B[k] for k in st]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 1.0
+        run = pts + [tip]
+        c = Vector((0, 0, run[0].z))
+        out = Vector((run[0].x, run[0].y, 0))
+        out = out.normalized() if out.length > 1e-6 else Vector((0, -1, 0))
+        side = out.cross(Vector((0, 0, 1)))
+        w = width * (0.8 + 0.3 * math.cos(st[0] * 1.7))
+        fine = curve(run, 3)
+        jag = lambda t: w * (1 - 0.75 * t ** 1.4) * (1 + 0.12 * math.sin(t * 17 + st[0]))
+        bt.tube(fine, jag, st, surface=surface, n=8, squash=0.16, wide=side, part=Part(st, slot=slot, fade=fade, mottle=0.25))
+
+
+def sleeve_arm(bt, arm, r, cuff, bone_rgb, surface='fur', fingers=4, robe=None):
+    """A wide sleeve to the elbow and past it, then a bony forearm and long-fingered hand."""
+    B = bt.B
+    up, mid, low = arm['up'], arm['mid'], arm['low']
+    S, E, W = B[up], B[mid], B[low]
+    robe = robe or {}
+    bt.capsule(S, E, r, r * 1.05, bones=[up, mid], **robe)
+    bt.capsule(E, E.lerp(W, 0.62), r * 1.05, cuff, bones=[mid], **robe)
+    bt.tube([E, E.lerp(W, 0.5), W], lambda t: 0.028 - 0.008 * t, [mid], surface=surface, rgb=bone_rgb, n=6)
+    bt.hard.append((surface, _ball(W, 0.035, (1, 1, 0.8)), Part([low], slot=FIXED, rgb=bone_rgb)))
+    sd = 1 if W.x > 0 else -1
+    for f in range(fingers):
+        sp = (f - (fingers - 1) / 2) * 0.035
+        k0 = W + G(sp, -0.02, 0.025)
+        k1 = k0 + G(sp * 0.6, -0.1, 0.06)
+        k2 = k1 + G(0, -0.08, 0.07)
+        bt.tube(curve([k0, k1, k2], 2), lambda t: 0.013 * (1 - t) + 0.002, [low], surface=surface, rgb=bone_rgb, n=5)
+
+
+def skull(bt, c, r, head, bone_rgb, eye_rgb, jaw=True, sockets=0x050408):
+    """A skull face looking forward (+z): brow, cheekbones, deep sockets with burning points, a toothed jaw."""
+    bt.hard.append(('fur', _ball(c, r, (0.85, 0.85, 1.0)), Part([head], slot=FIXED, rgb=bone_rgb)))
+    for sd in (-1, 1):
+        e = c + G(sd * r * 0.38, r * 0.15, r * 0.78)
+        bt.hard.append(('fur', _ball(e, r * 0.27, (1.0, 0.6, 0.85)), Part([head], slot=FIXED, rgb=sockets)))
+        bt.eye(e + G(0, 0, r * 0.12), r * 0.12, [head], rgb=eye_rgb)
+    bt.hard.append(('fur', _ball(c + G(0, -r * 0.2, r * 0.9), r * 0.09, (0.8, 1.2, 0.5)), Part([head], slot=FIXED, rgb=sockets)))
+    if jaw:
+        bt.tube([c + G(0, -r * 0.55, r * 0.35), c + G(0, -r * 0.8, r * 0.72)], lambda t: r * (0.55 - 0.15 * t), [head], surface='fur', rgb=bone_rgb, n=8, squash=0.6, wide=Vector((1, 0, 0)))
+        for k in range(6):
+            x = (k - 2.5) * r * 0.13
+            a = c + G(x, -r * 0.48, r * 0.88 - abs(x) * 0.4)
+            bt.cone(a, a + G(0, -r * 0.16, 0), r * 0.06, [head], surface='fur', rgb=0xe8e0c8)
+
+
+@builder('wraith', 0x6c6290)
+def wraith(bt):
+    """A wraith: a hooded, skull-faced spirit in a ragged robe that ends in fluttering tatters, bony hands reaching."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    Bo, C, Hd = B[body], B[chest], B[head]
+    robe = dict(fade=(0.6, 1.9, 0.45), mottle=0.2, stiff=3.5)
+    # Shoulders and a robe narrowing at the waist and flaring to the hem.
+    bt.blob(gv(C, 0, 0.16, -0.01), 0.25, 0.09, 0.15, bones=[chest], **robe)
+    bt.capsule(gv(C, 0, 0.16, 0), gv(C, 0, -0.1, 0), 0.15, 0.17, bones=[chest], **robe)
+    bt.capsule(gv(C, 0, -0.1, 0), gv(Bo, 0, 0.12, 0), 0.17, 0.2, bones=[chest, body], **robe)
+    bt.capsule(gv(Bo, 0, 0.12, 0), gv(Bo, 0, -0.04, 0), 0.2, 0.25, bones=[body], **robe)
+    # Folds down the skirt into each tatter.
+    for st in n['strands']:
+        R = B[st[0]]
+        bt.capsule(Vector((R.x * 0.6, R.y * 0.6, Bo.z + 0.2)), R + Vector((0, 0, 0.02)), 0.05, 0.05, bones=[body, st[0]], **robe)
+    tatters(bt, n['strands'], 0.13, 'ghost', (0.2, 1.6, 0.35))
+    # The hood: a deep cowl with its face hollowed out, a peak falling back.
+    bt.blob(gv(Hd, 0, 0.02, -0.02), 0.17, 0.18, 0.19, bones=[head], **robe)
+    bt.capsule(gv(Hd, 0, 0.08, -0.1), gv(Hd, 0, 0.0, -0.28), 0.09, 0.03, bones=[head], **robe)
+    bt.blob(gv(Hd, 0, -0.03, 0.17), 0.12, 0.14, 0.14, bones=[head], neg=True)
+    bt.hard.append(('fur', _ball(gv(Hd, 0, 0.0, -0.02), 0.13, (1, 1.05, 0.9)), Part([head], slot=FIXED, rgb=0x050408)))
+    skull(bt, gv(Hd, 0, -0.03, 0.02), 0.1, head, 0xcfc7ad, 0x80b0ff)
+    # Sleeves and skeletal hands.
+    for arm in n['arms']:
+        sleeve_arm(bt, arm, 0.05, 0.12, 0xcfc7ad, robe=robe)
+    return bt.build(0.0075, 7000, ('CLOUDS', 0.04, 0.006), surface='ghost'), ['ghost', 'fur', 'glow']
+
+
+@builder('witch', 0x2a2440)
+def witch(bt):
+    """The Shade of Hecate: three faces under a spiked crown, a high collar, a gown dissolving into tatters, staff and torch."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    Bo, C, Hd = B[body], B[chest], B[head]
+    gown = dict(fade=(0.2, 2.0, 0.4), mottle=0.15, stiff=3.5)
+    gold, skin = 0xc8a858, 0xb8b0a0
+    strands = n['strands']
+    skirt, hair = strands[:12], strands[12:]
+    # Bodice, a cinched waist with a gold belt, and a skirt flaring to the hem.
+    bt.blob(gv(C, 0, 0.24, 0.0), 0.24, 0.08, 0.13, bones=[chest], **gown)
+    bt.capsule(gv(C, 0, 0.24, 0), gv(C, 0, -0.05, 0.01), 0.14, 0.13, bones=[chest], **gown)
+    for sd in (-1, 1):
+        bt.blob(gv(C, sd * 0.065, 0.06, 0.08), 0.07, 0.07, 0.06, bones=[chest], **gown)
+    bt.capsule(gv(C, 0, -0.05, 0.01), gv(C, 0, -0.27, 0.0), 0.13, 0.12, bones=[chest], **gown)
+    bt.tube([gv(C, 0, -0.27, 0), gv(C, 0, -0.23, 0)], 0.135, [chest], surface='fur', rgb=gold, n=16)
+    bt.capsule(gv(C, 0, -0.27, 0), gv(Bo, 0, 0.1, 0), 0.12, 0.3, bones=[chest, body], **gown)
+    bt.capsule(gv(Bo, 0, 0.1, 0), gv(Bo, 0, -0.18, 0), 0.3, 0.38, bones=[body], **gown)
+    for st in skirt:
+        R = B[st[0]]
+        bt.capsule(Vector((R.x * 0.75, R.y * 0.75, Bo.z + 0.05)), R + Vector((0, 0, 0.02)), 0.07, 0.07, bones=[body, st[0]], **gown)
+    tatters(bt, skirt, 0.15, 'fur', (0.0, 1.0, 0.45))
+    # The collar: dark spines fanning up behind the head.
+    for i in range(7):
+        a = (i / 6 - 0.5) * 2.6 + math.pi
+        b = gv(C, math.sin(a) * 0.14, 0.3, math.cos(a) * 0.1 - 0.02)
+        bt.tube([b, b + G(math.sin(a) * 0.08, 0.15, math.cos(a) * 0.08), b + G(math.sin(a) * 0.16, 0.3, math.cos(a) * 0.14 - 0.06)], lambda t: 0.045 * (1 - t) + 0.003, [chest], surface='fur', slot=DARK, n=6, squash=0.3, wide=G(math.cos(a), 0, -math.sin(a)))
+    # Three faces: the maiden ahead, the mother and the crone to either side, on a veiled head.
+    bt.blob(Hd, 0.14, 0.16, 0.14, bones=[head], slot=FIXED, rgb=0x18141e, stiff=3.0)
+    for a, c in ((0.0, 0xe8e0d0), (2.1, skin), (-2.1, 0x8a8070)):
+        d = G(math.sin(a), 0, math.cos(a))
+        side = G(math.cos(a), 0, -math.sin(a))
+        fc = Hd + d * 0.08
+        bt.blob(fc, 0.085, 0.12, 0.07, rot=(0, a, 0), bones=[head], slot=FIXED, rgb=c, stiff=3.0)
+        bt.blob(fc + d * 0.065 + G(0, -0.01, 0), 0.016, 0.03, 0.02, rot=(0, a, 0), bones=[head], slot=FIXED, rgb=c, stiff=3.0)
+        for sd in (-1, 1):
+            e = fc + d * 0.065 + side * sd * 0.037 + G(0, 0.03, 0)
+            bt.hard.append(('fur', _ball(e, 0.02, (1, 1, 0.7)), Part([head], slot=FIXED, rgb=0x050308)))
+            bt.eye(e + d * 0.008, 0.009, [head], rgb=0xb070ff)
+        bt.hard.append(('fur', _ball(fc + d * 0.068 + G(0, -0.055, 0), 0.022, (1, 0.35, 0.5)), Part([head], slot=FIXED, rgb=0x3a1420)))
+    # The crown: a gold band with spikes, every third set with a burning gem.
+    hy = Hd.z
+    bt.tube([gv(Hd, 0, 0.1, 0), gv(Hd, 0, 0.135, 0)], 0.142, [head], surface='shell', rgb=gold, n=18)
+    for i in range(9):
+        a = (i / 9) * math.tau
+        b = gv(Hd, math.sin(a) * 0.135, 0.12, math.cos(a) * 0.135)
+        tall = 0.2 if i % 3 == 0 else 0.12
+        bt.cone(b, b + G(math.sin(a) * 0.04, tall, math.cos(a) * 0.04), 0.026, [head], surface='shell', rgb=gold)
+        if i % 3 == 0:
+            bt.eye(b + G(math.sin(a) * 0.012, 0.035, math.cos(a) * 0.012), 0.02, [head], rgb=0xb070ff)
+    # A veil of dark hair down the back, on its own strands.
+    for st in hair:
+        pts = [B[k] for k in st]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 1.15
+        bt.tube(curve([pts[0], pts[1], tip], 3), lambda t: 0.07 * (1 - 0.7 * t), st, surface='fur', rgb=0x16121a, n=7, squash=0.35)
+    # Long sleeves and pale hands.
+    for arm in n['arms']:
+        sleeve_arm(bt, arm, 0.06, 0.13, skin, robe=gown)
+    # The staff in the right hand: a dark shaft, a gold crescent cradling a violet orb.
+    right, left = n['arms'][0], n['arms'][1]
+    W = B[right['low']]
+    rl = right['low']
+    bt.tube([W + G(0, -1.1, 0.04), W + G(0, 0.2, 0), W + G(0, 1.05, -0.02)], lambda t: 0.032, [rl], surface='fur', rgb=0x221830, n=8)
+    top = W + G(0, 1.12, -0.02)
+    bt.tube(curve([top + G(-0.17, 0.12, 0), top + G(-0.1, -0.08, 0), top + G(0, -0.14, 0), top + G(0.1, -0.08, 0), top + G(0.17, 0.12, 0)], 3), lambda t: 0.01 + 0.025 * math.sin(math.pi * t), [rl], surface='shell', rgb=gold, n=7)
+    bt.eye(top + G(0, 0.06, 0), 0.075, [rl], rgb=0xb080ff)
+    # The torch in the left: a wrapped haft and a tongue of violet flame.
+    Wl = B[left['low']]
+    ll = left['low']
+    bt.tube([Wl + G(0, -0.14, 0.04), Wl + G(0, 0.28, 0.06)], lambda t: 0.022 + 0.01 * t, [ll], surface='fur', rgb=0x2a1c12, n=7)
+    bt.tube(curve([Wl + G(0, 0.28, 0.06), Wl + G(0.02, 0.4, 0.06), Wl + G(-0.01, 0.56, 0.05)], 3), lambda t: 0.06 * (1 - t) ** 0.8 + 0.002, [ll], surface='glow', slot=GLOW, rgb=0x9060ff, n=8)
+    return bt.build(0.008, 9000, ('CLOUDS', 0.04, 0.004), surface='fur'), ['fur', 'glow', 'shell']
+
+
+@builder('reaper', 0x15131a)
+def reaper(bt):
+    """The Reaper: a towering hooded void with cold eyes, a ragged mantle, bony hands, a great scythe and a soul lantern."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    Bo, C, Hd = B[body], B[chest], B[head]
+    robe = dict(fade=(0.3, 2.9, 0.4), mottle=0.2, stiff=3.5)
+    bone, soul, iron = 0xd8d0b8, 0x70ffb0, 0x3a3a40
+    strands = n['strands']
+    skirt, mantle = strands[:12], strands[12:]
+    # Broad shoulders, a long robe flaring to the hem.
+    bt.blob(gv(C, 0, 0.24, -0.02), 0.4, 0.12, 0.24, bones=[chest], **robe)
+    bt.capsule(gv(C, 0, 0.24, 0), gv(C, 0, -0.1, 0), 0.24, 0.24, bones=[chest], **robe)
+    bt.capsule(gv(C, 0, -0.1, 0), gv(Bo, 0, 0.0, 0), 0.24, 0.32, bones=[chest, body], **robe)
+    bt.capsule(gv(Bo, 0, 0.0, 0), gv(Bo, 0, -0.38, 0), 0.32, 0.44, bones=[body], **robe)
+    for st in skirt:
+        R = B[st[0]]
+        bt.capsule(Vector((R.x * 0.75, R.y * 0.75, Bo.z - 0.25)), R + Vector((0, 0, 0.02)), 0.08, 0.08, bones=[body, st[0]], **robe)
+    tatters(bt, skirt, 0.16, 'ghost', (0.0, 1.6, 0.35))
+    tatters(bt, mantle, 0.13, 'ghost', (1.4, 3.0, 0.4))
+    # The hood: deep and peaked, a void within, two cold eyes, a glimpse of jaw.
+    bt.blob(gv(Hd, 0, 0.06, -0.04), 0.24, 0.25, 0.26, bones=[head], **robe)
+    bt.capsule(gv(Hd, 0, 0.14, -0.14), gv(Hd, 0, 0.14, -0.5), 0.12, 0.03, bones=[head], **robe)
+    bt.blob(gv(Hd, 0, 0.0, 0.18), 0.15, 0.17, 0.16, bones=[head], neg=True)
+    bt.hard.append(('fur', _ball(gv(Hd, 0, 0.0, -0.02), 0.19, (1, 1.05, 0.85)), Part([head], slot=FIXED, rgb=0x020203)))
+    for sd in (-1, 1):
+        bt.eye(gv(Hd, sd * 0.065, 0.03, 0.12), 0.03, [head], rgb=0x90ffc0, squash=0.6)
+    bt.tube([gv(Hd, 0, -0.12, 0.06), gv(Hd, 0, -0.15, 0.12)], lambda t: 0.06 - 0.015 * t, [head], surface='fur', rgb=0x7a7464, n=8, squash=0.4, wide=Vector((1, 0, 0)))
+    # Sleeves and skeletal hands.
+    for arm in n['arms']:
+        sleeve_arm(bt, arm, 0.07, 0.16, bone, robe=robe)
+    # The scythe: a long black haft bound with iron, a great curved blade with a ghostly edge.
+    rl = n['arms'][0]['low']
+    W = B[rl]
+    bt.tube([W + G(0.02, -1.5, -0.14), W, W + G(-0.03, 2.1, 0.12)], lambda t: 0.036, [rl], surface='fur', rgb=0x241a14, n=8)
+    for y in (-1.2, -0.4, 0.6, 1.5):
+        bt.tube([W + G(0, y, y * 0.06), W + G(0, y + 0.08, y * 0.06)], 0.046, [rl], surface='shell', rgb=0x4a3a2a, n=8)
+    T0 = W + G(-0.03, 2.12, 0.12)
+    bt.tube([T0 + G(0, -0.12, 0), T0 + G(0, 0.08, 0)], 0.055, [rl], surface='shell', rgb=0x5a5a62, n=10)
+    bt.cone(T0 + G(0, 0.02, -0.02), T0 + G(0, 0.18, -0.36), 0.04, [rl], surface='shell', rgb=0x5a5a62)
+    spine = curve([T0 + G(0, 0.04, 0.02), T0 + G(0, 0.3, 0.7), T0 + G(0, 0.1, 1.4), T0 + G(0, -0.34, 1.85)], 4)
+    wid = lambda t: 0.19 * (1 - t) ** 0.7 + 0.004
+    # The blade is flat in the swing's plane: its width hangs below the spine.
+    edge = [p + G(0, -wid(i / (len(spine) - 1)) * 0.95, 0) for i, p in enumerate(spine)]
+    bm_pts = [a.lerp(b, 0.5) for a, b in zip(spine, edge)]
+    bt.tube(bm_pts, lambda t: wid(t) * 0.5, [rl], surface='shell', rgb=0xa8b0b8, n=8, squash=0.08, wide=Vector((0, 0, 1)))
+    bt.tube(edge, lambda t: 0.012 * (1 - t) + 0.002, [rl], surface='glow', slot=GLOW, rgb=soul, n=4)
+    # A soul lantern swinging at the left hip.
+    lp = G(0.4, 1.5, 0.14)
+    bt.tube([G(0.34, 1.95, 0.08), lp + G(0, 0.16, 0)], 0.008, [body], surface='shell', rgb=iron, n=4)
+    for dy in (0.13, -0.13):
+        bt.tube([lp + G(0, dy - 0.01, 0), lp + G(0, dy + 0.01, 0)], 0.062, [body], surface='shell', rgb=iron, n=10)
+    bt.cone(lp + G(0, 0.13, 0), lp + G(0, 0.22, 0), 0.06, [body], surface='shell', rgb=iron)
+    for i in range(4):
+        a = (i / 4) * math.tau + 0.4
+        bt.tube([lp + G(math.sin(a) * 0.055, 0.13, math.cos(a) * 0.055), lp + G(math.sin(a) * 0.055, -0.13, math.cos(a) * 0.055)], 0.008, [body], surface='shell', rgb=iron, n=4)
+    bt.eye(lp, 0.05, [body], rgb=soul, squash=1.0)
+    return bt.build(0.011, 9000, ('CLOUDS', 0.06, 0.006), surface='ghost'), ['ghost', 'fur', 'glow', 'shell']
+
+
+def cap(c, r, theta, axis, thick=0.0, segs=24, rings=8):
+    """A spherical cap round `axis` out to polar angle `theta` (a closed shell `thick` deep when thick > 0)."""
+    import bmesh as _bm
+    bm = _bm.new()
+    q = Vector((0, 0, 1)).rotation_difference(Vector(axis).normalized())
+    layers = []
+    for rr in ((r, r - thick) if thick else (r,)):
+        layer = []
+        for i in range(1, rings + 1):
+            th = theta * i / rings
+            layer.append([bm.verts.new(Vector(c) + q @ Vector((math.sin(th) * math.cos(a), math.sin(th) * math.sin(a), math.cos(th))) * rr) for a in (k / segs * math.tau for k in range(segs))])
+        pole = bm.verts.new(Vector(c) + q @ Vector((0, 0, rr)))
+        layers.append((pole, layer))
+    for li, (pole, layer) in enumerate(layers):
+        flip = li == 1
+        for k in range(segs):
+            f = [pole, layer[0][k], layer[0][(k + 1) % segs]]
+            bm.faces.new(f[::-1] if flip else f)
+        for a, b in zip(layer, layer[1:]):
+            for k in range(segs):
+                f = [a[k], b[k], b[(k + 1) % segs], a[(k + 1) % segs]]
+                bm.faces.new(f[::-1] if flip else f)
+    if thick:
+        o, i_ = layers[0][1][-1], layers[1][1][-1]
+        for k in range(segs):
+            bm.faces.new([o[k], i_[k], i_[(k + 1) % segs], o[(k + 1) % segs]])
+    for f in bm.faces:
+        f.smooth = True
+    return bm
+
+
+@builder('eye', 0x2a2030)
+def eye(bt):
+    """A floating eye: a bloodshot ball in a fleshy hood, lids that blink, a burning iris and a slit pupil, tentacles below."""
+    n, B = bt.n, bt.B
+    head, iris, pupil, lids = n['head'], n['iris'], n['pupil'], n['lids']
+    C = B[head]
+    R = 0.55
+    flesh = dict(mottle=0.35, fade=(0.3, 2.0, 0.55))
+    # The eyeball: white in front, flushed red behind, veined.
+    front = Vector((0, -1, 0))
+    bt.hard.append(('fur', cap(C, R, 1.6, front, segs=28, rings=10), Part([head], slot=FIXED, rgb=0xe8dcc8)))
+    bt.hard.append(('fur', cap(C, R * 0.995, math.pi - 1.5, -front, segs=28, rings=8), Part([head], slot=FIXED, rgb=0x9a3a34)))
+    for i in range(10):
+        a = i / 10 * math.tau
+        pts = []
+        for t in (0, 0.25, 0.5, 0.75, 1):
+            th = 2.2 - t * 1.15
+            ph = a + math.sin(t * 4 + i * 1.3) * 0.25
+            d = G(math.cos(ph) * math.sin(th), math.sin(ph) * math.sin(th), math.cos(th))
+            pts.append(C + d * R * 1.004)
+        bt.tube(curve(pts, 2), lambda t: 0.014 * (1 - t) + 0.002, [head], surface='fur', rgb=0x8a1414, n=4)
+    # The iris and pupil, turning on their own bones.
+    bt.hard.append(('glow', cap(C, R * 1.006, 0.5, front, segs=28, rings=5), Part([iris], slot=GLOW, rgb=0xff2a20)))
+    bt.hard.append(('glow', cap(C, R * 1.009, 0.24, front, segs=28, rings=3), Part([iris], slot=GLOW, rgb=0xffb040)))
+    bt.hard.append(('fur', _ball(C + G(0, 0, R * 1.0), 1.0, (0.05, 0.02, 0.2)), Part([pupil], slot=FIXED, rgb=0x050303)))
+    # The fleshy hood behind, and the lids: thick shells that close over the ball.
+    bt.blob(gv(C, 0, 0, -0.3), R * 0.9, R * 0.9, R * 0.72, bones=[head], **flesh)
+    for lid in lids:
+        upper = lid == lids[0]
+        # The upper lid tipped back over the top, the lower one under: the front stays open.
+        ax = Vector((0, math.sin(0.55), math.cos(0.55))) if upper else Vector((0, math.sin(0.55), -math.cos(0.55)))
+        bt.hard.append(('fur', cap(C, R * 1.07, 1.25, ax, thick=0.035, segs=28, rings=7), Part([lid], slot=MAIN, mottle=0.3)))
+    # Tentacles writhing below and behind.
+    for st in n['strands']:
+        pts = [B[k] for k in st]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+        run = pts + [tip]
+        radii = [0.09, 0.07, 0.05, 0.035, 0.012]
+        for k in range(len(run) - 1):
+            bt.capsule(run[k], run[k + 1], radii[k], radii[k + 1], bones=st[max(0, k - 1):k + 2], **flesh)
+        bt.capsule(run[0] + (C - run[0]) * 0.5, run[0], 0.12, 0.09, bones=[st[0], head], **flesh)
+        for k in range(1, 4):
+            p = run[k].lerp(run[k + 1], 0.4)
+            out = (p - C)
+            out.z = 0
+            out = out.normalized() * radii[k] * 0.9 if out.length > 1e-6 else Vector((0, 0, 0))
+            bt.hard.append(('fur', _ball(p + out, radii[k] * 0.35, (1, 1, 1)), Part([st[k]], slot=LIGHT)))
+    return bt.build(0.0085, 8000, ('CLOUDS', 0.04, 0.004), surface='fur'), ['fur', 'glow']
+
+
+@builder('imp', 0xb0401c)
+def imp(bt):
+    """A fire imp: a wiry pot-bellied devil with curled horns, a grinning glowing mouth, bat wings and an arrow tail."""
+    n, B = bt.n, bt.B
+    body, chest, head, jaw, tail = n['body'], n['chest'], n['head'], n['jaw'], n['tail']
+    Bo, C, Hd, J = B[body], B[chest], B[head], B[jaw]
+    hide = dict(belly=-0.3, under=LIGHT, back=0.65, mottle=0.25)
+    limb = dict(mottle=0.25)
+    horn, claw = 0x2a2420, 0x1a1210
+    # A narrow chest, a round little belly, bony shoulders.
+    bt.blob(gv(C, 0, 0.04, 0.0), 0.15, 0.12, 0.1, bones=[chest], **hide)
+    bt.blob(gv(Bo, 0, 0.06, 0.03), 0.12, 0.13, 0.12, bones=[body], **hide)
+    bt.capsule(gv(Bo, 0, -0.06, 0), gv(C, 0, 0.1, 0), 0.1, 0.11, bones=[body, chest], **hide)
+    bt.capsule(gv(C, 0, 0.12, 0), gv(Hd, 0, 0.0, -0.02), 0.06, 0.05, bones=[chest, head], **hide)
+    # Belly seams of fire.
+    pts = [bt.surface(gv(Bo, x, y, 0.6), G(0, 0, -1)) + G(0, 0, 0.004) for x, y in ((0.0, -0.04), (0.01, 0.06), (-0.01, 0.15))]
+    bt.tube(curve(pts, 3), lambda t: 0.012 + 0.006 * math.sin(math.pi * t), [body, chest], surface='glow', slot=GLOW, rgb=0xff6a10, n=4)
+    # The head: a big skull, a jutting brow, pointed ears, curled horns, a wide grinning maw.
+    bt.blob(gv(Hd, 0, 0.05, 0.02), 0.13, 0.12, 0.12, bones=[head], **hide)
+    bt.blob(gv(Hd, 0, 0.0, 0.11), 0.08, 0.06, 0.06, bones=[head], **hide)
+    bt.capsule(gv(J, 0, -0.01, -0.02), gv(J, 0, -0.03, 0.11), 0.07, 0.035, bones=[jaw], slot=DARK)
+    bt.hard.append(('glow', _ball(gv(Hd, 0, -0.025, 0.12), 1.0, (0.05, 0.05, 0.016)), Part([head], slot=GLOW, rgb=0xff7a20)))
+    for sd in (-1, 1):
+        bt.blob(gv(Hd, sd * 0.05, 0.1, 0.11), 0.045, 0.014, 0.035, rot=(0, 0, -sd * 0.4), bones=[head], slot=DARK)
+        e = bt.surface(gv(Hd, sd * 0.055, 0.075, 0.6), G(0, 0, -1))
+        bt.eye(e + G(0, 0, 0.004), 0.02, [head], rgb=0xffc020, squash=0.7)
+        h = curve([gv(Hd, sd * 0.06, 0.14, 0.0), gv(Hd, sd * 0.14, 0.28, -0.04), gv(Hd, sd * 0.1, 0.36, -0.14), gv(Hd, sd * 0.06, 0.32, -0.2)], 3)
+        bt.tube(h, lambda t: 0.032 * (1 - t) + 0.003, [head], surface='fur', rgb=horn, n=7)
+        bt.tube([gv(Hd, sd * 0.1, 0.06, 0.0), gv(Hd, sd * 0.18, 0.09, -0.04), gv(Hd, sd * 0.25, 0.11, -0.07)], lambda t: 0.035 * (1 - t) + 0.002, [head], surface='fur', slot=MAIN, n=8, squash=0.35)
+        for k in range(3):
+            a = gv(Hd, sd * (0.02 + k * 0.022), -0.03, 0.14 - k * 0.012)
+            bt.cone(a, a + G(0, -0.035, 0.005), 0.009, [head], rgb=0xf0e8d0)
+    # Thin arms with three black claws.
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        S, E, W = B[up], B[mid], B[low]
+        bt.capsule(S, E, 0.045, 0.035, bones=[up, mid], **limb)
+        bt.capsule(E, W, 0.035, 0.03, bones=[mid, low], **limb)
+        bt.blob(gv(W, 0, -0.03, 0.01), 0.032, 0.04, 0.03, bones=[low], **limb)
+        for f in range(3):
+            bt.tube(curve([gv(W, (f - 1) * 0.02, -0.05, 0.03), gv(W, (f - 1) * 0.028, -0.1, 0.06), gv(W, (f - 1) * 0.03, -0.13, 0.09)], 2), lambda t: 0.011 * (1 - t) + 0.001, [low], rgb=claw, n=5)
+    # Digitigrade legs on clawed feet.
+    for leg in n['limbs']:
+        up, mid, low = leg['up'], leg['mid'], leg['low']
+        U, M, L, F = B[up], B[mid], B[low], G(*leg['foot'])
+        bt.capsule(U, M, 0.065, 0.045, bones=[up, mid], **limb)
+        bt.capsule(M, L, 0.04, 0.03, bones=[mid, low], **limb)
+        bt.capsule(L, F, 0.03, 0.03, bones=[low], slot=DARK)
+        bt.blob(F + G(0, 0, 0.03), 0.035, 0.022, 0.055, bones=[low], slot=DARK)
+        for f in range(3):
+            a = F + G((f - 1) * 0.022, -0.005, 0.07)
+            bt.cone(a, a + G((f - 1) * 0.01, -0.02, 0.04), 0.009, [low], rgb=claw)
+    # The tail, ending in an arrowhead.
+    pts = [B[t] for t in tail]
+    end = pts[-1] + (pts[-1] - pts[-2]) * 0.6
+    run = [gv(Bo, 0, -0.06, -0.06)] + pts + [end]
+    rr = [0.04, 0.035, 0.028, 0.022, 0.016, 0.01]
+    bt.chain(run, rr, [[body]] + [[tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))], **hide)
+    bt.tube([end - G(0, 0, -0.02), end + G(0, 0, -0.08), end + G(0, 0, -0.18)], lambda t: 0.075 * (1 - t) ** 0.8 + 0.002, [tail[-1]], surface='fur', slot=DARK, n=8, squash=0.15, wide=Vector((1, 0, 0)))
+    # Wing arms and fingers, carrying the membrane the game stretches between them.
+    for w in n['wings']:
+        root, fore, hand, fingers = w['root'], w['fore'], w['hand'], w['fingers']
+        S, E, W = B[root], B[fore], B[hand]
+        sd = 1 if W.x > 0 else -1
+        bt.capsule(S, E, 0.026, 0.02, bones=[root, fore], slot=DARK)
+        bt.capsule(E, W, 0.02, 0.016, bones=[fore, hand], slot=DARK)
+        tips = [(0.33, -0.06, -0.08), (0.22, -0.3, -0.16), (-0.02, -0.44, -0.14)]
+        for f, t in zip(fingers, tips):
+            tip = W + G(sd * t[0], t[1], t[2])
+            bt.tube([W, W.lerp(tip, 0.5), tip], lambda u: 0.013 * (1 - u) + 0.003, [f], surface='fur', slot=DARK, n=5)
+        bt.cone(W, W + G(sd * 0.02, 0.05, 0.05), 0.012, [hand], rgb=claw)
+    return bt.build(0.0045, 7000, ('CLOUDS', 0.015, 0.0025), surface='fur'), ['fur', 'glow']
+
+
+# ------------------------------------------------------------------ sea foes --
+
+
+@builder('serpent', 0x24525e)
+def serpent(bt):
+    """The Leviathan: a sea serpent rearing from the waves, sail-finned, horned, glowing along its flanks; two coils and a tail behind."""
+    n, B = bt.n, bt.B
+    neck, head, jaw, tail, coils = n['neck'], n['head'], n['jaw'], n['tail'], n['coils']
+    hide = dict(back=0.75, mottle=0.2)
+    spine_rgb, ivory, bone_rgb, glow = 0x0e2a2c, 0xeae4d0, 0xd0c8a8, 0x50fff0
+    nb = neck + [head]
+    N = [B[k] for k in neck] + [B[head]]
+    tipN = G(0, 9.9, 4.6)
+    path = curve(N + [tipN], 3)
+    m = len(path)
+
+    def rad(i):
+        u = i / (m - 1)
+        sst = lambda a, b, x: max(0.0, min(1.0, (x - a) / (b - a))) ** 2 * (3 - 2 * max(0.0, min(1.0, (x - a) / (b - a))))
+        return 1.65 - 0.95 * sst(0, 1, u) - 0.25 * sst(0.85, 1, u)
+
+    def bone_at(p):
+        return sorted(nb, key=lambda b: (B[b] - p).length)[:2]
+
+    throat = G(0, -0.45, 1).normalized()
+    for i in range(m - 1):
+        bt.capsule(path[i], path[i + 1], rad(i), rad(i + 1), bones=bone_at(path[i].lerp(path[i + 1], 0.5)), belly=-0.2, under=LIGHT, **hide)
+    # Belly scutes up the throat, glowing spots down the flanks, sail spines down the back.
+    for i in range(1, m - 2):
+        c = path[i]
+        T = (path[i + 1] - path[i - 1]).normalized()
+        D = (throat - T * T.dot(throat)).normalized()
+        r = rad(i)
+        bt.blob(c + D * r * 0.82, r * 0.25, r * 0.7, r * 0.18, rot=look(T), bones=bone_at(c), slot=LIGHT, stiff=3.0)
+        if i % 2 == 0:
+            for sd in (-1, 1):
+                side = (G(sd, 0, 0) - T * T.x * sd).normalized()
+                bt.eye(c + side * r * 0.98 - D * r * 0.15, 0.13, bone_at(c), rgb=glow)
+        if i >= 2:
+            b = c - D * r * 0.9
+            tip = b - D * (0.5 + 0.9 * math.sin(i / m * math.pi)) - T * 0.5
+            bt.cone(b + D * 0.1, tip, 0.12, bone_at(c), rgb=spine_rgb)
+    # The head: an armoured skull, a long snout, heavy brows over glowing eyes, horns swept back, a fan at each cheek.
+    hd = [head]
+    bt.blob(G(0, 9.75, 4.25), 0.95, 0.78, 1.25, bones=hd, **hide)
+    bt.capsule(G(0, 9.78, 4.9), G(0, 9.4, 6.9), 0.72, 0.24, bones=hd, belly=-0.4, under=LIGHT, **hide)
+    for sd in (-1, 1):
+        bt.blob(G(sd * 0.56, 10.25, 4.65), 0.44, 0.18, 0.62, rot=(0.15, 0, -sd * 0.32), bones=hd, slot=DARK)
+        bt.hard.append(('fur', _ball(G(sd * 0.66, 10.0, 5.0), 0.26, (1, 1.05, 0.8)), Part(hd, slot=FIXED, rgb=0x061012)))
+        bt.eye(G(sd * 0.74, 10.02, 5.1), 0.15, hd, rgb=glow, squash=1.0)
+        bt.eye(G(sd * 0.18, 9.6, 6.98), 0.06, hd, rgb=0x40d0e0)
+        horn = curve([G(sd * 0.45, 10.35, 4.1), G(sd * 0.85, 11.1, 3.5), G(sd * 1.1, 11.3, 2.5), G(sd * 1.05, 11.2, 1.6)], 3)
+        bt.tube(horn, lambda t: 0.26 * (1 - t) ** 0.9 + 0.01, hd, surface='fur', rgb=bone_rgb, n=10)
+        for i in range(4):
+            bt.cone(G(sd * (0.5 - i * 0.06), 10.2 - i * 0.12, 3.7 - i * 0.32), G(sd * (0.78 - i * 0.06), 10.7 - i * 0.12, 3.3 - i * 0.34), 0.08, hd, rgb=spine_rgb)
+        base = G(sd * 0.82, 9.6, 3.75)
+        for t in (G(sd * 2.1, 10.7, 2.9), G(sd * 2.6, 9.8, 2.6), G(sd * 2.3, 8.8, 2.9), G(sd * 1.5, 8.3, 3.4)):
+            bt.tube([base, base.lerp(t, 0.5), t], lambda u: 0.05 * (1 - u) + 0.006, hd, surface='fur', rgb=spine_rgb, n=6)
+        for i in range(8):
+            z, x = 5.0 + i * 0.27, sd * (0.6 - i * 0.045)
+            bt.cone(G(x, 9.36, z), G(x, 8.98, z + 0.06), 0.055, hd, rgb=ivory)
+        bt.tube(curve([G(sd * 0.5, 9.28, 6.5), G(sd * 0.95, 8.55, 6.7), G(sd * 1.15, 7.65, 6.4), G(sd * 1.05, 6.9, 6.0)], 3), lambda t: 0.08 * (1 - t) + 0.006, hd, surface='fur', slot=DARK, n=6)
+        for g in range(3):
+            pts = [G(sd * 0.98, 8.0 - g * 0.32, 2.25 - g * 0.18), G(sd * 1.04, 7.82 - g * 0.32, 1.95 - g * 0.18), G(sd * 0.98, 7.6 - g * 0.32, 1.7 - g * 0.18)]
+            q = [bt.surface(p + G(sd * 1.5, 0, 0), G(-sd, 0, 0)) + G(sd * 0.02, 0, 0) for p in pts]
+            bt.tube(q, lambda t: 0.035 + 0.015 * math.sin(math.pi * t), [neck[4]], surface='glow', slot=GLOW, rgb=0x40e8ff, n=4)
+    bt.blob(G(0, 9.18, 5.45), 0.5, 0.12, 1.25, bones=hd, slot=FIXED, rgb=0x0a2a30)
+    # The jaw.
+    J = [jaw]
+    bt.capsule(G(0, 9.05, 4.4), G(0, 8.98, 6.9), 0.6, 0.18, bones=J, slot=LIGHT, mottle=0.2)
+    for sd in (-1, 1):
+        for i in range(6):
+            z, x = 5.15 + i * 0.28, sd * (0.5 - i * 0.05)
+            bt.cone(G(x, 9.0, z), G(x, 9.32, z + 0.05), 0.05, J, rgb=ivory)
+    for sd in (-1, 0, 1):
+        bt.cone(G(sd * 0.25, 8.75, 5.2 + abs(sd) * 0.3), G(sd * 0.32, 8.3, 5.0 + abs(sd) * 0.3), 0.07, J, rgb=spine_rgb)
+    # Two coils arching out of the sea, finned along their crests.
+    for root, (z0, top, r0) in zip(coils, ((-10.5, 3.7, 1.45), (-19.5, 3.1, 1.25))):
+        pts = [G(0, -2.8 + (top + 2.8) * math.sin(i / 10 * math.pi), z0 + 4.4 * math.cos(i / 10 * math.pi)) for i in range(11)]
+        mid = G(0, -2.8, z0)
+        inner = lambda v, nn, mid=mid: nn.dot((mid - v).normalized()) > 0.35
+        for i in range(10):
+            bt.capsule(pts[i], pts[i + 1], r0, r0, bones=[root], light=inner, **hide)
+        for i in range(2, 9):
+            a = i / 10 * math.pi
+            out = G(0, math.sin(a), math.cos(a))
+            b = pts[i] + out * r0 * 0.9
+            bt.cone(b - out * 0.1, b + out * (0.7 + 0.5 * math.sin(a)) + G(0, 0, -0.4), 0.11, [root], rgb=spine_rgb)
+            if i % 2 == 0:
+                for sd in (-1, 1):
+                    bt.eye(pts[i] + G(sd * r0 * 0.97, 0, 0), 0.12, [root], rgb=glow)
+    # The tail standing up out of the water, a finned paddle at the tip.
+    tp = [G(0, -3.4, -27), G(0, -0.8, -27.3), G(0, 1.8, -27.6), G(0, 4.2, -27.9), G(0, 6.2, -28.2), G(0, 7.7, -28.5)]
+    rr = [1.1, 0.92, 0.74, 0.54, 0.34, 0.12]
+    tb = sorted(tail, key=lambda b: B[b].z)
+    for i in range(5):
+        bt.capsule(tp[i], tp[i + 1], rr[i], rr[i + 1], bones=tb[max(0, i - 1):i + 2] if i < len(tb) else [tb[-1]], light=lambda v, nn: nn.y > 0.4, **hide)
+    base = G(0, 6.9, -28.35)
+    for t in (G(0, 10.4, -28.9), G(0, 10.0, -30.2), G(0, 8.6, -31.0), G(0, 6.8, -30.6), G(0, 5.6, -29.6)):
+        bt.tube([base, base.lerp(t, 0.5), t], lambda u: 0.08 * (1 - u) + 0.01, [tb[-1]], surface='fur', rgb=spine_rgb, n=6)
+    for i in range(1, 5):
+        bt.cone(tp[i] + G(0, 0, -0.85 + i * 0.12), tp[i] + G(0, 0.3, -1.6 + i * 0.1), 0.12, [tb[min(i, len(tb) - 1)]], rgb=spine_rgb)
+    return bt.build(0.06, 20000, ('VORONOI', 0.18, 0.03), surface='scale'), ['scale', 'glow', 'fur']
+
+
+@builder('siren', 0x2f8a96)
+def siren(bt):
+    """Queen Nerissa: a sea queen with a scaled tail curling on the ground, a pearl bodice, coral crown, sea-dark hair and a trident."""
+    n, B = bt.n, bt.B
+    body, chest, head, tail = n['body'], n['chest'], n['head'], n['tail']
+    Bo, C, Hd = B[body], B[chest], B[head]
+    skin = dict(slot=FIXED, rgb=0xa8d4cc, stiff=3.0)
+    gold, pearl, coral, spine_rgb = 0xd8b058, 0xf2eee2, 0xe86a7a, 0x1e5058
+    # Torso: a slim waist rising to the shoulders, a slender neck.
+    bt.capsule(gv(Bo, 0, -0.05, 0), gv(Bo, 0, 0.17, 0.01), 0.19, 0.15, bones=[body], **skin)
+    bt.capsule(gv(Bo, 0, 0.17, 0.01), gv(C, 0, 0.05, 0.02), 0.15, 0.18, bones=[body, chest], **skin)
+    bt.blob(gv(C, 0, 0.2, 0.0), 0.23, 0.1, 0.13, bones=[chest], **skin)
+    bt.capsule(gv(C, 0, 0.25, 0.0), gv(Hd, 0, -0.06, 0.0), 0.06, 0.055, bones=[chest, head], **skin)
+    for sd in (-1, 1):
+        bt.hard.append(('shell', cap(gv(C, sd * 0.09, 0.03, 0.1), 0.1, 1.3, G(sd * 0.25, 0, 1), segs=16, rings=5, thick=0.012), Part([chest], slot=FIXED, rgb=pearl)))
+    bt.tube([gv(Bo, 0, 0.07, 0), gv(Bo, 0, 0.01, 0)], 0.205, [body], rgb=gold, n=18, squash=0.8, wide=Vector((1, 0, 0)))
+    for i in range(10):
+        a = i / 10 * math.tau
+        bt.hard.append(('shell', _ball(gv(Bo, math.sin(a) * 0.2, 0.04, math.cos(a) * 0.16), 0.03), Part([body], slot=FIXED, rgb=pearl)))
+    for i in range(7):
+        a = -0.9 + i / 6 * 1.8
+        p = gv(C, math.sin(a) * 0.12, 0.24 - math.cos(a) * 0.05, 0.08 + math.cos(a) * 0.06)
+        if i == 3:
+            bt.eye(p + G(0, -0.03, 0.01), 0.03, [chest], rgb=0x60fff0)
+        else:
+            bt.hard.append(('shell', _ball(p, 0.02), Part([chest], slot=FIXED, rgb=pearl)))
+    # The tail: from the hips down and curling back along the ground, banded in gold, pale beneath.
+    pts = [B[t] for t in tail]
+    end = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+    run = pts + [end]
+    rr = [0.2, 0.19, 0.17, 0.145, 0.12, 0.095, 0.072, 0.05, 0.03]
+    tb = [[tail[max(0, i - 1)], tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))]
+    for i in range(len(run) - 1):
+        bt.capsule(run[i], run[i + 1], rr[i], rr[i + 1], bones=tb[i], belly=-0.3, under=LIGHT, back=0.7, mottle=0.15)
+    for i in range(1, 7):
+        a, b = run[i].lerp(run[i + 1], 0.42), run[i].lerp(run[i + 1], 0.58)
+        r = lerp(rr[i], rr[i + 1], 0.5) * 1.18
+        bt.tube([a, b], r, [tail[i]], rgb=0xb89a50, n=14)
+    # The fluke and hip fins: rods for the membranes the game stretches between them.
+    te, last = end, tail[-1]
+    for sd in (-1, 1):
+        for t in (G(sd * 0.12, 0.5, -0.05), G(sd * 0.45, 0.45, -0.35), G(sd * 0.66, 0.1, -0.5), G(sd * 0.5, -0.12, -0.28)):
+            bt.tube([te, te.lerp(te + t, 0.5), te + t], lambda u: 0.016 * (1 - u) + 0.003, [last], surface='fur', rgb=spine_rgb, n=5)
+        h = G(sd * 0.18, 1.42, -0.05)
+        for t in (G(sd * 0.42, 1.48, -0.15), G(sd * 0.55, 1.24, -0.3), G(sd * 0.4, 1.02, -0.32)):
+            bt.tube([h, h.lerp(t, 0.5), t], lambda u: 0.014 * (1 - u) + 0.003, [body], surface='fur', rgb=spine_rgb, n=5)
+    # Arms: slender, gold-cuffed, finned at the elbow, with shell pauldrons.
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        S, E, W = B[up], B[mid], B[low]
+        sd = 1 if W.x > 0 else -1
+        bt.capsule(S, E, 0.06, 0.045, bones=[up, mid], **skin)
+        bt.capsule(E, W, 0.045, 0.035, bones=[mid, low], **skin)
+        bt.blob(gv(W, 0, -0.06, 0.03), 0.038, 0.055, 0.024, bones=[low], **skin)
+        for f in range(4):
+            k0 = gv(W, (f - 1.5) * 0.02, -0.09, 0.04)
+            bt.capsule(k0, k0 + G((f - 1.5) * 0.008, -0.08, 0.03), 0.011, 0.007, bones=[low], **skin)
+        bt.tube([W.lerp(E, 0.12), W.lerp(E, 0.22)], 0.05, [low], rgb=gold, n=12)
+        bt.hard.append(('shell', cap(gv(S, sd * 0.03, 0.03, 0), 0.1, 1.2, G(sd * 0.6, 1, 0), segs=16, rings=5, thick=0.015), Part([up], slot=MAIN)))
+        base = E + G(sd * 0.03, 0, -0.04)
+        for t in (E + G(sd * 0.15, 0.05, -0.12), E + G(sd * 0.12, -0.18, -0.12), W + G(sd * 0.06, 0.04, -0.08)):
+            bt.tube([base, base.lerp(t, 0.5), t], lambda u: 0.008 * (1 - u) + 0.002, [mid], surface='fur', rgb=spine_rgb, n=4)
+    # The head: fine features, glowing eyes, finned ears, a gold circlet with coral branches and pearls.
+    bt.blob(gv(Hd, 0, 0.03, 0.02), 0.115, 0.14, 0.12, bones=[head], **skin)
+    bt.blob(gv(Hd, 0, -0.05, 0.05), 0.07, 0.06, 0.07, bones=[head], **skin)
+    bt.blob(gv(Hd, 0, -0.07, 0.125), 0.03, 0.01, 0.01, bones=[head], slot=FIXED, rgb=0x3a6a70, stiff=3.0)
+    for sd in (-1, 1):
+        e = bt.surface(gv(Hd, sd * 0.042, 0.04, 0.6), G(0, 0, -1))
+        bt.hard.append(('fur', _ball(e, 0.024, (1, 0.6, 0.5)), Part([head], slot=FIXED, rgb=0x061418)))
+        bt.eye(e + G(0, 0, 0.006), 0.012, [head], rgb=0x60fff0)
+        base = gv(Hd, sd * 0.1, 0.03, -0.02)
+        for t in (gv(Hd, sd * 0.2, 0.16, -0.1), gv(Hd, sd * 0.24, 0.04, -0.12), gv(Hd, sd * 0.18, -0.06, -0.08)):
+            bt.tube([base, base.lerp(t, 0.5), t], lambda u: 0.006 * (1 - u) + 0.0015, [head], surface='fur', rgb=spine_rgb, n=4)
+    bt.tube([gv(Hd, 0, 0.1, 0), gv(Hd, 0, 0.13, 0)], 0.128, [head], rgb=gold, n=18)
+    for i in range(7):
+        a = -1.2 + i * 0.4
+        b = gv(Hd, math.sin(a) * 0.12, 0.13, math.cos(a) * 0.11)
+        out = G(math.sin(a), 0, math.cos(a))
+        h = 0.34 if i == 3 else 0.22 + 0.04 * (i % 2)
+        p1 = b + out * 0.04 + G(0, h * 0.55, 0)
+        p2 = b + out * 0.07 + G(0, h, 0)
+        bt.tube(curve([b, p1, p2], 3), lambda u: 0.018 * (1 - u) + 0.003, [head], surface='fur', rgb=coral, n=6)
+        bt.tube([p1, p1 + out * 0.07 + G(0, 0.08, 0)], lambda u: 0.009 * (1 - u) + 0.002, [head], surface='fur', rgb=coral, n=5)
+        bt.eye(p2, 0.017, [head], rgb=0xa0fff8 if i == 3 else 0xff9ab0)
+    # Long sea-dark hair, on its own strands.
+    hair = n['strands']
+    bt.blob(gv(Hd, 0, 0.06, -0.04), 0.12, 0.12, 0.11, bones=[head], slot=FIXED, rgb=0x123c44, stiff=3.0)
+    for st in hair:
+        pts = [B[k] for k in st]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+        bt.tube(curve(pts + [tip], 3), lambda u: 0.06 * (1 - 0.75 * u), st, surface='fur', rgb=0x174a52, n=7, squash=0.4)
+    # The trident in her right hand.
+    rl = n['arms'][0]['low']
+    W = B[rl]
+    bt.tube([W + G(0, -1.0, 0.03), W + G(0, 0.3, 0), W + G(0, 1.35, -0.03)], 0.028, [rl], rgb=0xb8903a, n=8)
+    tp = W + G(0, 1.38, -0.03)
+    bt.tube(curve([tp + G(-0.18, 0.1, 0), tp + G(-0.09, -0.04, 0), tp + G(0, -0.07, 0), tp + G(0.09, -0.04, 0), tp + G(0.18, 0.1, 0)], 3), lambda u: 0.012 + 0.016 * math.sin(math.pi * u), [rl], rgb=gold, n=7)
+    for dx, h in ((0, 0.46), (-0.17, 0.36), (0.17, 0.36)):
+        base = tp + G(dx, 0.08 if dx else 0, 0)
+        tip = base + G(dx * 0.08, h, 0)
+        bt.cone(base, tip, 0.026, [rl], rgb=gold)
+        bt.cone(tip + G(0, -0.1, 0), tip + G(0.05 if dx >= 0 else -0.05, -0.16, 0), 0.012, [rl], rgb=gold)
+        bt.eye(tip + G(0, -0.05, 0), 0.02, [rl], rgb=0x80fff0, squash=2.5)
+    return bt.build(0.007, 11000, ('CLOUDS', 0.03, 0.002), surface='fur'), ['fur', 'shell', 'glow', 'scale']
+
 # -------------------------------------------------------------------- main --
 
 
@@ -766,7 +1351,7 @@ def preview(kind, surfaces):
         ca = nt.nodes.new('ShaderNodeVertexColor')
         ca.layer_name = 'Col'
         nt.links.new(ca.outputs['Color'], bsdf.inputs['Base Color'])
-        bsdf.inputs['Roughness'].default_value = 0.85 if surf == 'fur' else 0.35
+        bsdf.inputs['Roughness'].default_value = 0.4 if surf == 'shell' else 0.85
         if surf == 'glow':
             nt.links.new(ca.outputs['Color'], bsdf.inputs['Emission Color'])
             bsdf.inputs['Emission Strength'].default_value = 4
