@@ -1501,6 +1501,244 @@ def horse_shin(sc):
     leg_piece(sc, False, False)
 
 
+# ------------------------------------------------------------- wild places --
+
+
+@model('headstone')
+def headstone(sc):
+    """A weathered headstone, rounded at the top, a cross cut in its face (stone colour in slot 4)."""
+    verts, faces = [], []
+    n = 8
+    outline = [(-0.4, 0.0), (0.4, 0.0)] + [(math.cos(math.pi * k / n) * 0.4, 0.75 + math.sin(math.pi * k / n) * 0.35) for k in range(n + 1)]
+    for zz in (-0.11, 0.11):
+        for x, y in outline:
+            verts.append(G(x, y, zz))
+    m = len(outline)
+    ring = [0, 1] + list(range(2, m))
+    faces.append(tuple(ring[::-1]))
+    faces.append(tuple(m + i for i in ring))
+    for i in range(len(ring)):
+        a, b = ring[i], ring[(i + 1) % len(ring)]
+        faces.append((a, b, m + b, m + a))
+    p = sc.mesh(verts, faces, slot=4, rgb=0xffffff, smooth=False)
+    box(sc, (0.08, 0.5, 0.02), (0, 0.72, 0.115), slot=4, rgb=0x707070)
+    box(sc, (0.32, 0.08, 0.02), (0, 0.82, 0.115), slot=4, rgb=0x707070)
+    box(sc, (0.9, 0.12, 0.34), (0, 0.0, 0), bevel=0.03, slot=4, rgb=0xc0c0c0)
+
+
+@model('crypt')
+def crypt(sc):
+    """A small crypt: coursed stone walls, a pitched stone roof, a dark doorway between pillars, a skull over it."""
+    rng = sc.rng
+    for side in (-1, 1):
+        stones(sc, -2.0, 2.0, 0.0, 3.2, side * 2.5, 0.12, rng, rgb=0x4a4c48, course=0.45, along='z', width=(0.6, 1.1))
+    stones(sc, -2.5, 2.5, 0.0, 3.2, -2.0, 0.12, rng, rgb=0x4a4c48, course=0.45, width=(0.6, 1.1))
+    stones(sc, -2.5, -0.75, 0.0, 3.2, 2.0, 0.12, rng, rgb=0x4a4c48, course=0.45, width=(0.6, 1.1))
+    stones(sc, 0.75, 2.5, 0.0, 3.2, 2.0, 0.12, rng, rgb=0x4a4c48, course=0.45, width=(0.6, 1.1))
+    box(sc, (4.9, 3.2, 3.9), (0, 1.6, 0), rgb=0x444642)
+    for side in (-1, 1):
+        box(sc, (5.6, 0.25, 2.75), (0, 3.95, side * 1.05), rot=(side * 0.64, 0, 0), bevel=0.05, rgb=0x3a3c38)
+        verts = [G(side * 2.45, 3.2, -2.0), G(side * 2.45, 3.2, 2.0), G(side * 2.45, 4.75, 0)]
+        sc.mesh(verts, [(0, 1, 2) if side < 0 else (2, 1, 0)], rgb=0x444642, smooth=False)
+    box(sc, (1.4, 2.2, 0.08), (0, 1.1, 2.0), rgb=0x0a0a0a)
+    for sx in (-1, 1):
+        column(sc, (sx * 1.05, 0.0, 2.15), 2.6, 0.16, rgb=0x5a5c58, sides=8)
+    box(sc, (2.6, 0.3, 0.5), (0, 2.75, 2.1), bevel=0.04, rgb=0x5a5c58)
+    ball(sc, (0, 3.1, 2.2), 0.18, scale=(1, 1.05, 0.9), rgb=0xd8d0b4, subdiv=1)
+    for sx in (-1, 1):
+        ball(sc, (sx * 0.06, 3.12, 2.35), 0.04, rgb=0x101010, subdiv=0)
+
+
+@model('runestone')
+def runestone(sc):
+    """A lore stone: a tall slab with carved bands and runes (in slot 4's stone colour)."""
+    rock_mesh(sc, (0.7, 1.1, 0.2), 21, tris=80, flat_bottom=False, slot=4, rgb=0xffffff)
+    for p in sc.pieces:
+        for v in p.me.vertices:
+            v.co.z += 1.1
+    for k in range(5):
+        box(sc, (0.5 - (k % 2) * 0.15, 0.06, 0.06), (0, 0.7 + k * 0.32, 0.17), slot=4, rgb=0x606060)
+        box(sc, (0.06, 0.18, 0.06), (-0.12 + (k % 3) * 0.12, 0.85 + k * 0.32, 0.17), slot=4, rgb=0x606060)
+
+
+@model('pedestal')
+def pedestal(sc):
+    """A tome's pedestal: a stepped base, a carved shaft, a slanted reading top."""
+    box(sc, (0.95, 0.15, 0.95), (0, 0.075, 0), bevel=0.03, rgb=0x3e3a34)
+    tube(sc, [(0, 0.15, 0), (0, 0.6, 0), (0, 1.05, 0)], lambda u: 0.22 - 0.06 * math.sin(math.pi * u), sides=8, rgb=0x4a463e, profile=lambda a, u: 1 - 0.08 * abs(math.cos(a * 4)))
+    box(sc, (0.7, 0.1, 0.55), (0, 1.12, 0), rot=(0.25, 0, 0), bevel=0.03, rgb=0x56524a)
+
+
+@model('ore-shard')
+def ore_shard(sc):
+    """One ember-ore crystal: a six-sided prism to a point (drawn glowing)."""
+    tube(sc, [(0, -0.1, 0), (0, 0.6, 0), (0, 1.0, 0)], lambda u: 0.22 if u < 0.6 else 0.22 * (1 - u) / 0.4 + 0.002, sides=6, rgb=0xffffff, smooth=False, ao=False)
+
+
+@model('dock-plank')
+def dock_plank(sc):
+    """Two metres of jetty: planks across stringers (3 wide)."""
+    for k in range(5):
+        box(sc, (3.0, 0.08, 0.36), (0, 0.06, -0.8 + k * 0.4), bevel=0.012, rgb=mix_hex(0x54402a, 0x2a1a0e, (k * 2 % 5) * 0.06))
+    for sx in (-1.2, 0, 1.2):
+        box(sc, (0.14, 0.14, 2.0), (sx, -0.05, 0), rgb=0x3a2a1a)
+
+
+@model('piling')
+def piling(sc):
+    tube(sc, [(0, -2.5, 0), (0, 0, 0), (0, 2.5, 0)], lambda u: 0.15 * (1 - 0.1 * u), sides=8, rgb=0x3a2a1a, profile=lambda a, u: 1 + 0.06 * math.sin(a * 3 + u * 9))
+    tube(sc, [(0, 0.2, 0), (0, 0.32, 0)], 0.165, sides=8, rgb=0x2a2622)
+
+
+@model('shrine')
+def shrine(sc):
+    """A wayshrine: a round stepped dais, an obelisk with a carved band and a flat capstone (the flame floats above)."""
+    tube(sc, [(0, -0.05, 0), (0, 0.25, 0)], 2.1, sides=20, rgb=0x4e4a44, smooth=False)
+    tube(sc, [(0, 0.25, 0), (0, 0.6, 0)], 1.6, sides=18, rgb=0x5a564e, smooth=False)
+    for k in range(12):
+        a = k / 12 * TAU
+        box(sc, (0.5, 0.06, 0.7), (math.cos(a) * 1.75, 0.27, math.sin(a) * 1.75), rot=(0, -a, 0), rgb=0x56524a)
+    tube(sc, [(0, 0.55, 0), (0, 1.5, 0), (0, 2.4, 0)], lambda u: 0.36 - 0.1 * u, sides=4, rgb=0x5a564e, smooth=False)
+    tube(sc, [(0, 1.5, 0), (0, 1.62, 0)], 0.36, sides=4, rgb=0x6a665e, smooth=False)
+    box(sc, (0.85, 0.14, 0.85), (0, 2.45, 0), rot=(0, math.pi / 4, 0), bevel=0.03, rgb=0x6a665e)
+    for k in range(4):
+        a = k * math.pi / 2 + math.pi / 4
+        ball(sc, (math.cos(a) * 0.43, 2.45, math.sin(a) * 0.43), 0.06, rgb=0xc8a050, subdiv=0)
+
+
+# ---------------------------------------------------------- builder blocks --
+
+
+@model('stone-block')
+def stone_block(sc):
+    rng = sc.rng
+    for side in (-1, 1):
+        stones(sc, -1.0, 1.0, 0.0, 2.0, side * 0.96, 0.1, rng, rgb=0x7a746a, course=0.4, width=(0.5, 0.9))
+        stones(sc, -1.0, 1.0, 0.0, 2.0, side * 0.96, 0.1, rng, rgb=0x7a746a, course=0.4, along='z', width=(0.5, 0.9))
+    box(sc, (1.95, 2.0, 1.95), (0, 1.0, 0), rgb=0x5a554c)
+    box(sc, (2.04, 0.1, 2.04), (0, 1.97, 0), bevel=0.03, rgb=0x6a645a)
+
+
+@model('wood-block')
+def wood_block(sc):
+    for side in range(4):
+        a = side * math.pi / 2
+        c, s_ = math.cos(a), math.sin(a)
+        for k in range(5):
+            box(sc, (1.96, 0.38, 0.06), (s_ * 0.98, 0.2 + k * 0.4, c * 0.98), rot=(0, a, 0), rgb=mix_hex(0x7a5a36, 0x3a2410, (k * 3 + side) % 4 * 0.06))
+    box(sc, (1.9, 2.0, 1.9), (0, 1.0, 0), rgb=0x4a341e)
+    for x, z in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+        box(sc, (0.16, 2.02, 0.16), (x * 0.97, 1.0, z * 0.97), bevel=0.02, rgb=0x3e2a1a)
+    for y in (0.04, 1.96):
+        for side in range(4):
+            a = side * math.pi / 2
+            box(sc, (2.0, 0.12, 0.12), (math.sin(a) * 0.98, y, math.cos(a) * 0.98), rot=(0, a, 0), bevel=0.02, rgb=0x3e2a1a)
+
+
+@model('floor')
+def floor(sc):
+    for k in range(10):
+        box(sc, (0.39, 0.12, 4.0), (-1.8 + k * 0.4, 0.18, 0), bevel=0.012, rgb=mix_hex(0x7a5a36, 0x3a2410, (k * 3) % 5 * 0.05))
+    for z in (-1.6, 0, 1.6):
+        box(sc, (4.0, 0.12, 0.2), (0, 0.06, z), rgb=0x3e2a1a)
+
+
+@model('pillar')
+def pillar(sc):
+    column(sc, (0, 0, 0), 4.4, 0.45, rgb=0x8a847a)
+
+
+@model('stairs')
+def stairs(sc):
+    rng = sc.rng
+    for i in range(4):
+        box(sc, (3, 0.5 + i * 1.0, 1), (0, 0.25 + i * 0.5, -1.5 + i * 1), rgb=0x6a645a)
+        for k in range(3):
+            box(sc, (0.98, 0.08, 1.02), (-1 + k * 1.0, 0.5 + i * 1.0 - 0.02, -1.5 + i), bevel=0.03, rgb=mix_hex(0x7a746a, 0, rng.uniform(0, 0.15)))
+
+
+@model('roof')
+def roof_block(sc):
+    roof(sc, 4.4, 2.6, 2.0, 0.0, over=0.1, rows=4)
+
+
+@model('tower')
+def tower(sc):
+    rng = sc.rng
+    n = 16
+    for row in range(14):
+        for k in range(n):
+            a = (k + (row % 2) * 0.5) / n * TAU
+            box(sc, (0.78, 0.56, 0.3), (math.cos(a) * 1.92, 0.3 + row * 0.57, math.sin(a) * 1.92), rot=(0, -a + math.pi / 2, 0), rgb=mix_hex(0x7a746a, 0, rng.uniform(0, 0.16)))
+    tube(sc, [(0, 0, 0), (0, 8.1, 0)], 1.85, sides=16, rgb=0x5a554c, smooth=False)
+    tube(sc, [(0, 7.95, 0), (0, 8.45, 0)], 2.3, sides=16, rgb=0x56514a, smooth=False)
+    for i in range(8):
+        a = i / 8 * TAU
+        box(sc, (0.7, 0.9, 0.5), (math.cos(a) * 2.1, 8.9, math.sin(a) * 2.1), rot=(0, -a + math.pi / 2, 0), bevel=0.04, rgb=0x6a645a)
+    window_arch(sc, (0, 0, 1.95), 1.1, 2.4, 0)
+    box(sc, (1.1, 1.9, 0.1), (0, 0.95, 1.95), rgb=0x1a1612)
+    for y in (4.0, 6.2):
+        box(sc, (0.16, 0.9, 0.12), (2.0, y, 0), rot=(0, math.pi / 2, 0), rgb=0x1a1612)
+
+
+@model('arch')
+def arch(sc):
+    rng = sc.rng
+    for x in (-1.8, 1.8):
+        for k in range(8):
+            box(sc, (0.9, 0.48, 0.9), (x, 0.24 + k * 0.5, 0), bevel=0.03, rgb=mix_hex(0x7a746a, 0, rng.uniform(0, 0.15)))
+        box(sc, (1.15, 0.3, 1.15), (x, 0.15, 0), bevel=0.04, rgb=0x56514a)
+    n = 9
+    for k in range(n):
+        a = math.pi * (k + 0.5) / n
+        box(sc, (0.5, 0.75, 1.0), (math.cos(a) * 1.8, 3.9 + math.sin(a) * 0.9, 0), rot=(0, 0, a - math.pi / 2), bevel=0.03, rgb=mix_hex(0x7a746a, 0, (k % 2) * 0.1))
+    box(sc, (4.8, 0.25, 1.1), (0, 4.95, 0), bevel=0.04, rgb=0x56514a)
+
+
+@model('statue')
+def statue(sc):
+    """A statue of a robed hero leaning on a spear, on a moulded plinth."""
+    box(sc, (2, 1.2, 2), (0, 0.6, 0), bevel=0.06, rgb=0x5a554c)
+    box(sc, (2.2, 0.15, 2.2), (0, 1.2, 0), bevel=0.04, rgb=0x6a645a)
+    balls = [((0, 1.85, 0), (0.42, 0.55, 0.32)), ((0, 2.6, 0), (0.36, 0.4, 0.26)), ((0, 3.1, 0), (0.42, 0.18, 0.26)), ((0, 3.5, 0.0), (0.16, 0.2, 0.17)),
+             ((0.38, 2.75, 0.05), (0.11, 0.3, 0.11)), ((-0.38, 2.75, 0.05), (0.11, 0.3, 0.11)), ((0.5, 2.3, 0.12), (0.09, 0.25, 0.09)), ((-0.42, 2.35, 0.14), (0.09, 0.25, 0.09)),
+             ((0, 1.35, 0), (0.48, 0.18, 0.36))]
+    blobs(sc, balls, 0.03, 1400, detail=('CLOUDS', 0.12, 0.01), rgb=0x9a968c)
+    tube(sc, [(0.62, 1.25, 0.18), (0.62, 3.0, 0.2), (0.6, 4.6, 0.22)], 0.04, sides=6, rgb=0x8a867c)
+    cone(sc, (0.6, 4.5, 0.22), (0.6, 4.95, 0.22), 0.09, sides=4, rgb=0x8a867c)
+
+
+@model('tent')
+def tent(sc):
+    """A canvas tent on poles, its flap tied back, guy ropes pegged out."""
+    verts = [G(0, 2.8, 0)] + [G(math.cos(a) * 2.2, 0.05, math.sin(a) * 2.2) for a in (k / 8 * TAU + math.pi / 8 for k in range(8))]
+    faces = [(0, 1 + (k + 1) % 8, 1 + k) for k in range(8)]
+    sc.mesh(verts, faces, slot=1, rgb=0xffffff, smooth=False)
+    tube(sc, [(0, 0, 0), (0, 3.2, 0)], 0.05, sides=6, rgb=0x3e2a1a)
+    verts = [G(-0.5, 0.05, 2.05), G(0.5, 0.05, 2.05), G(0, 1.4, 1.55)]
+    sc.mesh(verts, [(0, 1, 2)], rgb=0x1a1612, smooth=False)
+    for k in range(4):
+        a = k / 4 * TAU + math.pi / 4
+        tube(sc, [(math.cos(a) * 1.4, 1.0, math.sin(a) * 1.4), (math.cos(a) * 2.8, 0.0, math.sin(a) * 2.8)], 0.012, sides=4, rgb=0xb8a888)
+        tube(sc, [(math.cos(a) * 2.8, -0.1, math.sin(a) * 2.8), (math.cos(a) * 2.8, 0.15, math.sin(a) * 2.8)], 0.025, sides=4, rgb=0x3e2a1a)
+
+
+@model('campfire')
+def campfire(sc):
+    rng = sc.rng
+    for i in range(9):
+        a = i / 9 * TAU
+        rock_mesh(sc, (0.24, 0.17, 0.2), 60 + i, tris=40, rgb=mix_hex(0x6a645a, 0, rng.uniform(0, 0.2)))
+        for v in sc.pieces[-1].me.vertices:
+            v.co += G(math.cos(a) * 0.8, 0.08, math.sin(a) * 0.8)
+    for i in range(4):
+        a = i / 4 * math.pi + 0.3
+        tube(sc, [(math.cos(a) * -0.5, 0.1, math.sin(a) * -0.5), (0, 0.55, 0), (math.cos(a) * 0.5, 0.1, math.sin(a) * 0.5)], 0.07, sides=6, rgb=0x3a2a1c)
+    for k in range(5):
+        a = k * 1.3
+        ball(sc, (math.cos(a) * 0.25, 0.08, math.sin(a) * 0.25), 0.1, scale=(1, 0.5, 1), rgb=0x1a1210, subdiv=0)
+
+
 # --------------------------------------------------------------------- main --
 
 
