@@ -334,7 +334,7 @@ writes `src/assets/world.bin.gz`:
     .blenv/bin/python blender/world.py --preview     # renders blender/preview/world/
     .blenv/bin/python blender/world.py oak house     # just these
 
-The ground's surface (grass, soil with pebbles, weathered rock, rippled sand)
+The ground's surface (grass, soil with pebbles, weathered rock, rippled sand, snow)
 is baked by `scripts/ground-textures.py` into `src/assets/ground-*.webp`; the
 terrain shader blends them into each zone's colours:
 

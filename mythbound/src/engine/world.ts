@@ -8,6 +8,7 @@ import { buildBoat, glowSprite, mat } from './models';
 import { worldGeometry, worldMesh } from './assets';
 import { FRUITS, NELL_STALL, STATIONS } from '../data/goods';
 import { mulberry32, noise2, smoothstep } from './noise';
+import { GrassField, groundStep } from './grass';
 import { detailTexture, groundTile, heightAt, inLava, LAVA_LEVEL, normalAt, POOL_LAVA, TILE, TILES, zoneAt, WATER_LEVEL } from './terrain';
 
 export type Quality = 'low' | 'medium' | 'high';
@@ -1004,6 +1005,8 @@ export class World {
   private detail = detailTexture();
   private time = { value: 0 };
   private wind = { value: new THREE.Vector2(0.2, 0.1) };
+  /** Blades of grass round the hero. */
+  private grass!: GrassField;
   private glow = { value: 0.2 };
   /** Daylight scattering through leaves and blades, so shaded foliage isn't a black mass. */
   private leafLift = { value: 0.3 };
@@ -1076,6 +1079,8 @@ export class World {
     this.buildField();
     this.buildStations();
     this.buildNellStall();
+    this.grass = new GrassField(groundStep(this.segs), quality, this.time, this.wind, (x, z) => this.bare(x, z));
+    this.root.add(this.grass.root);
     this.batch.build(this.root, quality !== 'low');
     this.buildMotes();
     this.buildSmoke();
@@ -1398,6 +1403,19 @@ export class World {
   }
 
   // -------------------------------------------------------------- builders --
+
+  /** Where no grass grows: the town's roads and square, the farm, arenas, trials, shrines, docks, lairs, ruins. */
+  private bare(x: number, z: number): boolean {
+    const tx = x - TOWN.x, tz = z - TOWN.z, td = Math.hypot(tx, tz);
+    if (td < TOWN.radius && (Math.min(Math.abs(tx), Math.abs(tz)) < 4.2 || td < 12.5)) return true;
+    if (Math.abs(x - FIELD.x) < 7 && Math.abs(z - FIELD.z) < 7) return true;
+    if (Math.hypot(x - ARENA.x, z - ARENA.z) < ARENA.radius + 2) return true;
+    for (const t of TRIALS) if (Math.hypot(x - t.x, z - t.z) < t.radius + 2) return true;
+    for (const s of SHRINES) if (Math.hypot(x - s.x, z - s.z) < 6) return true;
+    for (const d of DOCKS) if (Math.hypot(x - d.x, z - d.z) < 10) return true;
+    for (const l of LAIRS) if (Math.hypot(x - l.x, z - l.z) < 12) return true;
+    return Math.hypot(x - EYES_RUINS.x, z - EYES_RUINS.z) < 22;
+  }
 
   private groundY(x: number, z: number) {
     return this.propMode ? 0 : heightAt(x, z);
@@ -2955,6 +2973,7 @@ export class World {
     this.giantOrb.rotation.y = t * 0.05;
 
     this.stream(dt, focus);
+    if (!this.priming) this.grass.update(focus, dt);
     // Ground and plants far beyond the fog (or too small to see) are skipped entirely.
     const view = Math.min(440, 2.4 / fog.density);
     for (const gt of this.groundTiles) {
