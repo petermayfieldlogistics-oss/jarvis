@@ -231,6 +231,9 @@ class Skin {
       }
       for (const [surf, b] of blend.surfaces) surfaces.set(surf as Surface, blendGeometry(b, colour, surf === 'glow'));
     }
+    // A Blender model's ink line goes round its body only: on the small parts (scales, pearls, locks of hair) it would smear them dark.
+    let body: Surface | null = null;
+    if (blend) for (const [surf, geo] of surfaces) if (!body || geo.attributes.position.count > surfaces.get(body)!.attributes.position.count) body = surf;
     for (const [surf, geo] of surfaces) {
       let material = surfaceMaterial(surf);
       if (surf === 'glow' && ownGlow) material = glow = glowMaterial();
@@ -238,6 +241,7 @@ class Skin {
       mesh.name = surf;
       mesh.castShadow = surf !== 'glow';
       mesh.userData.keep = true;
+      if (body && surf !== body) mesh.userData.noInk = true;
       geo.computeBoundingSphere();
       const bs = geo.boundingSphere!.clone();
       bs.radius *= 1.6;

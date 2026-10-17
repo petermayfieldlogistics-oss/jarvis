@@ -46,7 +46,7 @@ def hexrgb(h):
 class Part:
     """A body part: where it is, how it's coloured and which bones it follows."""
 
-    def __init__(self, bones, slot=MAIN, rgb=0xffffff, belly=False, mottle=0.0, stripes=None, back=None, light=None, under=LIGHT, fade=None, group='main'):
+    def __init__(self, bones, slot=MAIN, rgb=0xffffff, belly=False, mottle=0.0, stripes=None, back=None, light=None, under=LIGHT, fade=None, group='main', paint=None, tone=None):
         self.bones = list(bones)
         self.slot = slot
         self.rgb = rgb
@@ -61,6 +61,10 @@ class Part:
         self.fade = fade
         # Parts of one group melt together; separate groups stay separate pieces (a giant's arm beside its body).
         self.group = group
+        # A function (vertex, normal) -> slot (or None) painting patterns on (scales, bands).
+        self.paint = paint
+        # A function (vertex, normal) -> factor darkening the shade smoothly (scale edges, bands).
+        self.tone = tone
 
     def dist(self, p):
         raise NotImplementedError
@@ -115,6 +119,8 @@ class Beast:
         self.rng = random.Random(seed)
         # Where glowing parts go ('glow' on creatures; humanoids number their surfaces).
         self.glow_surface = '2' if (self.n or {}).get('humanoid') else 'glow'
+        # How dark the deepest crevices go (baked occlusion).
+        self.ao_floor = 0.5
 
     # ------------------------------------------------------------ organic --
 
@@ -226,7 +232,7 @@ class Beast:
         """A bone's first child (or none)."""
         return self.children[i][0] if self.children[i] else None
 
-    def build(self, voxel, tris, detail=('CLOUDS', 0.03, 0.003), surface='fur', facet=False):
+    def build(self, voxel, tris, detail=('CLOUDS', 0.03, 0.003), surface='fur', facet=False, details=None):
         """Melts the organic parts into one surface (faceted, like cut stone, with `facet`) and returns every finished surface's arrays."""
         out = {}
         if self.balls:
@@ -235,7 +241,8 @@ class Beast:
                 groups.setdefault(part.group, []).append((part, spec))
             weight = {g: sum((sp[3][0] if sp[0] == 'CAPSULE' else 1) * (sp[4] if sp[0] == 'CAPSULE' else max(sp[3])) ** 2 + 1e-4 for _, sp in items) for g, items in groups.items()}
             total = sum(weight.values())
-            recs = [self._organic(voxel, max(200, int(tris * weight[g] / total)), detail, items) for g, items in groups.items()]
+            # `details` gives a group its own surface texture (scales on a tail, smooth skin above).
+            recs = [self._organic(voxel, max(200, int(tris * weight[g] / total)), (details or {}).get(g, detail), items) for g, items in groups.items()]
             rec = recs[0]
             for r in recs[1:]:
                 off = len(rec['verts'])
@@ -315,7 +322,7 @@ class Beast:
         sm = work.modifiers.new('smooth', 'SMOOTH')
         sm.factor = 0.5
         sm.iterations = 2
-        kind, size, depth = detail
+        kind, size, depth = detail or (None, 0, 0)
         if depth:
             tex = bpy.data.textures.new('detail', kind)
             tex.noise_scale = size
@@ -419,7 +426,7 @@ class Beast:
                 rot = Vector((0, 0, 1)).rotation_difference(n)
                 o = v + n * reach * 0.003
                 hit = sum(1 for d in dirs if tree.ray_cast(o, rot @ d, reach)[0] is not None)
-                ao.append(0.5 + 0.5 * (1 - hit / rays) ** 1.2)
+                ao.append(self.ao_floor + (1 - self.ao_floor) * (1 - hit / rays) ** 1.2)
             rec['ao'] = ao
 
     # ------------------------------------------------------------- colour --
@@ -436,6 +443,12 @@ class Beast:
             slot = DARK
         if part.light and slot == MAIN and part.light(v, n):
             slot = LIGHT
+        if part.paint:
+            got = part.paint(v, n)
+            if got is not None:
+                slot = got
+        if part.tone:
+            s *= part.tone(v, n)
         if part.mottle:
             s *= 1 - part.mottle * noise3(v * 9.0)
         if part.fade:
