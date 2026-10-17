@@ -1,8 +1,9 @@
 // The admin panel (admins only, P): builder mode and saving builds with their
 // links, and a few powers over your own hero and the world around you.
 
-import { ENEMIES, LAIRS, SHRINES, TOWN, TRIALS, type EnemyId } from '../data/world';
-import { WEAPONS } from '../data/defs';
+import { ENEMIES, ITEMS, LAIRS, SHRINES, TOWN, TRIALS, type EnemyId } from '../data/world';
+import { LEGEND_SHARD, RELICS, RUNES, WEAPONS, runeItem } from '../data/defs';
+import { MATERIALS } from '../data/goods';
 import { xpToNext } from '../rules/character';
 import { heightAt } from '../engine/terrain';
 import { buildLink } from '../engine/builder';
@@ -17,6 +18,17 @@ const PLACES: { name: string; x: number; z: number }[] = [
   ...TRIALS.map((t) => ({ name: `Trial: ${t.name}`, x: t.x, z: t.z + t.radius + 6 })),
   ...LAIRS.map((l) => ({ name: `Lair: ${l.name}`, x: l.x, z: l.z + l.leash + 6 })),
 ];
+
+/** Everything in the pack an admin can hand out, in groups. */
+function itemGroups(): [string, string[]][] {
+  const mats = Object.keys(MATERIALS).filter((id) => ITEMS[id]);
+  const special = ['ember-ore', LEGEND_SHARD, 'free-upgrade'].filter((id) => ITEMS[id]);
+  const runes = Object.keys(RUNES).map((r) => runeItem(r as keyof typeof RUNES));
+  const relics = Object.keys(RELICS);
+  const taken = new Set([...mats, ...special, ...runes, ...relics]);
+  const rest = Object.keys(ITEMS).filter((id) => !taken.has(id)).sort((a, b) => ITEMS[a].name.localeCompare(ITEMS[b].name));
+  return [['Ore, shards and tokens', special], ['Materials', mats], ['Runes', runes], ['Relics', relics], ['Food, seeds, crops and goods', rest]];
+}
 
 export class AdminPanel {
   isOpen = false;
@@ -83,6 +95,10 @@ export class AdminPanel {
       <h3>Your hero</h3>
       <div class="adm-row"><button data-act="god">${g.godMode ? 'God mode: ON' : 'God mode: off'}</button><button data-act="heal">Heal fully</button></div>
       <div class="adm-row"><button data-act="gold">+1000 embers</button><button data-act="level">+1 level</button><button data-act="weapons">Every weapon</button></div>
+      <h3>Items and materials</h3>
+      <div class="adm-row"><select data-item>${itemGroups().map(([label, ids]) => `<optgroup label="${esc(label)}">${ids.map((id) => `<option value="${esc(id)}">${esc(ITEMS[id].name)}</option>`).join('')}</optgroup>`).join('')}</select>
+        <input data-qty type="number" min="1" max="999" value="10" style="width:5em"><button data-act="give">Give</button></div>
+      <div class="adm-row"><button data-act="allmats">+10 of every material</button><button data-act="shards">+20 Legend Shards</button></div>
       <h3>Teleport</h3>
       <div class="adm-row"><select data-place>${places}</select><button data-act="go">Go</button></div>
       <h3>World</h3>
@@ -162,6 +178,20 @@ export class AdminPanel {
       case 'level':
         g.gainXp(Math.max(1, xpToNext(p.c.level) - p.c.xp));
         return;
+      case 'give': {
+        const id = this.el.querySelector<HTMLSelectElement>('[data-item]')?.value ?? '';
+        const n = Math.max(1, Math.min(999, Math.floor(Number(this.el.querySelector<HTMLInputElement>('[data-qty]')?.value) || 1)));
+        if (!ITEMS[id]) return;
+        p.c.items[id] = (p.c.items[id] ?? 0) + n;
+        g.updateTouchButtons();
+        return g.hud.toast(`+${n} ${ITEMS[id].name}`, 'skill');
+      }
+      case 'allmats':
+        for (const id of [...Object.keys(MATERIALS), 'ember-ore']) if (ITEMS[id]) p.c.items[id] = (p.c.items[id] ?? 0) + 10;
+        return g.hud.toast('+10 of every material.', 'skill');
+      case 'shards':
+        p.c.items[LEGEND_SHARD] = (p.c.items[LEGEND_SHARD] ?? 0) + 20;
+        return g.hud.toast('+20 Legend Shards', 'skill');
       case 'weapons':
         for (const w of Object.values(WEAPONS)) if (!p.c.weapons.some((x) => x.id === w.id)) p.c.weapons.push({ id: w.id, level: 1 });
         return g.hud.toast('Every weapon is in your pack.', 'skill');
