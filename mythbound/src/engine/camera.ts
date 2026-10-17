@@ -55,7 +55,7 @@ export class CameraRig {
     this.yaw -= input.look.dx;
     // The boom slides along the ground, so the view can tilt up a little further.
     this.pitch = Math.max(-0.55, Math.min(1.15, this.pitch + input.look.dy));
-    if (!input.touch && input.wheel && g.mode === 'play' && !g.player.c.spellSlots.some(Boolean)) this.dist = Math.max(2.5, Math.min(12, this.dist + input.wheel * 0.9));
+    if (!input.touch && input.wheel && g.mode === 'play' && !g.builder?.active && !g.player.c.spellSlots.some(Boolean)) this.dist = Math.max(2.5, Math.min(12, this.dist + input.wheel * 0.9));
   }
 
   update(dt: number, g: Game) {

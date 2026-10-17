@@ -92,6 +92,24 @@ export const CATEGORIES: { name: string; items: Item[] }[] = [
     ],
   },
 ];
+/** Each thing's picture on the item hotbar. */
+const ICON: Record<string, string> = {
+  'stone-block': '🧱', 'wood-block': '🪵', wall: '🏰', floor: '▦', pillar: '🏛', stairs: '🪜', arch: '⛩', roof: '🛖', tower: '🗼',
+  house: '🏠', 'big-house': '🏘', barrel: '🛢', crate: '📦', fence: '🚧', banner: '🚩', brazier: '🔥', lamp: '🏮', campfire: '♨', tent: '⛺', well: '⛲', statue: '🗿',
+  oak: '🌳', pine: '🌲', birch: '🌳', palm: '🌴', dead: '🍂', ashtree: '🌳', cactus: '🌵', bush: '🌿', rock: '🪨', crystal: '💎', mushroom: '🍄', flowers: '🌸',
+};
+
+/** What a left click does: build the picked thing, carry one about, knock one down, or copy one. */
+type Mode = 'place' | 'move' | 'delete' | 'copy';
+const MODES: { id: Mode; icon: string; name: string; tip: string }[] = [
+  { id: 'place', icon: '🔨', name: 'Place', tip: 'Left click builds the picked thing' },
+  { id: 'move', icon: '✋', name: 'Move', tip: 'Left click picks a thing up; click again to set it down' },
+  { id: 'delete', icon: '🗑', name: 'Delete', tip: 'Left click knocks a thing down' },
+  { id: 'copy', icon: '📋', name: 'Copy', tip: 'Left click copies a thing, then you place it' },
+];
+/** The marker's colour in each mode. */
+const MODE_COLOR: Record<Mode, number> = { place: 0x60e0ff, move: 0xffd060, delete: 0xff5040, copy: 0x9aff80 };
+
 const ITEMS = new Map<string, Item>(CATEGORIES.flatMap((c) => c.items.map((i) => [i.kind, i] as [string, Item])));
 /** The wild plants' names when one is picked up. */
 const WILD = new Set(['oak', 'pine', 'birch', 'palm', 'dead', 'ashtree', 'cactus', 'bush', 'rock', 'crystal']);
@@ -151,6 +169,7 @@ export class Builder {
   private turn = 0;
   private size = 1;
   private snap = true;
+  private mode: Mode = 'place';
   /** Picked up and following the aim; `was` is where it stood (put back on Escape). */
   private held: { p: Placed; was: AddEdit | null; turn: number; size: number } | null = null;
   private ghost: THREE.Object3D | null = null;
@@ -169,10 +188,25 @@ export class Builder {
     this.hud = document.createElement('div');
     this.hud.className = 'builder-hud hidden';
     g.container.appendChild(this.hud);
+    // The hotbars and buttons answer clicks (when the mouse is free).
+    this.hud.addEventListener('mousedown', (e) => e.stopPropagation());
+    this.hud.addEventListener('click', (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>('[data-bmode],[data-bcat],[data-bitem],[data-bact]');
+      if (!t) return;
+      if (t.dataset.bmode) this.queue.push(`mode:${t.dataset.bmode}`);
+      else if (t.dataset.bcat) this.queue.push(`cat:${t.dataset.bcat}`);
+      else if (t.dataset.bitem) this.queue.push(`item:${t.dataset.bitem}`);
+      else if (t.dataset.bact === 'save') this.g.adminPanel.open();
+      else if (t.dataset.bact === 'leave') this.exit();
+      else if (t.dataset.bact) this.queue.push(t.dataset.bact);
+    });
     window.addEventListener('keydown', (e) => {
       if (!this.active || this.g.mode !== 'play' || (e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.ctrlKey && e.code === 'KeyZ') return e.preventDefault(), void this.queue.push('undo');
-      if (['KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyZ', 'KeyX', 'KeyG', 'KeyU', 'Delete', 'Backspace', 'Escape', 'Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
+      if (e.code === 'Tab') return e.preventDefault(), void this.queue.push(e.shiftKey ? 'cat:-' : 'cat:+');
+      // Alt lets go of the mouse, so the hotbars can be clicked (clicking the world takes it back).
+      if (e.code === 'AltLeft' || e.code === 'AltRight') return e.preventDefault(), void (document.pointerLockElement && document.exitPointerLock());
+      if (['KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyZ', 'KeyX', 'KeyG', 'KeyU', 'Delete', 'Backspace', 'Escape', 'Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
         if (e.code === 'Backspace') e.preventDefault();
         if (!e.repeat || e.code === 'KeyR' || e.code === 'KeyT' || e.code === 'KeyZ' || e.code === 'KeyX') this.queue.push(e.code);
       }
@@ -204,6 +238,7 @@ export class Builder {
       }
     }
     this.hud.classList.remove('hidden');
+    g.container.classList.add('building');
     g.hud.toast('Builder mode: fly with WASD, Space and C. K steps out again.', 'skill');
     this.render();
   }
@@ -215,6 +250,7 @@ export class Builder {
     this.setGhost(null);
     this.marker.visible = false;
     this.hud.classList.add('hidden');
+    g.container.classList.remove('building');
     // Down to the ground, gently.
     const p = g.player;
     p.pos.y = Math.max(heightAt(p.pos.x, p.pos.z), Math.min(p.pos.y, heightAt(p.pos.x, p.pos.z) + 0.5));
@@ -236,6 +272,8 @@ export class Builder {
     _v.set((fx * my - fz * mx) * 12 * fast, up * 9 * fast, (fz * my + fx * mx) * 12 * fast);
     g.player.buildFly(dt, _v);
 
+    // The mouse wheel runs along the item hotbar.
+    if (input.wheel) this.queue.push(input.wheel > 0 ? 'KeyE' : 'KeyQ');
     for (const q of this.queue.splice(0)) this.command(q);
     this.aim();
     this.show();
@@ -251,8 +289,25 @@ export class Builder {
       case 'Digit1':
       case 'Digit2':
       case 'Digit3':
-        this.cat = Number(q.slice(5)) - 1;
-        this.item = 0;
+      case 'Digit4':
+        this.setMode(MODES[Number(q.slice(5)) - 1].id);
+        break;
+      case 'undo-btn':
+        this.undoLast();
+        break;
+      case 'grid':
+        this.command('KeyG');
+        return;
+      default:
+        if (q.startsWith('mode:')) this.setMode(q.slice(5) as Mode);
+        else if (q.startsWith('cat:')) {
+          const v = q.slice(4);
+          this.cat = v === '+' ? (this.cat + 1) % CATEGORIES.length : v === '-' ? (this.cat + CATEGORIES.length - 1) % CATEGORIES.length : Math.max(0, Math.min(CATEGORIES.length - 1, Number(v)));
+          this.item = 0;
+        } else if (q.startsWith('item:')) {
+          this.item = Math.max(0, Math.min(cat.items.length - 1, Number(q.slice(5))));
+          if (this.mode !== 'place' && !this.held) this.setMode('place');
+        }
         break;
       case 'KeyR':
       case 'KeyT': {
@@ -283,18 +338,37 @@ export class Builder {
         break;
       case 'click0':
         if (this.held) this.drop();
-        else this.place();
+        else if (this.mode === 'move') this.pickUp();
+        else if (this.mode === 'delete') this.remove();
+        else if (this.mode === 'copy') {
+          if (this.copyTarget()) this.setMode('place');
+        } else this.place();
         break;
       case 'click2':
         this.pickUp();
         break;
       case 'click1':
         // Middle click: take the kind (and turn) of what you're looking at.
-        if (this.target?.kind === 'placed') this.choose(this.target.p.e.k, this.target.p.e.r, this.target.p.e.s);
-        else if (this.target?.kind === 'plant') this.choose(this.target.hit.kind as PropKind, this.target.hit.turn, this.target.hit.scale);
+        if (this.copyTarget()) this.setMode('place');
         break;
     }
     this.render();
+  }
+
+  /** Switches what a left click does (anything carried is put back first, unless moving). */
+  private setMode(m: Mode) {
+    if (this.held && m !== 'move' && m !== 'place') this.cancelHold();
+    this.mode = m;
+  }
+
+  /** Takes the kind, turn and size of what is aimed at; false if nothing is. */
+  private copyTarget(): boolean {
+    const t = this.target;
+    if (t?.kind === 'placed') this.choose(t.p.e.k, t.p.e.r, t.p.e.s);
+    else if (t?.kind === 'plant') this.choose(t.hit.kind as PropKind, t.hit.turn, t.hit.scale);
+    else return false;
+    this.g.hud.toast(`Copied: ${this.current().name}`, 'skill');
+    return true;
   }
 
   private current(): Item {
@@ -387,7 +461,7 @@ export class Builder {
       this.setGhost(null);
     } else {
       const item = this.current();
-      this.setGhost(ok ? item.kind : null);
+      this.setGhost(ok && this.mode === 'place' ? item.kind : null);
       if (this.ghost && ok) {
         this.ghost.position.copy(at);
         this.ghost.rotation.y = this.turn;
@@ -401,7 +475,7 @@ export class Builder {
       this.marker.position.set(base.x, base.y + 0.08, base.z);
       const r = t.kind === 'placed' ? Math.max(0.6, ...ITEMS.get(t.p.e.k)!.cols.map((c) => Math.hypot(c[0], c[1]) + c[2]), 1) * t.p.e.s : t.kind === 'plant' ? 1.2 * t.hit.scale : 0.6;
       this.marker.scale.setScalar(r);
-      (this.marker.material as THREE.MeshBasicMaterial).color.setHex(t.kind === 'ground' ? 0x60e0ff : 0xffd060);
+      (this.marker.material as THREE.MeshBasicMaterial).color.setHex(this.held ? 0xffd060 : t.kind === 'ground' && this.mode !== 'place' ? 0x8a8a8a : MODE_COLOR[this.mode]);
     }
   }
 
@@ -602,17 +676,32 @@ export class Builder {
     return buildLink(id);
   }
 
-  /** The builder's own help line and what it is pointing at. */
+  /** The builder's screen: a trim round the edge, the build's name up top, and the mode and item hotbars below. */
   render() {
     if (!this.active) return;
     const item = this.current();
-    const cats = CATEGORIES.map((c, i) => `<b class="${i === this.cat ? 'on' : ''}">${i + 1} ${c.name}</b>`).join(' ');
-    const held = this.held ? `Carrying: <b>${ITEMS.get(this.held.p.e.k)!.name}</b> (left click to set it down, Esc to put it back)` : `Placing: <b>${item.name}</b>`;
-    const name = this.meta.name.replace(/[<>&]/g, '');
-    this.hud.innerHTML = `<div class="bh-top">BUILDER MODE · ${name}${this.dirty ? ' (not saved)' : this.meta.id ? ' (saved)' : ''} · ${this.count} changes${this.snap ? ' · grid' : ''}</div>
-      <div class="bh-cats">${cats}</div>
-      <div class="bh-item">${held} · size ${this.size.toFixed(2)}</div>
-      <div class="bh-keys">Left click place · Right click pick up · Middle click copy · Q/E item · R/T turn · Z/X size · Del delete · G grid · U undo · Space/C up/down · Shift fast · P save · K leave</div>`;
+    const cat = CATEGORIES[this.cat];
+    const name = this.meta.name.replace(/[<>&"]/g, '');
+    const mode = MODES.find((m) => m.id === this.mode)!;
+    const status = this.held
+      ? `Carrying <b>${ITEMS.get(this.held.p.e.k)!.name}</b>: left click sets it down, Esc puts it back`
+      : this.mode === 'place' ? `Placing <b>${item.name}</b> · size ${this.size.toFixed(2)} · turn ${Math.round(((this.turn * 180) / Math.PI) % 360)}°` : mode.tip;
+    const modes = MODES.map((m, i) => `<button class="bslot mode${m.id === this.mode ? ' on' : ''}" data-bmode="${m.id}" title="${m.tip}"><i>${i + 1}</i><span>${m.icon}</span><em>${m.name}</em></button>`).join('');
+    const tools = `<button class="bslot tool" data-bact="undo-btn" title="Undo (U)"><i>U</i><span>↶</span><em>Undo</em></button>
+      <button class="bslot tool${this.snap ? ' on' : ''}" data-bact="grid" title="Snap to the grid (G)"><i>G</i><span>▦</span><em>Grid</em></button>
+      <button class="bslot tool" data-bact="save" title="Save and get a link (P)"><i>P</i><span>💾</span><em>Save</em></button>
+      <button class="bslot tool" data-bact="leave" title="Leave builder mode (K)"><i>K</i><span>⏏</span><em>Leave</em></button>`;
+    const cats = CATEGORIES.map((c, i) => `<button class="bcat${i === this.cat ? ' on' : ''}" data-bcat="${i}">${c.name}</button>`).join('');
+    const items = cat.items.map((x, i) => `<button class="bslot item${i === this.item && this.mode === 'place' ? ' on' : ''}" data-bitem="${i}" title="${x.name}"><span>${ICON[x.kind] ?? '◆'}</span><em>${x.name}</em></button>`).join('');
+    this.hud.innerHTML = `<div class="bh-trim"><b class="c tl"></b><b class="c tr"></b><b class="c bl"></b><b class="c br"></b></div>
+      <div class="bh-top"><span class="bh-title">Builder Mode</span><span class="bh-name">${name}</span><span class="bh-state${this.dirty ? ' warn' : ''}">${this.dirty ? 'not saved' : this.meta.id ? 'saved' : 'new'} · ${this.count} changes</span></div>
+      <div class="bh-cross" style="--mc:#${MODE_COLOR[this.held ? 'move' : this.mode].toString(16).padStart(6, '0')}"></div>
+      <div class="bh-bottom">
+        <div class="bh-status">${status}</div>
+        <div class="bh-items"><div class="bh-cats"><kbd>Tab</kbd>${cats}<span class="bh-qe"><kbd>Q</kbd><kbd>E</kbd></span></div><div class="bh-row">${items}</div></div>
+        <div class="bh-bar">${modes}<span class="bh-sep"></span>${tools}</div>
+        <div class="bh-keys">WASD fly · Space / C up and down · Shift fast · Wheel item · Alt free the mouse to click · Right click pick up · R/T turn · Z/X size · Del delete</div>
+      </div>`;
   }
 }
 
