@@ -35,6 +35,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
       'Raising a shield blocks ALL damage',
       'BloodRage: the 25% buff stacks with every hit that lands, and resets on a miss',
       'Level 4+: Bloodsteal during BloodRage (immune to bleeding; heal for damage dealt to bleeding foes)',
+      'Arts of War (stamina, warriors only): Shield Charge and Ground Slam; Battle Shout at level 6, Unbreakable at 12',
     ],
   },
   ranger: {
@@ -51,6 +52,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
       'Limited to sky magic, but the only class that properly wields the Master Bolt',
       '40 max mana. Elf rangers can also cast Imp (Devil) magic',
       'Starts with a level 1 bow',
+      "Hunter's Arts (stamina, rangers only): Arrow Rain and Mark Prey; Snare Trap at level 6, Evasive Leap at 12",
     ],
   },
   mage: {
@@ -388,6 +390,8 @@ export interface WeaponDef {
   range: number;
   element: DamageElement;
   legendary?: LegendaryId;
+  /** A great foe's unique drop: not a god's weapon, but it takes legend perks like one. */
+  legend?: boolean;
   description?: string;
   /** Only these classes can wield it. */
   classes?: ClassId[];
@@ -430,11 +434,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
   },
   // Unique drops: anyone can wield them.
   'reapers-edge': {
-    id: 'reapers-edge', name: "Reaper's Edge", kind: 'sword', damage: 20, speed: 1.5, range: 2.9, element: 'dark',
-    description: "Forged from the Reaper's scythe. Cold as the grave; it cuts with darkness.",
+    id: 'reapers-edge', name: "Reaper's Edge", kind: 'sword', damage: 31, speed: 1.65, range: 3.2, element: 'dark', legend: true,
+    description: "Forged from the Reaper's scythe. Cold as the grave; it cuts with darkness. Reaps: its hits heal you for 12% of the damage, foes below half health take 30% more, and every kill gives back 8% of your health.",
   },
   venomfang: {
-    id: 'venomfang', name: 'Venomfang', kind: 'dagger', damage: 12, speed: 2.6, range: 2, element: 'earth',
+    id: 'venomfang', name: 'Venomfang', kind: 'dagger', damage: 12, speed: 2.6, range: 2, element: 'earth', legend: true,
     description: "The Giant Spider's fang, wrapped for a grip. Quick, and it bites with the earth.",
   },
   // Sold in Hearthhold: steel at Brann's forge, curios at Quill's stall.
@@ -530,7 +534,37 @@ export interface WeaponInstance {
   level: number;
   /** A rune inscribed at an anvil. */
   rune?: RuneId;
+  /** Legend perks set into a legendary weapon at an anvil, one a slot. */
+  perks?: PerkId[];
 }
+
+// ------------------------------------------------------------- legend perks --
+
+export type PerkId = 'vampiric' | 'executioner' | 'swiftness' | 'thunderstrike' | 'colossus' | 'soul-feast' | 'ruthless' | 'giant-slayer' | 'bulwark' | 'tempest';
+
+export interface PerkDef {
+  id: PerkId;
+  name: string;
+  icon: string;
+  text: string;
+}
+
+/** Set into legendary weapons (and the great foes' unique drops) at an anvil with Legend Shards. */
+export const PERKS: Record<PerkId, PerkDef> = {
+  vampiric: { id: 'vampiric', name: 'Vampiric', icon: '🩸', text: 'Hits heal you for 8% of the damage they deal.' },
+  executioner: { id: 'executioner', name: 'Executioner', icon: '💀', text: 'Foes below 35% health take 40% more.' },
+  swiftness: { id: 'swiftness', name: 'Swiftness', icon: '💨', text: 'Attacks are 15% faster.' },
+  thunderstrike: { id: 'thunderstrike', name: 'Thunderstrike', icon: '⚡', text: 'Every 5th hit calls down lightning on the foe and those around it.' },
+  colossus: { id: 'colossus', name: 'Colossus', icon: '🗿', text: '+15% max health while it is in hand.' },
+  'soul-feast': { id: 'soul-feast', name: 'Soul Feast', icon: '👻', text: 'Kills restore 10% of your health and mana.' },
+  ruthless: { id: 'ruthless', name: 'Ruthless', icon: '🎯', text: '15% chance for a hit to deal double damage.' },
+  'giant-slayer': { id: 'giant-slayer', name: 'Giant Slayer', icon: '🐉', text: 'Great foes take 25% more.' },
+  bulwark: { id: 'bulwark', name: 'Bulwark', icon: '🛡', text: 'Take 12% less damage while it is in hand.' },
+  tempest: { id: 'tempest', name: 'Tempest', icon: '🌪', text: 'Hits have a 20% chance to knock foes back and slow them.' },
+};
+
+/** The pack item that pays for legend perks: dropped by great foes on Heroic and harder. */
+export const LEGEND_SHARD = 'legend-shard';
 
 // ------------------------------------------------------------------ relics --
 
@@ -545,8 +579,8 @@ export const RELICS: Record<RelicId, { id: RelicId; name: string; boon: string }
 
 // ------------------------------------------------------------------ spells --
 
-/** chi: a monk's techniques; shadow: the Dark Mage's; trick: a rogue's. */
-export type SpellSchool = 'devil' | 'fire' | 'water' | 'sky' | 'light' | 'arcane' | 'earth' | 'chi' | 'shadow' | 'trick';
+/** chi: a monk's techniques; shadow: the Dark Mage's; trick: a rogue's; martial: a warrior's arts of war; hunt: a ranger's. */
+export type SpellSchool = 'devil' | 'fire' | 'water' | 'sky' | 'light' | 'arcane' | 'earth' | 'chi' | 'shadow' | 'trick' | 'martial' | 'hunt';
 
 export type SpellId =
   | 'deal-with-the-devil'
@@ -581,7 +615,17 @@ export type SpellId =
   | 'smoke-bomb'
   | 'poison-blades'
   | 'shadowstep'
-  | 'parry';
+  | 'parry'
+  // Warrior arts of war (stamina, warriors only).
+  | 'shield-charge'
+  | 'ground-slam'
+  | 'battle-shout'
+  | 'unbreakable'
+  // Ranger hunter's arts (stamina, rangers only).
+  | 'arrow-rain'
+  | 'mark-prey'
+  | 'snare-trap'
+  | 'evasive-leap';
 
 export interface SpellDef {
   id: SpellId;
@@ -597,6 +641,10 @@ export interface SpellDef {
   hidden?: boolean;
   /** Held: a beam that costs `mana` and deals `power` every channel tick while the cast button is held. */
   channel?: boolean;
+  /** Paid in stamina instead of mana (the warrior's and the ranger's arts). */
+  stamina?: number;
+  /** Learnt on reaching this level (the warrior's and the ranger's arts). */
+  level?: number;
 }
 
 export const SPELLS: Record<SpellId, SpellDef> = {
@@ -724,6 +772,46 @@ export const SPELLS: Record<SpellId, SpellDef> = {
     id: 'parry', name: 'Parry', school: 'trick', element: 'physical', mana: 6, cooldown: 5, power: 0,
     description: 'Raise your blade for a heartbeat: the next blow is turned aside, and you riposte for triple damage.',
   },
+  // ---- Warrior arts of war: paid in stamina, and warriors alone know them.
+  'shield-charge': {
+    id: 'shield-charge', name: 'Shield Charge', school: 'martial', element: 'physical', mana: 0, stamina: 25, level: 1, cooldown: 9, power: 1.6,
+    description: 'Charge at a foe up to 14 m away and crash into it: it is stunned and thrown back, and anything in your path is knocked aside.',
+  },
+  'ground-slam': {
+    id: 'ground-slam', name: 'Ground Slam', school: 'martial', element: 'earth', mana: 0, stamina: 30, level: 1, cooldown: 12, power: 2,
+    description: 'Leap and bring your weapon down: the ground cracks, and every foe within 5 m is hurt and thrown up.',
+  },
+  'battle-shout': {
+    id: 'battle-shout', name: 'Battle Shout', school: 'martial', element: 'physical', mana: 0, stamina: 20, level: 6, cooldown: 35, power: 0,
+    description: 'A roar that steels you and co-op friends nearby: +25% damage and stamina flows back for 12 seconds. Lesser foes near you cower.',
+  },
+  unbreakable: {
+    id: 'unbreakable', name: 'Unbreakable', school: 'martial', element: 'physical', mana: 0, stamina: 35, level: 12, cooldown: 75, power: 0,
+    description: 'For 7 seconds you take half damage and cannot fall below 1 health, and you heal 25% of your health over that time.',
+  },
+  // ---- Ranger hunter's arts: paid in stamina, and rangers alone know them.
+  'arrow-rain': {
+    id: 'arrow-rain', name: 'Arrow Rain', school: 'hunt', element: 'physical', mana: 0, stamina: 25, level: 1, cooldown: 12, power: 0.55,
+    description: 'Loose a flight of arrows high into the sky: they rain down on the spot you aim at, striking every foe within 5 m six times. Costs no arrows.',
+  },
+  'mark-prey': {
+    id: 'mark-prey', name: 'Mark Prey', school: 'hunt', element: 'physical', mana: 0, stamina: 10, level: 1, cooldown: 10, power: 0,
+    description: 'Mark a foe for 15 seconds: it takes 15% more from everyone and 25% more from you, it cannot hide from you, and killing it gives back stamina.',
+  },
+  'snare-trap': {
+    id: 'snare-trap', name: 'Snare Trap', school: 'hunt', element: 'physical', mana: 0, stamina: 20, level: 6, cooldown: 14, power: 1.2,
+    description: 'Throw a snare: it springs where it lands, cutting and holding fast every foe within 3.5 m for 3 seconds (great foes for 1).',
+  },
+  'evasive-leap': {
+    id: 'evasive-leap', name: 'Evasive Leap', school: 'hunt', element: 'wind', mana: 0, stamina: 18, level: 12, cooldown: 8, power: 0,
+    description: 'Spring back out of harm (untouchable in the air). Your next shot or blow within 4 seconds deals double damage.',
+  },
+};
+
+/** The warrior's arts of war and the ranger's hunter's arts, by class. */
+export const CLASS_ARTS: Partial<Record<ClassId, SpellId[]>> = {
+  warrior: ['shield-charge', 'ground-slam', 'battle-shout', 'unbreakable'],
+  ranger: ['arrow-rain', 'mark-prey', 'snare-trap', 'evasive-leap'],
 };
 
 export const MAGE_STARTING_SPELLS: SpellId[] = ['deal-with-the-devil', 'inferno', 'wrath-of-thor', 'waterspike', 'way-of-the-wind'];

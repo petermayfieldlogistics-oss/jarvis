@@ -26,7 +26,7 @@ const esc = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&l
 const BURST_NAME: Record<Burst, string> = { fire: 'Fire', frost: 'Frost', lightning: 'Lightning', earth: 'Earth', wind: 'Wind', light: 'Light', dark: 'Dark', force: 'Force' };
 
 const SPELL_ICON: Record<string, string> = {
-  devil: '😈', fire: '🔥', sky: '⚡', water: '💧', light: '✨', arcane: '🜂', earth: '🪨', chi: '☯', shadow: '🌑', trick: '🃏',
+  devil: '😈', fire: '🔥', sky: '⚡', water: '💧', light: '✨', arcane: '🜂', earth: '🪨', chi: '☯', shadow: '🌑', trick: '🃏', martial: '🛡', hunt: '🏹',
 };
 
 const WEAPON_ICON: Record<WeaponKind, string> = {
@@ -653,7 +653,7 @@ export class Hud {
         const i = Number(s.el.dataset.slot);
         const cost = p.costOf(s.spell);
         left = p.cooldownLeft(s.spell);
-        blocked = (SPELLS[s.spell].school === 'light' && sealed) || (!p.soulOrPower && cost > p.mana);
+        blocked = (SPELLS[s.spell].school === 'light' && sealed) || (SPELLS[s.spell].stamina ? cost > p.stamina : !p.soulOrPower && cost > p.mana);
         sel = i === p.selected;
         combo = p.combineMode && i === (p.selected + 1) % 4;
         put(s.cost!, 'text', String(cost));

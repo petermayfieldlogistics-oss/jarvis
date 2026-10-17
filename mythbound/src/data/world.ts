@@ -647,6 +647,7 @@ export const ITEMS: Record<string, GoodsItem> = {
   'golden-fish': { name: 'Golden Fish', description: 'Restores 90 HP.', heal: 90 },
   'ember-ore': { name: 'Ember Ore', description: 'Glowing ore from Molten Peak. Used to upgrade weapons.' },
   'free-upgrade': { name: "Brann's Token", description: 'One free weapon upgrade at any anvil.' },
+  'legend-shard': { name: 'Legend Shard', description: 'A splinter of a great foe\'s power, won on Heroic or harder. Sets legend perks into legendary weapons at an anvil.' },
   ...Object.fromEntries(Object.values(RELICS).map((r) => [r.id, { name: r.name, description: `Relic. ${r.boon}` }])),
   // Uninscribed runes, waiting for an anvil.
   ...Object.fromEntries(Object.values(RUNES).map((r) => [runeItem(r.id), { name: r.name, description: `${r.description} Inscribe it on a weapon at an anvil.` }])),

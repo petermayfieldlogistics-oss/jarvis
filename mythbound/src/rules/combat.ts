@@ -1,5 +1,6 @@
 import { CLASSES, SPELLS, WEAPONS, COMBOS, type DamageElement, type LegendaryId, type SpellId, type ComboDef, type Element } from '../data/defs';
-import { ANGELIC, hasRelic, ORC, ZOMBIE, rank, type Character } from './character';
+import { ANGELIC, hasRelic, milestone, ORC, renownMul, ZOMBIE, rank, type Character } from './character';
+import { hasPerk, holdsReaper, PERK, REAP } from './legend';
 import { ambushPower, backstabMultiplier, finisherPower, IRON_SKIN, opportunistPower, pathPower, RAW_POWER, rogueBladePower } from './classes';
 import { KIND_NAME, WAND, classWields, family, isMartial } from './weapons';
 import { fedTaken } from './fed';
@@ -132,6 +133,14 @@ export interface HitContext {
   ambush?: boolean;
   /** A combo's last swing. */
   finisher?: boolean;
+  /** The target is a great foe (Giant Slayer). */
+  targetBoss?: boolean;
+  /** 0-1: the roll for a Ruthless double hit (none without it). */
+  roll?: number;
+  /** A warrior's Battle Shout is ringing. */
+  shout?: boolean;
+  /** An Evasive Leap's focused strike. */
+  focused?: boolean;
 }
 
 export interface HitResult {
@@ -192,6 +201,22 @@ export function outgoingDamage(c: Character, hit: HitContext): HitResult {
     tags.push('slayer');
   }
   if (hit.targetDark && hit.element === 'light') dmg *= 2;
+  // Legend perks on the weapon in hand, Reaper's Edge reaping, and the warrior's and ranger's arts.
+  if (hit.kind !== 'spell') {
+    if (hit.targetHp !== undefined && hit.targetHp < PERK.executioner.below && hasPerk(c, 'executioner')) dmg *= PERK.executioner.power;
+    if (hit.targetBoss && hasPerk(c, 'giant-slayer')) dmg *= PERK.giantSlayer;
+    if (hit.targetHp !== undefined && hit.targetHp < REAP.below && holdsReaper(c)) dmg *= REAP.power;
+    if (hit.roll !== undefined && hit.roll < PERK.ruthless.chance && hasPerk(c, 'ruthless')) {
+      dmg *= PERK.ruthless.power;
+      tags.push('crit');
+    }
+    if (hit.shout) dmg *= SHOUT.damage;
+    if (hit.focused) {
+      dmg *= LEAP.power;
+      tags.push('crit');
+    }
+    dmg *= (1 + 0.1 * milestone(c, 50)) * renownMul(c);
+  }
   if (c.classId === 'rogue' && (hit.kind === 'melee' || hit.kind === 'thrown')) {
     // A rogue's backstab (from behind, or unseen), and an ambush out of Vanish.
     const m = backstabMultiplier(c, hit.undetected, hit.fromBehind);
@@ -225,7 +250,7 @@ export function spellPowerMultiplier(c: Character, element: DamageElement): numb
   if (c.raceId === 'angelic' && element === 'light') m *= ANGELIC.lightPower;
   if (c.raceId === 'orc') m *= ORC.spellPower;
   if (c.classId === 'sorcerer') m *= RAW_POWER * pathPower(c, element) * (rank(c, 'overflow') ? 1.15 : 1);
-  return m;
+  return m * (1 + 0.1 * milestone(c, 50)) * renownMul(c);
 }
 
 export interface IncomingContext {
@@ -234,6 +259,8 @@ export interface IncomingContext {
   invulnerable: boolean;
   /** A monk's Iron Skin. */
   ironSkin?: boolean;
+  /** A warrior's Unbreakable. */
+  unbreakable?: boolean;
 }
 
 /** Damage the hero actually takes. */
@@ -253,6 +280,9 @@ export function incomingDamage(c: Character, amount: number, element: DamageElem
   if (c.subclassId === 'elemental' && c.wizardElement === element) dmg *= rank(c, 'elemental-ward') ? 0 : 0.5;
   if (ctx.stoneSkin) dmg *= 0.5;
   if (ctx.ironSkin) dmg *= IRON_SKIN.taken;
+  if (ctx.unbreakable) dmg *= UNBREAKABLE.taken;
+  if (hasPerk(c, 'bulwark')) dmg *= PERK.bulwark;
+  dmg *= 1 - 0.08 * milestone(c, 40);
   // A fruit's ward (emberfig, tideberry, duskcherry).
   dmg *= fedTaken(c, element);
   dmg *= (1 - 0.08 * rank(c, 'stalwart')) * (1 - 0.07 * rank(c, 'arcane-ward'));
@@ -276,6 +306,25 @@ export function bleedChance(c: Character): number {
   return 0;
 }
 
+// ------------------------------------------------- warrior and ranger arts --
+
+/** Shield Charge: how far it reaches, how fast you run, how long the foe is stunned (great foes less). */
+export const CHARGE = { range: 14, speed: 26, stun: 1.4, bossStun: 0.5, shove: 12, sweep: 1.6 };
+/** Ground Slam: its radius and how high it throws foes. */
+export const SLAM = { radius: 5, lift: 6, hop: 7 };
+/** Battle Shout: the damage it lends, how long it rings, how far it reaches, and the stamina it gives back a second. */
+export const SHOUT = { damage: 1.25, seconds: 12, radius: 12, fear: 3, stamina: 6 };
+/** Unbreakable: how long, how much less damage, and the share of health it heals over that time. */
+export const UNBREAKABLE = { seconds: 7, taken: 0.5, heal: 0.25 };
+/** Arrow Rain: the circle it covers, how many waves fall, over how long, and how far it can be aimed. */
+export const RAIN = { radius: 5, waves: 6, seconds: 1.5, reach: 40 };
+/** Mark Prey: how long it lasts, what the prey takes from the ranger, and the stamina a kill gives back. */
+export const PREY = { seconds: 15, mine: 1.25, stamina: 40 };
+/** Snare Trap: the circle it holds, for how long (great foes less), and how far it can be thrown. */
+export const SNARE = { radius: 3.5, root: 3, bossRoot: 1, reach: 16, bleed: 4 };
+/** Evasive Leap: how far back, the window for the focused strike, and its power. */
+export const LEAP = { dist: 7, hop: 6, time: 0.45, window: 4, power: 2 };
+
 // --------------------------------------------------------------- spells --
 
 export interface CastContext {
@@ -284,6 +333,8 @@ export interface CastContext {
   mana: number;
   inDesert: boolean;
   soulOrPower: boolean;
+  /** The hero's stamina, for the arts paid in it. */
+  stamina?: number;
 }
 
 export interface CastCheck {
@@ -294,6 +345,8 @@ export interface CastCheck {
 
 export function spellCost(c: Character, spell: SpellId): number {
   const def = SPELLS[spell];
+  // The warrior's and ranger's arts are paid in stamina.
+  if (def.stamina) return def.stamina;
   let cost = def.mana;
   if (c.subclassId === 'elemental' && c.wizardElement === def.element) cost *= rank(c, 'elemental-avatar') ? 0.75 * 0.85 : 0.75;
   cost *= 1 - 0.08 * rank(c, 'spell-thrift');
@@ -321,6 +374,10 @@ export function canCast(c: Character, spell: SpellId, ctx: CastContext): CastChe
   if (spell === 'waterspike' && ctx.inDesert) return { ok: false, reason: 'There is no water in the desert to bend.', cost };
   if (spell === 'power-of-the-light' && ctx.gameMinutes < c.lightPowerReadyAt) {
     return { ok: false, reason: 'The light has not returned yet.', cost };
+  }
+  if (def.stamina) {
+    if ((ctx.stamina ?? Infinity) < cost) return { ok: false, reason: 'Not enough stamina.', cost };
+    return { ok: true, cost };
   }
   if (spell === 'soul-or-power') {
     if (ctx.soulOrPower) return { ok: false, reason: 'Your soul is already bargained.', cost: 0 };

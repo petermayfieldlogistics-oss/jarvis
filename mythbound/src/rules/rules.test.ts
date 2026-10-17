@@ -61,7 +61,8 @@ describe('classes', () => {
 
   it('limits rangers to sky magic unless they are elves', () => {
     const human = createCharacter(choice({ classId: 'ranger', subclassId: null }));
-    expect(human.knownSpells).toEqual(['wrath-of-thor', 'way-of-the-wind']);
+    // Sky magic, and the ranger's own first hunter's arts.
+    expect(human.knownSpells).toEqual(['wrath-of-thor', 'way-of-the-wind', 'arrow-rain', 'mark-prey']);
     expect(canLearnSpell(human, 'inferno')).toBe(false);
     expect(canLearnSpell(human, 'deal-with-the-devil')).toBe(false);
     const elf = createCharacter(choice({ classId: 'ranger', subclassId: null, raceId: 'elf' }));

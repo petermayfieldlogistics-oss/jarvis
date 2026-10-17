@@ -3,7 +3,9 @@ import { newSteed, normalizeSteed, type Steed } from './horse';
 import { fedMul, fedSwims, normalizeFed, type Fed } from './fed';
 import { newWardrobe, normalizeWardrobe, type Wardrobe } from './outfit';
 import { newPvpRecord, normalizePvp, type PvpRecord } from './pvp';
+import { hasPerk, normalizePerks, PERK } from './legend';
 import {
+  CLASS_ARTS,
   CLASSES,
   MAGE_STARTING_SPELLS,
   SPELLS,
@@ -22,8 +24,14 @@ import {
   type WeaponInstance,
 } from '../data/defs';
 
-/** Content tops out around level 13; the levels past it are a long road for those who keep playing. */
-export const MAX_LEVEL = 30;
+/**
+ * Content tops out around level 13 on Normal; the great foes on Heroic,
+ * Mythic and Godslayer (rules/boss.ts) carry heroes on to 50. Past that,
+ * experience earns Renown.
+ */
+export const MAX_LEVEL = 50;
+/** Renown ranks past the top level: each is +1% health and damage. */
+export const MAX_RENOWN = 50;
 /** Real seconds per game minute: one game hour is one real minute. */
 export const GAME_MINUTES_PER_SECOND = 1;
 
@@ -85,6 +93,8 @@ export interface Character extends CharacterChoice {
   wardrobe: Wardrobe;
   /** Duels, arena matches and war mode: glory, rank and the tally. */
   pvp: PvpRecord;
+  /** Ranks earned with experience past the top level. */
+  renown: number;
 }
 
 /** Deterministic randomness is injected so creation can be tested. */
@@ -207,6 +217,7 @@ export function createCharacter(choice: CharacterChoice, rng: Rng = Math.random)
     fed: null,
     wardrobe: newWardrobe(),
     pvp: newPvpRecord(),
+    renown: 0,
   };
   for (const s of startingSpells(c)) learnSpell(c, s);
   return c;
@@ -222,9 +233,16 @@ export function startingSpells(c: Pick<Character, 'classId' | 'raceId' | 'roleId
   if (c.subclassId === 'lightmage') spells.push('radiant-beam', 'smite-undead', 'mending-light', 'ward-of-dawn');
   if (c.classId === 'rogue') spells.push('smoke-bomb', 'poison-blades', c.subclassId === 'duelist' ? 'parry' : 'shadowstep');
   if (c.raceId === 'elf') spells.push('deal-with-the-devil', 'imp-familiar');
+  // A warrior's and a ranger's first arts come first (the rest come with levels).
+  for (const art of CLASS_ARTS[c.classId] ?? []) if ((SPELLS[art].level ?? 1) <= 1) spells.push(art);
   if (c.roleId === 'knight') spells.push('holy-smite', 'radiant-heal', 'aegis-of-light');
   if (c.raceId === 'angelic') spells.push('holy-smite');
   return [...new Set(spells)];
+}
+
+/** The class's arts this hero's level has earned but they don't know yet. */
+export function artsDue(c: Pick<Character, 'classId' | 'level' | 'knownSpells'>): SpellId[] {
+  return (CLASS_ARTS[c.classId] ?? []).filter((s) => (SPELLS[s].level ?? 1) <= c.level && !c.knownSpells.includes(s));
 }
 
 export function learnSpell(c: Character, spell: SpellId): boolean {
@@ -243,6 +261,8 @@ export function learnSpell(c: Character, spell: SpellId): boolean {
 export function canLearnSpell(c: Pick<Character, 'classId' | 'raceId' | 'roleId'> & Partial<Pick<Character, 'subclassId'>>, spell: SpellId): boolean {
   const school = SPELLS[spell].school;
   // Each class's own arts are its alone.
+  if (school === 'martial') return c.classId === 'warrior';
+  if (school === 'hunt') return c.classId === 'ranger';
   if (school === 'chi') return c.classId === 'monk';
   if (school === 'trick') return c.classId === 'rogue';
   if (school === 'shadow') return c.subclassId === 'darkmage';
@@ -309,9 +329,19 @@ export const MILESTONES: Milestone[] = [
   { level: 20, name: 'Deep Reserves', text: '+15% max mana and stamina.' },
   { level: 25, name: 'Fleet of Foot', text: '+6% movement speed.' },
   { level: 30, name: 'Mythbound', text: '+10% max health and mana.' },
+  { level: 35, name: 'Iron Constitution', text: '+10% max health.' },
+  { level: 40, name: 'Battle-Hardened', text: 'Take 8% less damage.' },
+  { level: 45, name: 'Wellspring', text: 'Mana and stamina recover 20% faster.' },
+  { level: 50, name: 'Legend', text: '+10% damage with weapons and spells.' },
 ];
 
-const perk = (c: Pick<Character, 'level'>, level: number) => (c.level >= level ? 1 : 0);
+/** A milestone perk the hero has reached (0 or 1). */
+export const milestone = (c: Pick<Character, 'level'>, level: number) => (c.level >= level ? 1 : 0);
+
+/** Renown's share: +1% a rank. */
+export const renownMul = (c: Partial<Pick<Character, 'renown'>>) => 1 + 0.01 * (c.renown ?? 0);
+
+const perk = milestone;
 
 /** Skill points a hero of this level has earned in all: one to start, one a level, one more every 5 levels. */
 export function pointsEarned(level: number): number {
@@ -333,6 +363,10 @@ export function normalizeCharacter(c: Character): Character {
   c.wardrobe = normalizeWardrobe(c.wardrobe);
   // Player-versus-player came later.
   c.pvp = normalizePvp(c.pvp);
+  // So did Renown, legend perks, and the warrior's and ranger's arts (known at once, by level).
+  c.renown = Math.max(0, Math.min(MAX_RENOWN, Math.floor(Number(c.renown) || 0)));
+  for (const w of c.weapons) normalizePerks(w);
+  if (Array.isArray(c.knownSpells)) for (const s of artsDue(c)) learnSpell(c, s);
   return c;
 }
 
@@ -361,7 +395,8 @@ export function maxHp(c: Character): number {
   const perLevel = GROWTH[c.classId].hp;
   let base = CLASSES[c.classId].hp + perLevel * (c.level - 1) + (hasRelic(c, 'dragon-heart') ? 30 : 0);
   base += 15 * rank(c, 'iron-hide') + 12 * rank(c, 'hardy') + 14 * rank(c, 'tempered-body') + 20 * rank(c, 'iron-will');
-  base *= 1 + 0.1 * perk(c, 10) + 0.1 * perk(c, 30);
+  base *= 1 + 0.1 * perk(c, 10) + 0.1 * perk(c, 30) + 0.1 * perk(c, 35);
+  base *= renownMul(c) * (c.weapons && hasPerk(c, 'colossus') ? PERK.colossus : 1);
   if (c.raceId === 'orc') base *= ORC.hp;
   return Math.max(1, Math.round(base - c.hpLost));
 }
@@ -390,7 +425,7 @@ export function maxStamina(c: Character): number {
 
 /** Stamina recovered per second while not spending it. */
 export function staminaRegen(c: Character): number {
-  return 38 * (1 + 0.2 * perk(c, 5)) * (rank(c, 'windrunner') ? 1.3 : 1) * fedMul(c, 'stamina');
+  return 38 * (1 + 0.2 * perk(c, 5) + 0.2 * perk(c, 45)) * (rank(c, 'windrunner') ? 1.3 : 1) * fedMul(c, 'stamina');
 }
 
 export function moveSpeed(c: Character): number {
@@ -404,7 +439,7 @@ export function moveSpeed(c: Character): number {
 
 export function manaRegen(c: Character): number {
   const base = GROWTH[c.classId].manaRegen;
-  return base * (1 + 0.3 * rank(c, 'flow')) * (c.raceId === 'orc' ? ORC.manaRegen : 1) * (hasRelic(c, 'tide-crown') ? 1.3 : 1) * fedMul(c, 'mana');
+  return base * (1 + 0.3 * rank(c, 'flow')) * (1 + 0.2 * perk(c, 45)) * (c.raceId === 'orc' ? ORC.manaRegen : 1) * (hasRelic(c, 'tide-crown') ? 1.3 : 1) * fedMul(c, 'mana');
 }
 
 /** Quick Draw: rangers draw every weapon faster. Multiplies draw/ready times. */
@@ -424,7 +459,10 @@ export function xpToNext(level: number): number {
   return Math.round((30 + 42 * level + 10.5 * level * level) / 5) * 5;
 }
 
-/** Adds experience; returns how many levels were gained. */
+/** Experience for one Renown rank past the top level. */
+export const renownXp = () => xpToNext(MAX_LEVEL);
+
+/** Adds experience; returns how many levels were gained. Past the top level it fills Renown. */
 export function addXp(c: Character, amount: number): number {
   if (c.roleId === 'historian') amount *= 1.15;
   c.xp += Math.round(amount);
@@ -439,7 +477,14 @@ export function addXp(c: Character, amount: number): number {
     }
     gained++;
   }
-  if (c.level >= MAX_LEVEL) c.xp = 0;
+  if (c.level >= MAX_LEVEL) {
+    c.renown ??= 0;
+    while (c.renown < MAX_RENOWN && c.xp >= renownXp()) {
+      c.xp -= renownXp();
+      c.renown++;
+    }
+    if (c.renown >= MAX_RENOWN) c.xp = 0;
+  }
   return gained;
 }
 
@@ -576,7 +621,8 @@ export function upgradeCost(c: Character, weapon: WeaponInstance): { gold: numbe
   return { gold, ore };
 }
 
-export const MAX_WEAPON_LEVEL = 10;
+/** Weapons upgrade to level 15 (a legendary's perk slots open at 5 and 10). */
+export const MAX_WEAPON_LEVEL = 15;
 
 export function weaponDamage(w: WeaponInstance): number {
   return WEAPONS[w.id].damage + 4 * (w.level - 1);

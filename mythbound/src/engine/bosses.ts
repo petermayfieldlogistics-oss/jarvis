@@ -1092,6 +1092,8 @@ export class Lairs {
     const g = this.g;
     const b = makeBoss(BOSSES[l.boss], l.id);
     if (!b) return;
+    // On the tier the hero picked for it, once it has fallen before.
+    b.setTier(g.bossTier(l.boss));
     // Tougher for a party: count the heroes about.
     const party = g.heroes.filter((h) => Math.abs(h.pos.x - l.x) + Math.abs(h.pos.z - l.z) < 220).length;
     if (party > 1) b.scaleHealth(bossHealthScale(party));

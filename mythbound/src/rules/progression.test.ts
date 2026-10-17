@@ -11,10 +11,13 @@ import {
   maxMana,
   maxStamina,
   MAX_LEVEL,
+  MAX_RENOWN,
   MILESTONES,
   moveSpeed,
   normalizeCharacter,
   pointsEarned,
+  renownMul,
+  renownXp,
   staminaRegen,
   xpToNext,
   type Character,
@@ -51,8 +54,8 @@ describe('experience', () => {
     expect(xpToNext(10) / ENEMIES['eye-watcher'].xp).toBeLessThan(25);
   });
 
-  it('raises the level cap to 30 and pays a bonus point every 5 levels', () => {
-    expect(MAX_LEVEL).toBe(30);
+  it('raises the level cap to 50 and pays a bonus point every 5 levels', () => {
+    expect(MAX_LEVEL).toBe(50);
     const c = createCharacter(choice());
     const levels: number[] = [];
     while (c.level < MAX_LEVEL) {
@@ -60,12 +63,24 @@ describe('experience', () => {
       levels.push(c.level);
       expect(c.skillPoints).toBe(pointsEarned(c.level));
     }
-    expect(c.level).toBe(30);
-    expect(c.milestone).toBe(30);
-    addXp(c, 1e6);
-    expect(c.level).toBe(30);
-    expect(c.xp).toBe(0);
+    expect(c.level).toBe(50);
+    expect(c.milestone).toBe(50);
     expect(pointsEarned(30)).toBe(36);
+    expect(pointsEarned(50)).toBe(60);
+  });
+
+  it('turns experience past the top level into Renown', () => {
+    const c = hero({}, MAX_LEVEL);
+    const hp = maxHp(c);
+    expect(c.renown).toBe(0);
+    addXp(c, renownXp() * 2 + 5);
+    expect(c.level).toBe(MAX_LEVEL);
+    expect(c.renown).toBe(2);
+    expect(c.xp).toBe(5);
+    expect(Math.abs(maxHp(c) - hp * renownMul({ renown: 2 }))).toBeLessThanOrEqual(1);
+    addXp(c, 1e9);
+    expect(c.renown).toBe(MAX_RENOWN);
+    expect(c.xp).toBe(0);
   });
 
   it('weighs kills against the hero level, but bosses always give it all', () => {
@@ -100,7 +115,15 @@ describe('experience', () => {
     expect(maxStamina(c)).toBe(Math.round((100 + 10 + 38) * 1.15));
     c.level = 25;
     expect(moveSpeed(c)).toBeCloseTo(speed * 1.06);
-    expect(MILESTONES.map((m) => m.level)).toEqual([5, 10, 15, 20, 25, 30]);
+    expect(MILESTONES.map((m) => m.level)).toEqual([5, 10, 15, 20, 25, 30, 35, 40, 45, 50]);
+    c.level = 34;
+    const hp34 = maxHp(c);
+    c.level = 35;
+    expect(maxHp(c)).toBeGreaterThan(hp34 + 9);
+    c.level = 44;
+    const regen44 = staminaRegen(c);
+    c.level = 45;
+    expect(staminaRegen(c)).toBeCloseTo(regen44 * (1 + 0.2 + 0.2) / (1 + 0.2));
   });
 
   it('pays old saves their milestone points once', () => {

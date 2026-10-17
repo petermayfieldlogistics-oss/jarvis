@@ -7,8 +7,9 @@ import {
 import {
   BLOODRAGE, bleedChance, bloodrageDuration, canCast, canCombine, canWield, castPowerOfTheLight, comboCost, comboFor, comboPower, cooldownMultiplier, devilRingAffects, hasBloodrage,
   hasBloodsteal, immuneToBleed, mainWeapon, newFury, onMeleeLanded, onMeleeMissed, powerShot, retribution, spellCost, spellPowerMultiplier, strikeDevilDeal,
-  type FuryState,
+  CHARGE, LEAP, PREY, RAIN, SHOUT, SLAM, SNARE, UNBREAKABLE, type FuryState,
 } from '../rules/combat';
+import { hasPerk, holdsReaper, PERK, REAP } from '../rules/legend';
 import {
   KNIFE_VOLLEY, RUNE_EFFECT, RUNE_SEAL, RUNE_TRAP, SONG, SONGS, STORM_CHAIN, WAND, isOffhand, isTwoHanded, meleeReach, songOf, swingArc, type SongId,
 } from '../rules/weapons';
@@ -41,7 +42,7 @@ import type { Action } from './input';
 // zap: a wand bolt; rune: a rune trap or seal; play: a lyre or war horn.
 // flurry: a monk's storm of punches; cyclone: a spinning kick; meditate: sitting
 // to heal; channel: a held beam; parry: a duelist's guard; riposte: its answer.
-type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar' | 'zap' | 'rune' | 'play' | 'flurry' | 'cyclone' | 'meditate' | 'channel' | 'parry' | 'riposte';
+type AttackKind = 'light' | 'heavy' | 'spin' | 'throw' | 'cast' | 'bow' | 'roar' | 'zap' | 'rune' | 'play' | 'flurry' | 'cyclone' | 'meditate' | 'channel' | 'parry' | 'riposte' | 'art';
 
 interface Attack {
   kind: AttackKind;
@@ -138,7 +139,7 @@ export const ELEMENT_COLOR: Record<DamageElement, number> = {
 
 const SCHOOL_COLOR: Record<SpellSchool, number> = {
   devil: 0xb8121a, fire: 0xff6a1a, sky: 0xa8ccff, water: 0x2ad8ff, light: 0xffd25a, arcane: 0xa060ff, earth: 0xa8743a,
-  chi: 0x7ff0c8, shadow: 0x8a3cff, trick: 0xb8b0a0,
+  chi: 0x7ff0c8, shadow: 0x8a3cff, trick: 0xb8b0a0, martial: 0xff8a50, hunt: 0x9ad870,
 };
 
 export const RAGE_RED = 0xff2a12;
@@ -267,6 +268,21 @@ export class Player {
   tailwind = 0;
   /** Shadowstep's Ghost: seconds unseen after a blink. */
   ghost = 0;
+  // ---- The warrior's and the ranger's arts.
+  /** Battle Shout (this warrior's or a friend's): seconds left. */
+  shout = 0;
+  /** Warrior: Unbreakable seconds left. */
+  unbreakable = 0;
+  /** Ranger: the foe marked as prey. */
+  prey: Enemy | null = null;
+  /** Ranger: seconds left to land an Evasive Leap's focused strike. */
+  focus = 0;
+  /** Hits with the weapon in hand (Thunderstrike counts them). */
+  perkHits = 0;
+  /** A Shield Charge under way: the foe it runs at, seconds it may still run, and the foes already knocked aside. */
+  private charging: { target: Enemy; left: number; hit: Set<Enemy> } | null = null;
+  private shoutAura: { stop(): void } | null = null;
+  private stoneAura: { stop(): void } | null = null;
   /** Standing in smoke (a rogue's, or a friend's): all but invisible. */
   inSmoke = false;
   /** Foes this hero has hexed (when one dies, the hex leaps on). */
@@ -606,7 +622,7 @@ export class Player {
     // Moving (or rolling) stands a meditating monk up.
     if (atk?.kind === 'meditate' && (wantLen > 0.3 || input.pressed.has('roll') || input.pressed.has('jump'))) this.endMeditation();
     if (atk && atk.kind === 'channel') speed *= 0.3;
-    else if (atk && atk.kind !== 'cast') speed *= atk.kind === 'roar' || atk.kind === 'meditate' || atk.kind === 'parry' ? 0 : atk.t < atk.chainAt ? 0.2 : 0.45;
+    else if (atk && atk.kind !== 'cast') speed *= atk.kind === 'roar' || atk.kind === 'meditate' || atk.kind === 'parry' || atk.kind === 'art' ? 0 : atk.t < atk.chainAt ? 0.2 : 0.45;
     // Facing the camera or a foe, walking backward is slower.
     if ((shiftLock || this.lockTarget) && wantLen > 0.1 && !this.sailing) {
       const ahead = (wantX * Math.sin(this.yaw) + wantZ * Math.cos(this.yaw)) / wantLen;
@@ -871,10 +887,10 @@ export class Player {
   }
 
   /** Starts a roll toward the input direction, or a backstep hop without one. */
-  private startRoll(g: Game, wantX: number, wantZ: number, wantLen: number) {
-    this.backstep = wantLen <= 0.1;
-    // A monk dashes (or backflips), a rogue rolls quick and low, everyone else rolls.
-    const R = (this.rollSpec = rollSpec(this.c, this.backstep));
+  private startRoll(g: Game, wantX: number, wantZ: number, wantLen: number, spec?: RollSpec) {
+    this.backstep = !!spec || wantLen <= 0.1;
+    // A monk dashes (or backflips), a rogue rolls quick and low, everyone else rolls (an Evasive Leap brings its own).
+    const R = (this.rollSpec = spec ?? rollSpec(this.c, this.backstep));
     this.rollT = 0;
     this.rollTime = 0;
     this.spend(R.cost);
@@ -1056,7 +1072,7 @@ export class Player {
     } else {
       const w = WEAPONS[mainWeapon(this.c).id];
       const quick = drawTimeMultiplier(this.c) < 1 ? 0.85 : 1;
-      const dur = (1 / w.speed) * 0.9 * quick * (heavy ? 1 : lightAttackSpeed(this.c));
+      const dur = (1 / w.speed) * 0.9 * quick * (heavy ? 1 : lightAttackSpeed(this.c)) * (hasPerk(this.c, 'swiftness') ? PERK.swiftness : 1);
       const thrift = 1 - 0.2 * rank(this.c, 'blade-dancer') - 0.15 * rank(this.c, 'blade-master');
       if (!heavy) {
         const chained = cur ? cur.kind === 'light' : this.lastKind === 'light' && this.now - this.lastSwingEnd < COMBO_WINDOW;
@@ -1118,7 +1134,7 @@ export class Player {
     if (kind !== 'channel') this.stopChannel();
     // Held and multi-blow moves run their own clock (flurry punches, beams, sitting, a parry).
     const own = kind === 'flurry' || kind === 'channel' || kind === 'meditate' || kind === 'parry';
-    const fixed = kind === 'roar' || kind === 'meditate' || kind === 'parry';
+    const fixed = kind === 'roar' || kind === 'meditate' || kind === 'parry' || kind === 'art';
     this.attack = {
       kind,
       style,
@@ -1956,6 +1972,12 @@ export class Player {
 
   /** A foe died: a hex on it leaps on (and feeds a Soul Siphon). */
   onFoeDied(g: Game, e: Enemy) {
+    if (e === this.prey) {
+      // Prey brought down: the hunt feeds the ranger's legs.
+      this.prey = null;
+      this.stamina = Math.min(this.maxStamina, this.stamina + PREY.stamina);
+      g.hud.toast('Prey brought down!', 'skill');
+    }
     if (!this.hexed.delete(e)) return;
     if (rank(this.c, 'soul-siphon')) this.gainChi(10);
     let n = hexLeaps(this.c);
@@ -1973,6 +1995,25 @@ export class Player {
   onKill() {
     if (rank(this.c, 'tailwind')) this.tailwind = 4;
     if (this.vanish > 0 && rank(this.c, 'phantom')) this.vanish += 2;
+    // Reaper's Edge feeds on the dead, and so does a Soul Feast perk.
+    const feast = (holdsReaper(this.c) ? REAP.killHeal : 0) + (hasPerk(this.c, 'soul-feast') ? PERK.soulFeast : 0);
+    if (feast > 0 && this.alive) {
+      this.heal(this.maxHp * feast);
+      if (hasPerk(this.c, 'soul-feast') && !this.soulOrPower) this.mana = Math.min(this.maxMana, this.mana + this.maxMana * PERK.soulFeast);
+    }
+  }
+
+  /** An Evasive Leap's focused strike: the next blow or shot that lands spends it. */
+  useFocus(): boolean {
+    if (this.focus <= 0) return false;
+    this.focus = 0;
+    return true;
+  }
+
+  /** A friend's Battle Shout reached this hero. */
+  receiveShout(g: Game, seconds: number, from?: string) {
+    this.shout = Math.max(this.shout, Math.min(SHOUT.seconds, seconds));
+    if (from) g.hud.toast(`${from}'s Battle Shout steels you!`, 'skill');
   }
 
   /** Dodged a blow mid-roll (Eye of the Storm, Slippery). */
@@ -1986,6 +2027,19 @@ export class Player {
 
   /** The newer classes' timers: Iron Skin, Vanish, wards, surges, poison, smoke. */
   private tickClassTimers(dt: number, g: Game) {
+    // The warrior's and ranger's arts.
+    if (this.shout > 0) {
+      this.shout = Math.max(0, this.shout - dt);
+      this.stamina = Math.min(this.maxStamina, this.stamina + SHOUT.stamina * dt);
+    }
+    if (this.unbreakable > 0) {
+      this.unbreakable = Math.max(0, this.unbreakable - dt);
+      this.heal((this.maxHp * UNBREAKABLE.heal * dt) / UNBREAKABLE.seconds);
+      if (this.unbreakable <= 0) g.hud.toast('Unbreakable fades.');
+    }
+    if (this.focus > 0) this.focus = Math.max(0, this.focus - dt);
+    if (this.prey && (!this.prey.alive || this.prey.status.marked <= 0)) this.prey = null;
+    if (this.charging) this.chargeStep(dt, g);
     this.ironSkin = Math.max(0, this.ironSkin - dt);
     this.poisonBlades = Math.max(0, this.poisonBlades - dt);
     this.parryWindow = Math.max(0, this.parryWindow - dt);
@@ -2028,6 +2082,123 @@ export class Player {
     this.ironAura = this.auraFor(g, this.ironAura, this.ironSkin > 0, 0xc8a070);
     this.surgeAura = this.auraFor(g, this.surgeAura, this.surge > 0, this.pathColor());
     this.wardAura = this.auraFor(g, this.wardAura, this.ward > 0, 0xfff0b0);
+    this.shoutAura = this.auraFor(g, this.shoutAura, this.shout > 0, 0xff8a50);
+    this.stoneAura = this.auraFor(g, this.stoneAura, this.unbreakable > 0, 0xffd27a);
+  }
+
+  // ------------------------------------------------- warrior and ranger arts --
+
+  /** The damage an art builds on: the weapon in hand. */
+  private artBase(): number {
+    return weaponDamage(mainWeapon(this.c));
+  }
+
+  /** Shield Charge: runs at the foe, knocking aside anything in the way, and crashes into it. */
+  private chargeStep(dt: number, g: Game) {
+    const ch = this.charging!;
+    const t = ch.target;
+    ch.left -= dt;
+    if (!this.alive || !t.alive || ch.left <= 0) {
+      this.charging = null;
+      return;
+    }
+    const dx = t.pos.x - this.pos.x, dz = t.pos.z - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    this.yaw = Math.atan2(dx, dz);
+    this.iframes = Math.max(this.iframes, 0.08);
+    const stop = t.radius + this.radius + 0.4;
+    const step = Math.min(CHARGE.speed * dt, Math.max(0, d - stop));
+    this.pos.x += (dx / d) * step;
+    this.pos.z += (dz / d) * step;
+    g.world.resolve(this.pos, this.radius);
+    if (Math.random() < 0.6) g.sfx.dust(this.pos, 3);
+    const base = this.artBase() * SPELLS['shield-charge'].power;
+    for (const e of g.enemies) {
+      if (!e.alive || e === t || ch.hit.has(e) || e instanceof Boss) continue;
+      const ox = e.pos.x - this.pos.x, oz = e.pos.z - this.pos.z;
+      if (Math.hypot(ox, oz) > e.radius + CHARGE.sweep) continue;
+      ch.hit.add(e);
+      g.hitEnemyWithWeapon(e, base * 0.5, 'melee', 'physical', { fury: this.fury });
+      g.shoveEnemy(e, -(dz / d) * Math.sign(ox * dz - oz * dx || 1), (dx / d) * Math.sign(ox * dz - oz * dx || 1), CHARGE.shove * 0.7, 2);
+    }
+    if (d - stop > 0.05) return;
+    // The crash.
+    this.charging = null;
+    g.hitEnemyWithWeapon(t, base, 'melee', 'physical', { fury: this.fury });
+    const boss = t instanceof Boss;
+    t.status.stun = Math.max(t.status.stun, boss ? CHARGE.bossStun : CHARGE.stun);
+    if (!boss) g.shoveEnemy(t, dx, dz, CHARGE.shove, 3);
+    onMeleeLanded(this.c, this.fury);
+    this.startAttack('art', 'heavy', 0.45, { step: 0 });
+    g.sfx.shockwave(this.tv.set(this.pos.x + (dx / d) * 1.2, this.pos.y + 1, this.pos.z + (dz / d) * 1.2), 2.4, 0xffd0a0, 0.35);
+    g.sfx.emit(t.center(this.tv), { color: 0xffe0a0, count: 26, speed: 6, life: 0.4 });
+    g.audio.play('slam');
+    g.hitStop(0.12);
+    g.shake(0.45);
+  }
+
+  /** Ground Slam lands: the ground cracks, and every foe nearby is hurt and thrown up. */
+  private groundSlam(g: Game) {
+    const base = this.artBase() * SPELLS['ground-slam'].power;
+    const at = this.tv2.set(this.pos.x, Math.max(heightAt(this.pos.x, this.pos.z), this.pos.y) + 0.15, this.pos.z);
+    for (const e of [...g.enemies]) {
+      if (!e.alive) continue;
+      const dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z;
+      if (Math.hypot(dx, dz) > SLAM.radius + e.radius || Math.abs(e.pos.y - this.pos.y) > 3 + e.height) continue;
+      g.hitEnemyWithWeapon(e, base, 'melee', 'earth', { fury: this.fury });
+      if (!(e instanceof Boss)) g.shoveEnemy(e, dx || 1, dz, 5, SLAM.lift);
+      else e.status.stun = Math.max(e.status.stun, 0.4);
+    }
+    g.sfx.shockwave(at, SLAM.radius, 0xc8a070, 0.5);
+    g.sfx.ring(at, SLAM.radius, 0xffb070, 0.6);
+    g.sfx.spikes(at.x, at.z, 0x8a6a4a, 10, SLAM.radius * 0.8);
+    g.sfx.dust(this.pos, 26, 0x8a6a5a);
+    g.audio.play('slam');
+    g.hitStop(0.12);
+    g.shake(0.6);
+  }
+
+  /** Arrow Rain: a wave of arrows falls on the circle (aimed at the foes in it, and a few at the ground). */
+  private arrowWave(g: Game, x: number, z: number, damage: number) {
+    const sky = (tx: number, tz: number) => new THREE.Vector3(tx + (Math.random() - 0.5) * 3, heightAt(tx, tz) + 22, tz + (Math.random() - 0.5) * 3);
+    let n = 0;
+    for (const e of g.enemies) {
+      if (!e.alive || n >= 6 || Math.hypot(e.pos.x - x, e.pos.z - z) > RAIN.radius + e.radius) continue;
+      n++;
+      const to = e.center();
+      g.spawnProjectile({ from: sky(to.x, to.z), to, speed: 46, kind: 'arrow', owner: 'player', damage, element: 'physical', gravity: 0, source: null, draw: 1 });
+    }
+    for (let i = n; i < 4; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * RAIN.radius;
+      const tx = x + Math.sin(a) * r, tz = z + Math.cos(a) * r;
+      g.spawnProjectile({ from: sky(tx, tz), to: new THREE.Vector3(tx, heightAt(tx, tz), tz), speed: 46, kind: 'arrow', owner: 'player', damage, element: 'physical', gravity: 0, source: null, draw: 1 });
+    }
+  }
+
+  /** Snare Trap springs: it cuts and holds every foe in its circle. */
+  private snare(g: Game, x: number, z: number) {
+    const base = this.artBase() * SPELLS['snare-trap'].power;
+    const at = new THREE.Vector3(x, heightAt(x, z) + 0.1, z);
+    for (const e of g.enemies) {
+      if (!e.alive || Math.hypot(e.pos.x - x, e.pos.z - z) > SNARE.radius + e.radius) continue;
+      const boss = e instanceof Boss;
+      e.status.root = Math.max(e.status.root, boss ? SNARE.bossRoot : SNARE.root);
+      if (e.bleeds) e.status.bleed = Math.max(e.status.bleed, SNARE.bleed);
+      g.hitEnemyWithWeapon(e, base, 'thrown', 'physical', {});
+    }
+    g.sfx.ring(at, SNARE.radius, 0x9ad870, 0.8);
+    g.sfx.spikes(x, z, 0x6a5a3a, 12, SNARE.radius * 0.8);
+    g.sfx.emit(at, { color: 0xc8b080, count: 24, speed: 4, life: 0.5, up: 2 });
+    g.audio.play('slam');
+  }
+
+  /** Where an art lands on the ground: the target, or the aim point, no farther than `reach`. */
+  private groundAim(g: Game, reach: number): { x: number; z: number } {
+    const at = g.aimPoint(reach);
+    const dx = at.x - this.pos.x, dz = at.z - this.pos.z;
+    const d = Math.hypot(dx, dz);
+    const k = d > reach ? reach / d : 1;
+    return { x: this.pos.x + dx * k, z: this.pos.z + dz * k };
   }
 
   private auraFor(g: Game, aura: { stop(): void } | null, on: boolean, color: number) {
@@ -2527,9 +2698,10 @@ export class Player {
     const spell = this.spell;
     if (!spell) return g.hud.toast('No spell in this slot.');
     const c = this.c;
-    const ctx = { gameMinutes: g.gameMinutes, mana: this.mana, inDesert: g.zone === 'desert', soulOrPower: this.soulOrPower };
+    const ctx = { gameMinutes: g.gameMinutes, mana: this.mana, inDesert: g.zone === 'desert', soulOrPower: this.soulOrPower, stamina: this.stamina };
+    const art = !!SPELLS[spell].stamina;
 
-    if (this.combineMode) {
+    if (this.combineMode && !art) {
       const other = c.spellSlots[(this.selected + 1) % 4];
       const combo = other ? comboFor(spell, other) : null;
       if (!combo) return g.hud.toast('These two spells do not combine.');
@@ -2550,13 +2722,13 @@ export class Player {
       return;
     }
 
-    // In an Arcane Surge spells cost nothing.
-    const free = this.surge > 0;
+    // In an Arcane Surge spells cost nothing (the arts are paid in stamina all the same).
+    const free = this.surge > 0 && !art;
     const check = canCast(c, spell, free ? { ...ctx, mana: Infinity } : ctx);
     if (!check.ok) return g.hud.toast(check.reason!, 'warn');
     if (free) check.cost = 0;
     // An empowered spell costs half as much again.
-    else if (this.empower > 1 && !this.soulOrPower) {
+    else if (this.empower > 1 && !this.soulOrPower && !art) {
       check.cost = Math.round(check.cost * POWER.spellMana);
       if (this.mana < check.cost) return g.hud.toast('Not enough mana.');
     }
@@ -2571,7 +2743,7 @@ export class Player {
     if (eb) g.projectileBurst = { kind: eb.kind, charge: eb.charge, base: power };
     // The move that plays (null: the spell starts its own), and whether a rune circle marks it.
     let pose: AttackStyle | null = 'cast';
-    let circle = def.school !== 'chi' && def.school !== 'trick';
+    let circle = def.school !== 'chi' && def.school !== 'trick' && !art;
 
     switch (spell) {
       // ---- Monk techniques.
@@ -2668,6 +2840,92 @@ export class Player {
         g.sfx.shockwave(this.center(this.tv), 2.2, 0xfff0b0, 0.5);
         break;
       }
+      // ---- Warrior arts of war.
+      case 'shield-charge': {
+        const t = this.lockTarget ?? g.findTarget(CHARGE.range, 0.55, false);
+        if (!t || t.pos.distanceTo(this.pos) > CHARGE.range + t.radius) return g.hud.toast('No foe close enough to charge.');
+        pose = null;
+        this.charging = { target: t, left: CHARGE.range / CHARGE.speed + 0.4, hit: new Set() };
+        this.startAttack('art', 'thrust', CHARGE.range / CHARGE.speed + 0.4, { step: 0 });
+        g.sfx.emit(this.center(this.tv), { color: 0xffd0a0, count: 18, speed: 2, life: 0.4 });
+        g.audio.play('roll');
+        g.hud.toast('Charge!', 'skill');
+        break;
+      }
+      case 'ground-slam':
+        pose = null;
+        this.startAttack('art', 'overhead', 0.85, { step: 0 });
+        if (this.grounded && !this.swimming) {
+          this.vel.y = SLAM.hop;
+          this.grounded = false;
+        }
+        this.later.push({ at: this.now + 0.85 * 0.62, run: () => this.alive && this.groundSlam(g) });
+        break;
+      case 'battle-shout': {
+        pose = null;
+        this.startAttack('art', 'roar', 0.8);
+        this.shout = SHOUT.seconds;
+        g.coop.shareBuff('shout', this.pos, SHOUT.seconds, SHOUT.radius);
+        for (const e of g.enemies) {
+          if (e.alive && !(e instanceof Boss) && e.pos.distanceTo(this.pos) < SHOUT.radius * 0.7) e.status.fear = Math.max(e.status.fear, SHOUT.fear);
+        }
+        this.roarFx(g);
+        g.sfx.ring(this.center(this.tv).setY(this.pos.y + 0.3), SHOUT.radius, 0xff8a50, 0.8);
+        g.audio.play('roar');
+        g.hud.toast('Battle Shout! +25% damage.', 'skill');
+        break;
+      }
+      case 'unbreakable':
+        pose = null;
+        this.startAttack('art', 'roar', 0.6);
+        this.unbreakable = UNBREAKABLE.seconds;
+        g.sfx.emit(this.center(this.tv), { color: 0xffd27a, count: 40, speed: 3, life: 0.8, size: 0.45, up: 1.5 });
+        g.sfx.shockwave(this.tv.set(this.pos.x, this.pos.y + 0.15, this.pos.z), 3, 0xffd27a, 0.4);
+        g.hud.toast('Unbreakable!', 'skill');
+        break;
+      // ---- Ranger hunter's arts.
+      case 'arrow-rain': {
+        pose = null;
+        const { x, z } = this.groundAim(g, RAIN.reach);
+        this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z);
+        this.startAttack('art', 'bow', 0.55, { step: 0 });
+        const damage = this.artBase() * def.power;
+        for (let i = 0; i < 6; i++) {
+          const from = this.center().add(this.tv.set(Math.sin(this.yaw) * 0.4, 0.8, Math.cos(this.yaw) * 0.4));
+          this.later.push({ at: this.now + 0.25 + i * 0.03, run: () => g.spawnProjectile({ from, to: from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, 30, (Math.random() - 0.5) * 3)), speed: 50, kind: 'arrow', owner: 'remote', damage: 0, element: 'physical', gravity: 0, source: null }) });
+        }
+        for (let i = 0; i < RAIN.waves; i++) this.later.push({ at: this.now + 0.75 + (i * RAIN.seconds) / RAIN.waves, run: () => this.arrowWave(g, x, z, damage) });
+        g.sfx.ring(new THREE.Vector3(x, heightAt(x, z) + 0.15, z), RAIN.radius, 0x9ad870, RAIN.seconds + 0.8);
+        g.audio.play('bow');
+        break;
+      }
+      case 'mark-prey': {
+        const t = target ?? this.lockTarget;
+        if (!t) return g.hud.toast('No target.');
+        pose = 'cast';
+        t.status.marked = Math.max(t.status.marked, PREY.seconds);
+        this.prey = t;
+        g.sfx.ring(t.center(this.tv).setY(t.pos.y + 0.2), t.radius + 1, 0xff5040, 1);
+        g.sfx.emit(t.center(this.tv), { color: 0xff5040, count: 20, speed: 1.5, life: 0.8, up: 1 });
+        g.sfx.damageNumber(t.center(this.tv).setY(t.pos.y + t.height + 0.3), 'MARKED', 'info');
+        break;
+      }
+      case 'snare-trap': {
+        pose = null;
+        this.startAttack('throw', 'throw', 0.5, { step: 0 });
+        const { x, z } = this.groundAim(g, SNARE.reach);
+        this.later.push({ at: this.now + 0.35, run: () => this.snare(g, x, z) });
+        g.audio.play('throw');
+        break;
+      }
+      case 'evasive-leap':
+        if (this.swimming || this.sailing || this.riding) return g.hud.toast('Find your footing first.');
+        pose = null;
+        this.startRoll(g, 0, 0, 0, { time: LEAP.time, dist: LEAP.dist, iFrom: 0, iTo: LEAP.time, cost: 0, kind: 2, hop: LEAP.hop });
+        this.focus = LEAP.window;
+        g.sfx.emit(this.center(this.tv), { color: 0xc8ffe4, count: 24, speed: 3, life: 0.5 });
+        g.hud.toast('Focused: your next hit deals double!', 'skill');
+        break;
       // ---- Rogue tricks.
       case 'smoke-bomb': {
         pose = null;
@@ -2837,7 +3095,8 @@ export class Player {
         g.sfx.emit(this.center(), { color: 0x8090ff, count: 40, speed: 3, life: 0.8 });
         break;
     }
-    if (spell !== 'soul-or-power') this.mana -= check.cost;
+    if (art) this.spend(check.cost, 0.5);
+    else if (spell !== 'soul-or-power') this.mana -= check.cost;
     this.castCooldown(spell, def.cooldown);
     if (eb && g.projectileBurst) {
       // Nothing was loosed (a strike from the sky, spikes from the ground): it bursts on the target now.
@@ -2854,7 +3113,7 @@ export class Player {
       g.sfx.magicCircle(this.pos, SCHOOL_COLOR[def.school], big ? 3.2 : 1.7, big ? 2 : 1.3);
     }
     if (def.school === 'light') g.audio.play('holy');
-    else g.audio.play('spell');
+    else if (!art) g.audio.play('spell');
   }
 
   private castCombo(g: Game, id: string, power: number) {

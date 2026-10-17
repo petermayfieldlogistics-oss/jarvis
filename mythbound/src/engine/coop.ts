@@ -86,6 +86,8 @@ export interface KillInfo {
   /** Its level (with any level bonus) and whether a boss summoned it; older hosts leave these out. */
   lv?: number;
   minion?: boolean;
+  /** A great foe's difficulty tier (older hosts leave it out). */
+  tier?: number;
 }
 
 // ------------------------------------------------------------ remote hero --
@@ -919,7 +921,7 @@ export class Coop {
   }
 
   /** A heal or a ward of light for friends within `radius` of `pos`. */
-  shareBuff(kind: 'mend' | 'ward', pos: THREE.Vector3, amount: number, radius: number) {
+  shareBuff(kind: 'mend' | 'ward' | 'shout', pos: THREE.Vector3, amount: number, radius: number) {
     if (this.sharing) this.queue('all', { k: 'buff', b: kind, p: vec(pos), a: r1(amount), r: r1(radius) });
   }
 
@@ -1046,6 +1048,7 @@ export class Coop {
         if (!pl.alive || g.pvp.hostile(from) || Math.hypot(pl.pos.x - num(p[0]), pl.pos.z - num(p[2])) > Math.min(30, num(m.r, 12))) return;
         const amount = Math.max(0, Math.min(500, num(m.a)));
         if (m.b === 'ward') pl.receiveWard(g, amount, r?.name ?? 'A friend');
+        else if (m.b === 'shout') pl.receiveShout(g, amount, r?.name ?? 'A friend');
         else if (m.b === 'mend') pl.receiveMend(g, amount, r?.name ?? 'A friend');
         return;
       }
@@ -1301,8 +1304,9 @@ export class Coop {
       x: num(m.x),
       z: num(m.z),
       by: arr(m.by).map((x) => num(x)),
-      lv: typeof m.lv === 'number' ? Math.max(1, Math.min(60, num(m.lv))) : undefined,
+      lv: typeof m.lv === 'number' ? Math.max(1, Math.min(90, num(m.lv))) : undefined,
       minion: m.minion === true,
+      tier: typeof m.tier === 'number' ? Math.max(0, Math.min(3, Math.floor(num(m.tier)))) : undefined,
     };
     const e = this.mirrors.get(num(m.nid));
     if (e) {
