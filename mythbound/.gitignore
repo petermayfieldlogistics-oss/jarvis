@@ -1,3 +1,5 @@
 node_modules
 dist
 dist-single
+blender/preview
+.blenv
