@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { glowSprite } from './models';
+import { blendCreature, blendGeometry } from './assets';
 import { BREATH_SPAN, breathSweep, FLIGHT, LANDS, type AnimState, type AttackStyle } from './anim';
 
 /** A jointed leg or arm: `up` at the hip/shoulder, `mid` at the knee/elbow, `low` at the ankle/wrist. */
@@ -205,19 +206,30 @@ class Skin {
     return i;
   }
 
-  /** Merges each surface into one skinned mesh. A boss gets its own glow material so it can pulse. */
-  build(ownGlow = false): THREE.MeshStandardMaterial | undefined {
+  /**
+   * Merges each surface into one skinned mesh. A boss gets its own glow
+   * material so it can pulse. Where the body was remodelled in Blender, that
+   * surface is swapped for the Blender one (bound to the same bones).
+   */
+  build(ownGlow = false, kind?: string): THREE.MeshStandardMaterial | undefined {
     const root = this.root;
     root.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones as unknown as THREE.Bone[]);
     let glow: THREE.MeshStandardMaterial | undefined;
     for (const [surf, list] of this.geos) {
-      const geo = mergeGeometries(list, false);
+      let geo = mergeGeometries(list, false);
       list.forEach((g) => g.dispose());
       if (!geo) continue;
+      const blend = kind ? blendCreature(kind, surf, this.bones) : null;
+      if (blend) {
+        const made = blendGeometry(blend, geo);
+        geo.dispose();
+        geo = made;
+      }
       let material = surfaceMaterial(surf);
       if (surf === 'glow' && ownGlow) material = glow = glowMaterial();
       const mesh = new THREE.SkinnedMesh(geo, material);
+      mesh.name = surf;
       mesh.castShadow = surf !== 'glow';
       mesh.userData.keep = true;
       geo.computeBoundingSphere();
@@ -542,7 +554,7 @@ function bellyShade(pts: V3[], backC: number, bellyC: number, belly: (c: V3, out
 }
 
 function finish(sk: Skin, kind: string, body: THREE.Group, head: THREE.Group, j: CreatureJoints, height: number, scale: number, ownGlow = false): CreatureRig {
-  j.glow = sk.build(ownGlow);
+  j.glow = sk.build(ownGlow, kind);
   sk.root.scale.setScalar(scale);
   const legs = (j.limbs ?? []).map((l) => l.up);
   const extra: THREE.Object3D[] = [...(j.tail ?? []), ...(j.wings ?? []).map((w) => w.root), ...(j.pincers ?? []).map((p) => p.arm)];
