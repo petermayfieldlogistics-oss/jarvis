@@ -334,6 +334,12 @@ writes `src/assets/world.bin.gz`:
     .blenv/bin/python blender/world.py --preview     # renders blender/preview/world/
     .blenv/bin/python blender/world.py oak house     # just these
 
+The ground's surface (grass, soil with pebbles, weathered rock, rippled sand)
+is baked by `scripts/ground-textures.py` into `src/assets/ground-*.webp`; the
+terrain shader blends them into each zone's colours:
+
+    python3 scripts/ground-textures.py --preview     # renders blender/preview/ground.png
+
 The game loads these files before building the world and falls back to the
 models made in code for anything it lacks (or, for a creature, whose skeleton
 has changed since: dump and rebuild it after changing a creature in code).
