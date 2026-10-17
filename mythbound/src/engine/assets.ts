@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import weaponsUrl from '../assets/weapons.glb?url';
 import creaturesUrl from '../assets/creatures.bin?url';
+import worldUrl from '../assets/world.bin?url';
 
 const models = new Map<string, THREE.Object3D>();
 let loading: Promise<void> | null = null;
@@ -107,7 +108,7 @@ export const blendMisses = new Set<string>();
 
 /** Loads every Blender model (at most once). Never rejects: what fails to load is simply left out. */
 export function loadAssets(): Promise<void> {
-  loading ??= Promise.all([loadWeapons(), loadCreatures()]).then(() => {});
+  loading ??= Promise.all([loadWeapons(), loadCreatures(), loadWorld()]).then(() => {});
   return loading;
 }
 
@@ -116,6 +117,90 @@ function loadCreatures(): Promise<void> {
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
     .then(readCreatures)
     .catch((err) => console.warn('Blender creatures not loaded; using the built-in ones.', err));
+}
+
+function loadWorld(): Promise<void> {
+  return fetch(worldUrl)
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+    .then(readWorld)
+    .catch((err) => console.warn('Blender scenery not loaded; using the built-in one.', err));
+}
+
+/**
+ * A piece of scenery modelled in Blender (blender/world.py): its vertices'
+ * colours (occlusion baked in), the colour slot each takes from its
+ * placement (0 for none), and for plants how much the land tints it and
+ * how much it glows.
+ */
+export interface WorldMesh {
+  pos: Float32Array;
+  nrm: Float32Array;
+  rgb: Uint8Array;
+  slot: Uint8Array;
+  tint: Uint8Array;
+  glow: Uint8Array;
+  idx: Uint16Array | Uint32Array;
+}
+
+const scenery = new Map<string, WorldMesh>();
+
+/** Reads world.bin: 'MBW1', a JSON header, then each model's arrays in turn. */
+function readWorld(buf: ArrayBuffer) {
+  const dv = new DataView(buf);
+  if (dv.getUint32(0, true) !== 0x3157424d) throw new Error('not a world file');
+  const hl = dv.getUint32(4, true);
+  const heads = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hl))) as { name: string; verts: number; tris: number; big: boolean; bytes: number; box: number[] }[];
+  let off = 8 + hl;
+  const take = (n: number) => buf.slice(off, (off += n));
+  for (const h of heads) {
+    const nv = h.verts;
+    const start = off;
+    const q = new Uint16Array(take(nv * 6));
+    const pos = new Float32Array(nv * 3);
+    const [x0, y0, z0, x1, y1, z1] = h.box;
+    const lo = [x0, y0, z0], span = [x1 - x0, y1 - y0, z1 - z0];
+    for (let i = 0; i < nv * 3; i++) pos[i] = lo[i % 3] + (q[i] / 65535) * span[i % 3];
+    const n8 = new Int8Array(take(nv * 3));
+    const nrm = new Float32Array(nv * 3);
+    for (let i = 0; i < nv * 3; i++) nrm[i] = n8[i] / 127;
+    const rgb = new Uint8Array(take(nv * 3));
+    const slot = new Uint8Array(take(nv));
+    const tint = new Uint8Array(take(nv));
+    const glow = new Uint8Array(take(nv));
+    const idx = h.big ? new Uint32Array(take(h.tris * 12)) : new Uint16Array(take(h.tris * 6));
+    off = start + h.bytes;
+    scenery.set(h.name, { pos, nrm, rgb, slot, tint, glow, idx });
+  }
+}
+
+/** The Blender model of a piece of scenery, or null if there is none. */
+export function worldMesh(name: string): WorldMesh | null {
+  return scenery.get(name) ?? null;
+}
+
+const _srgb = new Float32Array(256).map((_, i) => {
+  const c = i / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+});
+
+/**
+ * A piece of scenery as geometry: position, normal and colour (each slot's
+ * vertices tinted by `slots[slot]`, a hex colour). Each call makes a fresh copy.
+ */
+export function worldGeometry(m: WorldMesh, slots: number[] = []): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  const n = m.pos.length / 3;
+  const col = new Float32Array(n * 3);
+  const tints = slots.map((h) => [_srgb[(h >> 16) & 255], _srgb[(h >> 8) & 255], _srgb[h & 255]]);
+  for (let i = 0; i < n; i++) {
+    const t = m.slot[i] ? tints[m.slot[i] - 1] : undefined;
+    for (let c = 0; c < 3; c++) col[i * 3 + c] = _srgb[m.rgb[i * 3 + c]] * (t ? t[c] : 1);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(m.pos.slice(), 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(m.nrm.slice(), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(m.idx, 1));
+  return g;
 }
 
 function loadWeapons(): Promise<void> {

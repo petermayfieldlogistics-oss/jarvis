@@ -5,6 +5,7 @@ import {
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
+import { worldGeometry, worldMesh } from './assets';
 import { FRUITS, NELL_STALL, STATIONS } from '../data/goods';
 import { mulberry32, noise2, smoothstep } from './noise';
 import { detailTexture, groundTile, heightAt, inLava, LAVA_LEVEL, normalAt, POOL_LAVA, TILE, TILES, zoneAt, WATER_LEVEL } from './terrain';
@@ -107,6 +108,28 @@ class Batcher {
     for (let i = 0; i < n; i++) (arr[i * 3] = this.c.r), (arr[i * 3 + 1] = this.c.g), (arr[i * 3 + 2] = this.c.b);
     g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     this.push(metal ? this.metal : this.matte, g);
+  }
+
+  /**
+   * A piece of scenery modelled in Blender, its colour slots filled from
+   * `slots`, placed like `paint`. False (and nothing drawn) if it didn't load.
+   */
+  model(name: string, slots: number[], x: number, y: number, z: number, ry = 0, sx = 1, sy = sx, sz = sx, rx = 0, rz = 0): boolean {
+    const m = worldMesh(name);
+    if (!m) return false;
+    const geo = worldGeometry(m, slots);
+    this.push(this.matte, this.place(geo, x, y, z, ry, sx, sy, sz, rx, rz));
+    geo.dispose();
+    return true;
+  }
+
+  /** A Blender piece drawn in a material of its own (lit windows, lamp glass). */
+  modelIn(name: string, material: THREE.Material, x: number, y: number, z: number, ry = 0, sx = 1, sy = sx, sz = sx) {
+    const m = worldMesh(name);
+    if (!m) return;
+    const geo = worldGeometry(m);
+    this.add(geo, material, x, y, z, ry, sx, sy, sz);
+    geo.dispose();
   }
 
   build(parent: THREE.Object3D, shadows: boolean) {
@@ -455,7 +478,52 @@ function leafBlob(detail: number): THREE.BufferGeometry {
   return g;
 }
 
+/** How far each plant's top sways and from what height it starts to bend (as the built-in ones). */
+const SWAY: Record<Exclude<PlantKind, 'rock'>, [number, number]> = {
+  pine: [0.9, 1.5], oak: [0.75, 2], birch: [1.0, 2.5], bush: [0.25, 0], grass: [0.4, 0], flowers: [0.35, 0], reeds: [0.5, 0], toadstool: [0, 0],
+  mushroom: [0, 0], crystal: [0, 0], dead: [0.12, 2], ashtree: [0.05, 2], cactus: [0, 0], palm: [0.55, 4],
+};
+
+/** A plant modelled in Blender, with the vegetation attributes the plant shader reads (see plant()). */
+function blendPlant(kind: Exclude<PlantKind, 'rock'>): THREE.BufferGeometry | null {
+  const m = worldMesh(kind);
+  if (!m) return null;
+  const g = worldGeometry(m);
+  const [sway, from] = SWAY[kind];
+  const pos = g.attributes.position;
+  let top = -Infinity;
+  for (let i = 0; i < pos.count; i++) top = Math.max(top, pos.getY(i));
+  const veg = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    veg[i * 3] = sway * Math.pow(Math.max(0, (pos.getY(i) - from) / (top - from)), 1.6);
+    veg[i * 3 + 1] = m.tint[i] / 255;
+    veg[i * 3 + 2] = (m.glow[i] / 255) * 4;
+  }
+  g.setAttribute('aVeg', new THREE.BufferAttribute(veg, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** The rock wild boulders are drawn with: the Blender one if it loaded. */
+function rockGeometry(): THREE.BufferGeometry {
+  const m = worldMesh('rock');
+  return m ? (rockGeo ??= worldGeometry(m)) : ROCK;
+}
+let rockGeo: THREE.BufferGeometry | undefined;
+
 function plantGeometries(leafDetail: number): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry> {
+  const built = builtPlants(leafDetail);
+  for (const kind of Object.keys(built) as Exclude<PlantKind, 'rock'>[]) {
+    const g = blendPlant(kind);
+    if (g) {
+      built[kind].dispose();
+      built[kind] = g;
+    }
+  }
+  return built;
+}
+
+function builtPlants(leafDetail: number): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry> {
   const leaves = leafBlob(leafDetail);
   const mushrooms = (glow: number) =>
     plant([
@@ -1139,7 +1207,7 @@ export class World {
   /** One plant, drawn the way the wild ones are (they sway in the wind). */
   private makePlant(kind: PlantKind): THREE.Object3D {
     const { geos, plantMat, rockMat } = this.plants;
-    const mesh = new THREE.InstancedMesh(kind === 'rock' ? ROCK : geos[kind as Exclude<PlantKind, 'rock'>], kind === 'rock' ? rockMat : plantMat, 1);
+    const mesh = new THREE.InstancedMesh(kind === 'rock' ? rockGeometry() : geos[kind as Exclude<PlantKind, 'rock'>], kind === 'rock' ? rockMat : plantMat, 1);
     mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, kind === 'rock' ? -0.3 : -0.1, 0));
     mesh.setColorAt(0, new THREE.Color(PLANT_TINT[kind] ?? 0xffffff));
     mesh.computeBoundingSphere();
@@ -1217,6 +1285,7 @@ export class World {
         b.paint(BOX, dark, 0, 4.75, 0, 0, 4.8, 0.2, 1.1);
         return;
       case 'lamp': {
+        if (b.model('lamp', [], 0, 0, 0)) return b.modelIn('lamp.lit', mat(0xffd080, { emissive: 0xffb040, emissiveIntensity: 2 }), 0, 0, 0);
         b.paint(CYL6, 0x2a2622, 0, 1.6, 0, 0, 0.14, 3.2, 0.14, 0, 0, true);
         b.paint(BOX, 0x2a2622, 0.3, 3.15, 0, 0, 0.7, 0.08, 0.08, 0, 0, true);
         b.paint(BOX, 0x2a2622, 0.6, 2.85, 0, 0, 0.36, 0.06, 0.36, 0, 0, true);
@@ -1231,6 +1300,7 @@ export class World {
         b.paint(CYL6, 0x8a867c, 0.9, 2.6, 0.1, 0, 0.1, 3.6, 0.1);
         return;
       case 'well':
+        if (b.model('well', [0, 0x4a2e22], 0, 0, 0, 0, 0.75)) return;
         b.paint(CYL, stone, 0, 0.5, 0, 0, 2.4, 1, 2.4);
         b.paint(CYL, 0x1a2a3a, 0, 0.9, 0, 0, 1.9, 0.12, 1.9);
         for (const x of [-1.05, 1.05]) b.paint(BOX, timber, x, 1.6, 0, 0, 0.16, 2.2, 0.16);
@@ -1460,7 +1530,7 @@ export class World {
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${near ? VEG_NEAR_FADE : ''}`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * (vGlow * uGlow + vLeaf * uLift);');
     };
-    const rockMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true });
+    const rockMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true, vertexColors: !!worldMesh('rock') });
     return { geos, plantMat, rockMat, grassScale: this.quality === 'low' ? 0.3 : this.quality === 'medium' ? 0.6 : 1 };
   }
 
@@ -1554,7 +1624,7 @@ export class World {
     if (!meshes) return;
     const lowRange = this.quality === 'low' ? 0.75 : 1;
     for (const [kind, set] of sets) {
-      const geo = kind === 'rock' ? ROCK : geos[kind];
+      const geo = kind === 'rock' ? rockGeometry() : geos[kind];
       const mesh = new THREE.InstancedMesh(geo, kind === 'rock' ? rockMat : plantMat, set.mats.length);
       set.mats.forEach((m, i) => mesh.setMatrixAt(i, m));
       set.colors.forEach((c, i) => mesh.setColorAt(i, c));
@@ -1674,6 +1744,21 @@ export class World {
     const plaster = [0x9a8a6c, 0x8a7a62, 0xa89878, 0x857660][Math.floor(this.rand() * 4)];
     const roof = [0x4a2e22, 0x3a3a44, 0x6a5636, 0x5a2a20][Math.floor(this.rand() * 4)];
     const shutter = [0x2e3a2a, 0x4a2220, 0x2a3446, 0x3a2a1c][Math.floor(this.rand() * 4)];
+    if (worldMesh('house')) {
+      // The Blender house, made at 6 x 5 x 3.6 and stretched to this one (the same numbers drawn as below).
+      const sx = w / 6, sy = h / 3.6, sz = d / 5;
+      const chimney = this.rand() < 0.7;
+      if (chimney) this.rand();
+      b.model(chimney ? 'house-chimney' : 'house', [plaster, roof, shutter], x, y, z, ry, sx, sy, sz);
+      b.modelIn('house.lit', mat(0xffb860, { emissive: 0xff9030, emissiveIntensity: 1.2 }), x, y, z, ry, sx, sy, sz);
+      if (chimney) {
+        const lx = 2.1 * sx, lz = 0.9 * sz;
+        this.smokeSource(x + lx * c + lz * s, y + 7.17 * sy + 0.3, z - lx * s + lz * c, 0);
+      }
+      this.houseClutter(x, z, c, s, w, d);
+      this.addCollider(x, z, Math.max(w, d) * 0.55);
+      return;
+    }
     const timber = 0x33241a;
     const stone = 0x5a554c;
     P(BOX, stone, 0, 0.3, 0, w + 0.3, 0.6, d + 0.3);
@@ -1715,7 +1800,12 @@ export class World {
       P(BOX, 0x3e3a36, lx, top, lz, 0.95, 0.18, 0.95);
       this.smokeSource(x + lx * c + lz * s, y + top + 0.3, z - lx * s + lz * c, 0);
     }
-    // Barrels and crates by the walls.
+    this.houseClutter(x, z, c, s, w, d);
+    this.addCollider(x, z, Math.max(w, d) * 0.55);
+  }
+
+  /** Barrels and crates by a house's walls. */
+  private houseClutter(x: number, z: number, c: number, s: number, w: number, d: number) {
     for (let i = 0; i < 2; i++) {
       if (this.rand() < 0.35) continue;
       const lx = (this.rand() < 0.5 ? -1 : 1) * (w / 2 + 0.7);
@@ -1723,12 +1813,12 @@ export class World {
       if (this.rand() < 0.5) this.barrel(x + lx * c + lz * s, z - lx * s + lz * c);
       else this.crate(x + lx * c + lz * s, z - lx * s + lz * c, this.rand() * TAU, 0.7 + this.rand() * 0.3);
     }
-    this.addCollider(x, z, Math.max(w, d) * 0.55);
   }
 
   private barrel(x: number, z: number) {
     const y = this.groundY(x, z);
     const b = this.batch;
+    if (b.model('barrel', [], x, y, z, (x * 7.3 + z * 3.1) % TAU)) return this.addCollider(x, z, 0.45);
     b.paint(CYL, 0x5a3e24, x, y + 0.5, z, 0, 0.75, 1, 0.75);
     for (const yy of [0.18, 0.82]) b.paint(CYL, 0x2a2622, x, y + yy, z, 0, 0.79, 0.07, 0.79, 0, 0, true);
     b.paint(CYL, 0x4a3420, x, y + 1.0, z, 0, 0.62, 0.03, 0.62);
@@ -1738,6 +1828,7 @@ export class World {
   private crate(x: number, z: number, ry: number, s = 0.8) {
     const y = this.groundY(x, z);
     const b = this.batch;
+    if (b.model('crate', [], x, y, z, ry, s)) return this.addCollider(x, z, s * 0.6);
     b.paint(BOX, 0x6a4a2a, x, y + s / 2, z, ry, s, s, s);
     b.paint(BOX, 0x3e2a1a, x, y + s / 2, z, ry, s * 1.02, s * 0.16, s * 1.02);
     b.paint(BOX, 0x3e2a1a, x, y + s / 2, z, ry, s * 0.16, s * 1.02, s * 1.03);
@@ -1749,6 +1840,7 @@ export class World {
     const y = this.groundY(x, z);
     const b = this.batch;
     const c = Math.cos(ry), s = Math.sin(ry);
+    if (b.model('banner', [color], x, y, z, ry)) return this.addCollider(x, z, 0.3);
     b.paint(CYL6, 0x2e2218, x, y + 3, z, 0, 0.18, 6, 0.18);
     b.paint(BOX, 0x2e2218, x + c * 0.5, y + 5.7, z - s * 0.5, ry, 1.5, 0.1, 0.1);
     b.paint(BOX, color, x + c * 0.5, y + 4.3, z - s * 0.5, ry, 1.2, 2.7, 0.04);
@@ -1767,13 +1859,15 @@ export class World {
       const x = x0 + ((x1 - x0) * i) / n;
       const z = z0 + ((z1 - z0) * i) / n;
       const y = this.groundY(x, z);
-      b.paint(BOX, 0x4a3624, x, y + 0.55, z, ry, 0.16, 1.2, 0.16);
+      if (!b.model('fence-post', [], x, y, z, ry + i * 1.7)) b.paint(BOX, 0x4a3624, x, y + 0.55, z, ry, 0.16, 1.2, 0.16);
       if (i % 2 === 0) this.addCollider(x, z, 0.3);
       if (i === n) break;
       const mx = x0 + ((x1 - x0) * (i + 0.5)) / n;
       const mz = z0 + ((z1 - z0) * (i + 0.5)) / n;
       const my = this.groundY(mx, mz);
-      for (const yy of [0.45, 0.9]) b.paint(BOX, 0x5a4430, mx, my + yy, mz, ry, len / n + 0.1, 0.1, 0.06);
+      // Rails follow the ground from post to post.
+      const tilt = Math.atan2(this.groundY(x0 + ((x1 - x0) * (i + 1)) / n, z0 + ((z1 - z0) * (i + 1)) / n) - y, len / n);
+      for (const yy of [0.45, 0.9]) if (!b.model('fence-rail', [], mx, my + yy, mz, ry, len / n + 0.1, 1, 1, 0, tilt)) b.paint(BOX, 0x5a4430, mx, my + yy, mz, ry, len / n + 0.1, 0.1, 0.06);
     }
   }
 
@@ -1791,8 +1885,11 @@ export class World {
       const z = TOWN.z + Math.sin(a) * r;
       const h = 2 + this.rand() * 2.5;
       const tone = [0x6a645a, 0x5e584e, 0x726a5e][Math.floor(this.rand() * 3)];
-      b.paint(BOX, tone, x, this.groundY(x, z) + h / 2 - 0.5, z, -a, 1.2, h, 6.4);
-      b.paint(BOX, 0x56514a, x, this.groundY(x, z) + h - 0.45, z, -a, 1.5, 0.3, 6.5);
+      if (b.model('wall', [], x, this.groundY(x, z) - 0.5, z, -a, 1, h, 1)) b.model('wall-cap', [], x, this.groundY(x, z) + h - 0.45, z, -a);
+      else {
+        b.paint(BOX, tone, x, this.groundY(x, z) + h / 2 - 0.5, z, -a, 1.2, h, 6.4);
+        b.paint(BOX, 0x56514a, x, this.groundY(x, z) + h - 0.45, z, -a, 1.5, 0.3, 6.5);
+      }
       this.addCollider(x, z, 2.6);
     }
     for (const g of gates) {
@@ -1802,9 +1899,11 @@ export class World {
         const x = TOWN.x + Math.cos(a) * r;
         const z = TOWN.z + Math.sin(a) * r;
         const y = this.groundY(x, z);
-        b.paint(BOX, stone, x, y + 3, z, -a, 3, 7, 3);
-        b.paint(BOX, 0x56514a, x, y + 6.6, z, -a, 3.5, 0.5, 3.5);
-        for (const [ox, oz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) b.paint(BOX, stone, x + ox, y + 7.2, z + oz, 0, 0.7, 0.8, 0.7);
+        if (!b.model('gate-tower', [], x, y, z, -a)) {
+          b.paint(BOX, stone, x, y + 3, z, -a, 3, 7, 3);
+          b.paint(BOX, 0x56514a, x, y + 6.6, z, -a, 3.5, 0.5, 3.5);
+          for (const [ox, oz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) b.paint(BOX, stone, x + ox, y + 7.2, z + oz, 0, 0.7, 0.8, 0.7);
+        }
         this.addCollider(x, z, 2);
         const br = r - 3;
         this.banner(TOWN.x + Math.cos(a) * br, TOWN.z + Math.sin(a) * br, -g + Math.PI / 2 + (side < 0 ? Math.PI : 0));
@@ -1886,13 +1985,15 @@ export class World {
     // Well, market stall, lamp posts, the Chronicler's desk.
     {
       const y = this.groundY(TOWN.x, TOWN.z);
-      b.paint(CYL, 0x6a645a, TOWN.x, y + 0.5, TOWN.z, 0, 3.2, 1.2, 3.2);
-      b.paint(CYL, 0x56514a, TOWN.x, y + 1.15, TOWN.z, 0, 3.4, 0.15, 3.4);
-      b.add(CYL, mat(0x0a1418, { rough: 0.1 }), TOWN.x, y + 1.05, TOWN.z, 0, 2.6, 0.05, 2.6);
-      for (const sx of [-1, 1]) b.paint(BOX, 0x3a2a1c, TOWN.x + sx * 1.4, y + 2, TOWN.z, 0, 0.2, 2.8, 0.2);
-      b.paint(BOX, 0x3a2a1c, TOWN.x, y + 3.3, TOWN.z, 0, 3.2, 0.18, 0.18);
-      b.paint(ROOF, 0x4a2e22, TOWN.x, y + 3.35, TOWN.z, Math.PI / 2, 1.3, 0.9, 3.6);
-      b.paint(CYL, 0x5a3e24, TOWN.x + 0.4, y + 2.3, TOWN.z, 0, 0.35, 0.4, 0.35);
+      if (!b.model('well', [0, 0x4a2e22], TOWN.x, y, TOWN.z)) {
+        b.paint(CYL, 0x6a645a, TOWN.x, y + 0.5, TOWN.z, 0, 3.2, 1.2, 3.2);
+        b.paint(CYL, 0x56514a, TOWN.x, y + 1.15, TOWN.z, 0, 3.4, 0.15, 3.4);
+        b.add(CYL, mat(0x0a1418, { rough: 0.1 }), TOWN.x, y + 1.05, TOWN.z, 0, 2.6, 0.05, 2.6);
+        for (const sx of [-1, 1]) b.paint(BOX, 0x3a2a1c, TOWN.x + sx * 1.4, y + 2, TOWN.z, 0, 0.2, 2.8, 0.2);
+        b.paint(BOX, 0x3a2a1c, TOWN.x, y + 3.3, TOWN.z, 0, 3.2, 0.18, 0.18);
+        b.paint(ROOF, 0x4a2e22, TOWN.x, y + 3.35, TOWN.z, Math.PI / 2, 1.3, 0.9, 3.6);
+        b.paint(CYL, 0x5a3e24, TOWN.x + 0.4, y + 2.3, TOWN.z, 0, 0.35, 0.4, 0.35);
+      }
       this.addCollider(TOWN.x, TOWN.z, 1.8);
       const sx = 16, sz = 40, sy = this.groundY(sx, sz);
       b.paint(BOX, 0x5a3e24, sx, sy + 0.5, sz, 0, 4, 1, 1.6);
@@ -1914,11 +2015,14 @@ export class World {
       const glass = mat(0xffd890, { emissive: 0xffa040, emissiveIntensity: 2 });
       for (const [lx, lz] of [[6, 8], [-6, 8], [6, 32], [-6, 32], [8, -8], [-8, -8], [20, 26], [-20, 26]]) {
         const x = TOWN.x + lx, z = TOWN.z + lz, ly = this.groundY(x, z);
-        b.paint(CYL, 0x2a2422, x, ly + 1.6, z, 0, 0.16, 3.2, 0.16, 0, 0, true);
-        b.paint(BOX, 0x2a2422, x, ly + 0.15, z, 0, 0.4, 0.3, 0.4, 0, 0, true);
-        b.paint(BOX, 0x2a2422, x, ly + 3.62, z, 0, 0.42, 0.06, 0.42, 0, 0, true);
-        b.paint(CONE4, 0x2a2422, x, ly + 3.82, z, Math.PI / 4, 0.42, 0.32, 0.42, 0, 0, true);
-        b.add(BOX, glass, x, ly + 3.3, z, 0, 0.3, 0.5, 0.3);
+        if (b.model('lamp', [], x, ly, z)) b.modelIn('lamp.lit', glass, x, ly, z);
+        else {
+          b.paint(CYL, 0x2a2422, x, ly + 1.6, z, 0, 0.16, 3.2, 0.16, 0, 0, true);
+          b.paint(BOX, 0x2a2422, x, ly + 0.15, z, 0, 0.4, 0.3, 0.4, 0, 0, true);
+          b.paint(BOX, 0x2a2422, x, ly + 3.62, z, 0, 0.42, 0.06, 0.42, 0, 0, true);
+          b.paint(CONE4, 0x2a2422, x, ly + 3.82, z, Math.PI / 4, 0.42, 0.32, 0.42, 0, 0, true);
+          b.add(BOX, glass, x, ly + 3.3, z, 0, 0.3, 0.5, 0.3);
+        }
         const s = glowSprite(0xffb050, 1.6);
         s.position.set(x, ly + 3.3, z);
         this.root.add(s);
