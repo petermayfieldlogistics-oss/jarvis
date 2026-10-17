@@ -362,6 +362,7 @@ def write(heads, blobs_):
 
 # Stand-in colours for slots and the land's tint in previews.
 PREVIEW_SLOTS = {1: 0x9a8a6c, 2: 0x4a2e22, 3: 0x2e3a2a, 4: 0x6a645a}
+PREVIEW_HORSE = {1: 0x6a4428, 2: 0x1e1610, 3: 0xe8e0d0, 4: 0xe8e0d0}
 PREVIEW_TINT = 0x6a8a3a
 
 
@@ -377,7 +378,7 @@ def preview(name, m, tint=PREVIEW_TINT):
         c = [x / 255 for x in m['rgb'][i]]
         s = m['slot'][i]
         if s:
-            c = [a * b / 255 for a, b in zip(c, hexrgb(PREVIEW_SLOTS.get(s, 0x808080)))]
+            c = [a * b / 255 for a, b in zip(c, hexrgb((PREVIEW_HORSE if name.startswith('horse') else PREVIEW_SLOTS).get(s, 0x808080)))]
         t = m['tint'][i] / 255
         c = [a * lerp(1, b, t) for a, b in zip(c, tr)]
         col.data[i].color = (c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2, 1)
@@ -1376,6 +1377,128 @@ def workbench(sc):
     box(sc, (0.16, 0.05, 0.06), (-0.78, 0.95, 0.31), rot=(0, 0.5, 0), bevel=0.01, rgb=0x5a3e24)
     for i in range(6):
         tube(sc, [(0.1 + i * 0.02, 0.95, -0.4 + i * 0.04), (0.1 + i * 0.02 + 0.3, 0.95, 0.35 + i * 0.04)], 0.01, sides=4, rgb=0x8a6a44)
+
+
+# -------------------------------------------------------------------- horse --
+# The hero's horse, in the pieces the game swings (body, neck, head, tail,
+# each leg's thigh and shin), each in its own joint's frame. Slots: 1 the
+# coat, 2 the mane and tail, 3 the face markings, 4 the socks (coat or
+# marking colour).
+
+COAT, MANE, MARKS, SOCK = 1, 2, 3, 4
+LEATHER, CLOTH, BRASS, HOOF = 0x5a3418, 0x7a1e1e, 0xc8a050, 0x2a2420
+
+
+def hair(sc, root, dirn, length, width, n, rng, spread=0.3, slot=MANE, thick=0.25):
+    """Locks of hair: flattened strands falling from a root, a little apart."""
+    for k in range(n):
+        off = Vector((rng.uniform(-spread, spread) * width, 0, rng.uniform(-spread, spread) * width))
+        d = Vector(dirn).normalized()
+        L = length * rng.uniform(0.75, 1.05)
+        b = Vector(root) + off
+        pts = [b, b + d * L * 0.5 + Vector((rng.uniform(-0.02, 0.02), 0, rng.uniform(-0.02, 0.02))), b + d * L]
+        tube(sc, [tuple(p) for p in pts], lambda u, w=width: w * (1 - 0.8 * u) + 0.004, sides=5, slot=slot, rgb=0xffffff, profile=lambda a, u: thick + (1 - thick) * abs(math.cos(a)))
+
+
+@model('horse.body')
+def horse_body(sc):
+    rng = sc.rng
+    balls = [((0, 1.26, 0.0), (0.27, 0.3, 0.58)), ((0, 1.24, 0.55), (0.26, 0.32, 0.3)), ((0, 1.31, -0.6), (0.29, 0.31, 0.32)),
+             ((0, 1.02, 0.0), (0.2, 0.12, 0.5)), ((0, 1.47, 0.62), (0.16, 0.14, 0.22)), ((0, 1.36, 0.82), (0.17, 0.22, 0.14))]
+    for s_ in (-1, 1):
+        balls += [((s_ * 0.13, 1.16, 0.6), (0.11, 0.2, 0.13)), ((s_ * 0.14, 1.2, -0.62), (0.13, 0.22, 0.2))]
+    blobs(sc, balls, 0.05, 1400, detail=('CLOUDS', 0.2, 0.01), slot=COAT, rgb=0xffffff)
+    # The saddle: a blanket with a fringe, the seat, pommel and cantle, a girth, stirrups on their leathers.
+    box(sc, (0.7, 0.04, 0.66), (0, 1.55, -0.05), bevel=0.02, rgb=CLOTH)
+    for sx in (-1, 1):
+        box(sc, (0.04, 0.22, 0.62), (sx * 0.34, 1.45, -0.05), rot=(0, 0, sx * 0.25), bevel=0.01, rgb=CLOTH)
+        box(sc, (0.02, 0.03, 0.64), (sx * 0.37, 1.34, -0.05), rgb=0xc8a050)
+    box(sc, (0.48, 0.09, 0.52), (0, 1.6, -0.05), bevel=0.04, rgb=LEATHER)
+    tube(sc, [(0, 1.6, 0.17), (0, 1.68, 0.22), (0, 1.72, 0.2)], lambda u: 0.07 - 0.03 * u, sides=8, rgb=LEATHER)
+    tube(sc, [(-0.19, 1.63, -0.3), (0, 1.7, -0.31), (0.19, 1.63, -0.3)], 0.05, sides=8, rgb=LEATHER)
+    tube(sc, [(-0.3, 1.5, 0.08), (0, 0.9, 0.12), (0.3, 1.5, 0.08)], 0.025, sides=5, rgb=LEATHER, cap=False, profile=lambda a, u: 0.4 + 0.6 * abs(math.cos(a)))
+    for sx in (-1, 1):
+        tube(sc, [(sx * 0.3, 1.55, -0.02), (sx * 0.32, 1.13, -0.02)], 0.012, sides=4, rgb=LEATHER)
+        tube(sc, [(sx * 0.3, 1.1, -0.08), (sx * 0.3, 1.13, -0.02), (sx * 0.3, 1.1, 0.04)], 0.012, sides=5, rgb=BRASS)
+        box(sc, (0.06, 0.02, 0.12), (sx * 0.3, 1.09, -0.02), rgb=BRASS)
+    # Saddlebags behind the cantle.
+    for sx in (-1, 1):
+        box(sc, (0.1, 0.22, 0.24), (sx * 0.3, 1.4, -0.45), bevel=0.04, rgb=0x6a4224)
+        box(sc, (0.11, 0.08, 0.25), (sx * 0.3, 1.5, -0.45), bevel=0.02, rgb=LEATHER)
+
+
+@model('horse.neck')
+def horse_neck(sc):
+    rng = sc.rng
+    balls = [((0, 0.0, 0.02), (0.15, 0.16, 0.22)), ((0, 0.3, 0.02), (0.13, 0.2, 0.2)), ((0, 0.6, 0.0), (0.12, 0.2, 0.17)), ((0, 0.86, 0.0), (0.11, 0.12, 0.14))]
+    blobs(sc, balls, 0.035, 700, detail=('CLOUDS', 0.15, 0.006), slot=COAT, rgb=0xffffff)
+    for k in range(9):
+        y = 0.04 + k * 0.105
+        hair(sc, (0.02, y, -0.15 + 0.02 * math.sin(k)), (0.7, -0.75, -0.25), 0.22, 0.05, 2, rng, spread=0.35, thick=0.35)
+
+
+@model('horse.head')
+def horse_head(sc):
+    rng = sc.rng
+    balls = [((0, 0.03, 0.12), (0.13, 0.15, 0.2)), ((0, -0.02, 0.36), (0.11, 0.12, 0.18)), ((0, -0.05, 0.53), (0.1, 0.11, 0.1)),
+             ((0, -0.12, 0.2), (0.09, 0.07, 0.14))]
+    for sx in (-1, 1):
+        balls.append(((sx * 0.08, -0.03, 0.12), (0.06, 0.09, 0.09)))
+    blobs(sc, balls, 0.025, 800, detail=('CLOUDS', 0.12, 0.004), slot=COAT, rgb=0xffffff)
+    # A blaze down the face.
+    verts = [G(-0.05, 0.16, 0.2), G(0.05, 0.16, 0.2), G(0.035, 0.03, 0.5), G(-0.035, 0.03, 0.5)]
+    sc.mesh(verts, [(3, 2, 1, 0)], slot=MARKS, rgb=0xffffff, smooth=False)
+    for sx in (-1, 1):
+        ball(sc, (sx * 0.125, 0.09, 0.16), 0.03, scale=(0.6, 1, 1), rgb=0x101010, subdiv=1, smooth=True)
+        ball(sc, (sx * 0.045, -0.04, 0.62), 0.022, scale=(0.6, 1, 0.5), rgb=0x1a1412, subdiv=0)
+        cone(sc, (sx * 0.08, 0.2, -0.01), (sx * 0.1, 0.36, -0.05), 0.05, sides=6, slot=COAT, rgb=0xffffff)
+    hair(sc, (0, 0.2, 0.03), (0, 0.2, 1), 0.18, 0.05, 3, rng, spread=0.4)
+    # Bridle: noseband, browband, cheek straps, the bit and the reins looping back.
+    tube(sc, [(-0.12, -0.04, 0.5), (0, 0.06, 0.5), (0.12, -0.04, 0.5), (0, -0.14, 0.5), (-0.12, -0.04, 0.5)], 0.016, sides=4, rgb=LEATHER, cap=False)
+    tube(sc, [(-0.13, 0.13, 0.08), (0, 0.18, 0.12), (0.13, 0.13, 0.08)], 0.015, sides=4, rgb=LEATHER, cap=False)
+    for sx in (-1, 1):
+        tube(sc, [(sx * 0.13, 0.13, 0.08), (sx * 0.13, -0.02, 0.32), (sx * 0.12, -0.08, 0.5)], 0.014, sides=4, rgb=LEATHER, cap=False)
+        ball(sc, (sx * 0.12, -0.09, 0.52), 0.025, rgb=BRASS, subdiv=0)
+    tube(sc, [(-0.12, -0.09, 0.52), (0, -0.35, 0.2), (0, -0.4, -0.3), (0.12, -0.09, 0.52)], 0.012, sides=4, rgb=LEATHER, cap=False)
+
+
+@model('horse.tail')
+def horse_tail(sc):
+    rng = sc.rng
+    tube(sc, [(0, 0.04, 0), (0, -0.1, -0.02), (0, -0.2, -0.03)], lambda u: 0.06 - 0.02 * u, sides=6, slot=MANE, rgb=0xffffff)
+    for k in range(10):
+        a = k / 10 * TAU
+        root = (math.cos(a) * 0.03, -0.12, math.sin(a) * 0.03 - 0.02)
+        d = (math.cos(a) * 0.12, -1, math.sin(a) * 0.1 - 0.06)
+        hair(sc, root, d, 0.72, 0.05, 1, rng, spread=0.2, thick=0.4)
+
+
+def leg_piece(sc, hind, upper):
+    if upper:
+        r0, r1 = (0.11, 0.065) if hind else (0.09, 0.06)
+        blobs(sc, [((0, 0.0, 0.0), (r0, 0.16, r0 * (1.5 if hind else 1.2))), ((0, -0.2, 0.0 if not hind else -0.02), (r0 * 0.85, 0.16, r0 * 1.1)), ((0, -0.45, 0), (r1, 0.1, r1))],
+              0.025, 500, detail=('CLOUDS', 0.12, 0.004), slot=COAT, rgb=0xffffff)
+    else:
+        tube(sc, curve([(0, 0.02, 0), (0, -0.2, 0.0), (0, -0.36, 0.01)], 3), lambda u: 0.055 - 0.012 * u, sides=10, slot=COAT, rgb=0xffffff)
+        ball(sc, (0, -0.39, -0.005), 0.06, scale=(1, 0.8, 1.05), slot=SOCK, rgb=0xffffff, subdiv=2)
+        tube(sc, [(0, -0.3, 0), (0, -0.41, 0.0)], lambda u: 0.058 + 0.01 * u, sides=10, slot=SOCK, rgb=0xffffff)
+        tube(sc, [(0, -0.42, 0.01), (0, -0.46, 0.015), (0, -0.505, 0.025)], lambda u: 0.06 + 0.022 * u, sides=12, rgb=HOOF)
+        hair(sc, (0, -0.4, -0.04), (0, -0.6, -0.4), 0.09, 0.035, 2, sc.rng, spread=0.3)
+
+
+@model('horse.thigh')
+def horse_thigh(sc):
+    leg_piece(sc, False, True)
+
+
+@model('horse.haunch')
+def horse_haunch(sc):
+    leg_piece(sc, True, True)
+
+
+@model('horse.shin')
+def horse_shin(sc):
+    leg_piece(sc, False, False)
 
 
 # --------------------------------------------------------------------- main --
