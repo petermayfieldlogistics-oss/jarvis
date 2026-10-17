@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { COATS } from '../rules/horse';
+import { worldGeometry, worldMesh } from './assets';
 import { box, compact, cone, mat, part } from './models';
 
 /** Height of the saddle's seat above the ground (the rider sits here). */
@@ -33,6 +34,7 @@ const TAIL_TILT = 0.38;
 /** Builds a horse in one of the coats (rules/horse COATS). */
 export function buildHorse(coatIndex: number): HorseRig {
   const coat = COATS[coatIndex] ?? COATS[0];
+  if (worldMesh('horse.body')) return blendHorse(coat);
   const hide = mat(coat.body, { rough: 0.85 });
   const mane = mat(coat.mane, { rough: 0.95 });
   const marks = mat(coat.marks, { rough: 0.9 });
@@ -111,6 +113,57 @@ export function buildHorse(coatIndex: number): HorseRig {
   // Merge the parts that never move apart (fewer draw calls on phones).
   compact(root);
   root.traverse((o) => (o.castShadow = true));
+  return { root, body, neck, head, tail, legs, shins, phase: 0, gallop: 0, move: 0, bob: 0 };
+}
+
+let horseMat: THREE.MeshStandardMaterial | null = null;
+
+/**
+ * The horse modelled in Blender (blender/world.py), in the same jointed
+ * pieces: the coat, mane and markings fill its colour slots.
+ */
+function blendHorse(coat: (typeof COATS)[number]): HorseRig {
+  const sock = coat.id === 'chestnut' || coat.id === 'palomino';
+  const slots = [coat.body, coat.mane, coat.marks, sock ? coat.marks : coat.body];
+  horseMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+  const piece = (name: string, parent: THREE.Object3D) => {
+    const mesh = new THREE.Mesh(worldGeometry(worldMesh(name)!, slots), horseMat!);
+    mesh.castShadow = true;
+    parent.add(mesh);
+  };
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  piece('horse.body', body);
+  const neck = new THREE.Group();
+  neck.position.set(0, 1.42, 0.8);
+  neck.rotation.x = NECK_TILT;
+  body.add(neck);
+  piece('horse.neck', neck);
+  const head = new THREE.Group();
+  head.position.set(0, 0.86, 0.02);
+  head.rotation.x = 0.9;
+  neck.add(head);
+  piece('horse.head', head);
+  const tail = new THREE.Group();
+  tail.position.set(0, 1.46, -0.92);
+  tail.rotation.x = TAIL_TILT;
+  body.add(tail);
+  piece('horse.tail', tail);
+  const legs: THREE.Group[] = [];
+  const shins: THREE.Group[] = [];
+  for (const [x, z, hind] of [[0.17, 0.6, false], [-0.17, 0.6, false], [0.18, -0.62, true], [-0.18, -0.62, true]] as const) {
+    const leg = new THREE.Group();
+    leg.position.set(x, 1.02, z);
+    body.add(leg);
+    piece(hind ? 'horse.haunch' : 'horse.thigh', leg);
+    const shin = new THREE.Group();
+    shin.position.set(0, -0.5, 0);
+    leg.add(shin);
+    piece('horse.shin', shin);
+    legs.push(leg);
+    shins.push(shin);
+  }
   return { root, body, neck, head, tail, legs, shins, phase: 0, gallop: 0, move: 0, bob: 0 };
 }
 

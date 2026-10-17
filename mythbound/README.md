@@ -316,14 +316,24 @@ writes `src/assets/weapons.glb`. To rebuild them (Blender as a Python module):
     uv venv -p 3.13 .blenv && uv pip install -p .blenv/bin/python bpy
     .blenv/bin/python blender/weapons.py --preview   # renders blender/preview/*.png too
 
-Monsters and great foes are remodelled over their own skeletons, so every
-animation still plays. First dump the bodies as the game builds them, then
-let Blender fuse, smooth, detail and shade them:
+Monsters and great foes are sculpted anew over their own skeletons, so every
+animation still plays. `blender/beasts.py` builds each from metaball clay
+around the bones (`blender/kit.py` holds the tools: clay, horns and claws,
+cloth strips, weights, occlusion), paints it with colour slots the game fills
+from the monster's own colour, and writes `src/assets/creatures.bin.gz`:
 
-    npx vite-node scripts/dump-creatures.ts          # writes blender/rigs/*.json
-    .blenv/bin/python blender/creatures.py --preview  # writes src/assets/creatures.bin
-    .blenv/bin/python blender/creatures.py wolf --merge  # just one, kept with the rest
+    npx vite-node scripts/dump-creatures.ts          # writes blender/rigs/*.json (the skeletons)
+    .blenv/bin/python blender/beasts.py --preview    # every creature, renders blender/preview/new/
+    .blenv/bin/python blender/beasts.py wolf boar    # just these, kept with the rest
 
-The game loads both files before building the world and falls back to the
-models made in code for anything it lacks (or whose skeleton has changed
-since the remodel: dump and remodel again after changing a creature).
+The scenery comes from `blender/world.py`: trees and plants (they keep the
+game's swaying vegetation shading), rocks, the town's houses, walls, gate
+towers, chapel, forge and archive, and props from barrels to braziers. It
+writes `src/assets/world.bin.gz`:
+
+    .blenv/bin/python blender/world.py --preview     # renders blender/preview/world/
+    .blenv/bin/python blender/world.py oak house     # just these
+
+The game loads these files before building the world and falls back to the
+models made in code for anything it lacks (or, for a creature, whose skeleton
+has changed since: dump and rebuild it after changing a creature in code).

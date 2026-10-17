@@ -5,6 +5,7 @@ import {
 } from '../data/world';
 import { SPELLS } from '../data/defs';
 import { buildBoat, glowSprite, mat } from './models';
+import { worldGeometry, worldMesh } from './assets';
 import { FRUITS, NELL_STALL, STATIONS } from '../data/goods';
 import { mulberry32, noise2, smoothstep } from './noise';
 import { detailTexture, groundTile, heightAt, inLava, LAVA_LEVEL, normalAt, POOL_LAVA, TILE, TILES, zoneAt, WATER_LEVEL } from './terrain';
@@ -99,7 +100,8 @@ class Batcher {
   }
 
   paint(geo: THREE.BufferGeometry, color: number, x: number, y: number, z: number, ry = 0, sx = 1, sy = sx, sz = sx, rx = 0, rz = 0, metal = false) {
-    const g = this.place(geo, x, y, z, ry, sx, sy, sz, rx, rz);
+    // Boulders take the Blender rock's shape (in the colour asked for).
+    const g = this.place(geo === ROCK ? rockGeometry() : geo, x, y, z, ry, sx, sy, sz, rx, rz);
     for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
     this.c.setHex(color);
     const n = g.attributes.position.count;
@@ -107,6 +109,28 @@ class Batcher {
     for (let i = 0; i < n; i++) (arr[i * 3] = this.c.r), (arr[i * 3 + 1] = this.c.g), (arr[i * 3 + 2] = this.c.b);
     g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     this.push(metal ? this.metal : this.matte, g);
+  }
+
+  /**
+   * A piece of scenery modelled in Blender, its colour slots filled from
+   * `slots`, placed like `paint`. False (and nothing drawn) if it didn't load.
+   */
+  model(name: string, slots: number[], x: number, y: number, z: number, ry = 0, sx = 1, sy = sx, sz = sx, rx = 0, rz = 0): boolean {
+    const m = worldMesh(name);
+    if (!m) return false;
+    const geo = worldGeometry(m, slots);
+    this.push(this.matte, this.place(geo, x, y, z, ry, sx, sy, sz, rx, rz));
+    geo.dispose();
+    return true;
+  }
+
+  /** A Blender piece drawn in a material of its own (lit windows, lamp glass). */
+  modelIn(name: string, material: THREE.Material, x: number, y: number, z: number, ry = 0, sx = 1, sy = sx, sz = sx) {
+    const m = worldMesh(name);
+    if (!m) return;
+    const geo = worldGeometry(m);
+    this.add(geo, material, x, y, z, ry, sx, sy, sz);
+    geo.dispose();
   }
 
   build(parent: THREE.Object3D, shadows: boolean) {
@@ -455,7 +479,53 @@ function leafBlob(detail: number): THREE.BufferGeometry {
   return g;
 }
 
+/** How far each plant's top sways and from what height it starts to bend (as the built-in ones). */
+const SWAY: Record<Exclude<PlantKind, 'rock'>, [number, number]> = {
+  pine: [0.9, 1.5], oak: [0.75, 2], birch: [1.0, 2.5], bush: [0.25, 0], grass: [0.4, 0], flowers: [0.35, 0], reeds: [0.5, 0], toadstool: [0, 0],
+  mushroom: [0, 0], crystal: [0, 0], dead: [0.12, 2], ashtree: [0.05, 2], cactus: [0, 0], palm: [0.55, 4],
+};
+
+/** A plant modelled in Blender, with the vegetation attributes the plant shader reads (see plant()). */
+function blendPlant(kind: Exclude<PlantKind, 'rock'>): THREE.BufferGeometry | null {
+  const m = worldMesh(kind);
+  if (!m) return null;
+  const g = worldGeometry(m);
+  const [sway, from] = SWAY[kind];
+  const pos = g.attributes.position;
+  let top = -Infinity;
+  for (let i = 0; i < pos.count; i++) top = Math.max(top, pos.getY(i));
+  const veg = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    veg[i * 3] = sway * Math.pow(Math.max(0, (pos.getY(i) - from) / (top - from)), 1.6);
+    veg[i * 3 + 1] = m.tint[i] / 255;
+    veg[i * 3 + 2] = (m.glow[i] / 255) * 4;
+  }
+  g.setAttribute('aVeg', new THREE.BufferAttribute(veg, 3));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** The rock wild boulders are drawn with: the Blender one if it loaded. */
+function rockGeometry(): THREE.BufferGeometry {
+  const m = worldMesh('rock');
+  return m ? (rockGeo ??= worldGeometry(m)) : ROCK;
+}
+let rockGeo: THREE.BufferGeometry | undefined;
+let oreGeo: THREE.BufferGeometry | undefined;
+
 function plantGeometries(leafDetail: number): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry> {
+  const built = builtPlants(leafDetail);
+  for (const kind of Object.keys(built) as Exclude<PlantKind, 'rock'>[]) {
+    const g = blendPlant(kind);
+    if (g) {
+      built[kind].dispose();
+      built[kind] = g;
+    }
+  }
+  return built;
+}
+
+function builtPlants(leafDetail: number): Record<Exclude<PlantKind, 'rock'>, THREE.BufferGeometry> {
   const leaves = leafBlob(leafDetail);
   const mushrooms = (glow: number) =>
     plant([
@@ -1139,7 +1209,7 @@ export class World {
   /** One plant, drawn the way the wild ones are (they sway in the wind). */
   private makePlant(kind: PlantKind): THREE.Object3D {
     const { geos, plantMat, rockMat } = this.plants;
-    const mesh = new THREE.InstancedMesh(kind === 'rock' ? ROCK : geos[kind as Exclude<PlantKind, 'rock'>], kind === 'rock' ? rockMat : plantMat, 1);
+    const mesh = new THREE.InstancedMesh(kind === 'rock' ? rockGeometry() : geos[kind as Exclude<PlantKind, 'rock'>], kind === 'rock' ? rockMat : plantMat, 1);
     mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, kind === 'rock' ? -0.3 : -0.1, 0));
     mesh.setColorAt(0, new THREE.Color(PLANT_TINT[kind] ?? 0xffffff));
     mesh.computeBoundingSphere();
@@ -1168,10 +1238,12 @@ export class World {
       case 'brazier':
         return this.brazier(0, 0);
       case 'stone-block':
+        if (b.model('stone-block', [], 0, 0, 0)) return;
         b.paint(BOX, stone, 0, 1, 0, 0, 2, 2, 2);
         for (const y of [0.02, 1.98]) b.paint(BOX, dark, 0, y, 0, 0, 2.04, 0.08, 2.04);
         return;
       case 'wood-block':
+        if (b.model('wood-block', [], 0, 0, 0)) return;
         b.paint(BOX, wood, 0, 1, 0, 0, 2, 2, 2);
         for (const y of [0.5, 1.0, 1.5]) b.paint(BOX, timber, 0, y, 0, 0, 2.03, 0.05, 2.03);
         for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.paint(BOX, timber, x * 0.97, 1, z * 0.97, 0, 0.14, 2.02, 0.14);
@@ -1182,23 +1254,28 @@ export class World {
         for (let i = 0; i < 3; i++) b.paint(BOX, 0x6e685e, -1.4 + i * 1.4, 0.75 + (i % 2) * 1.2, 0.36, 0, 1.1, 0.5, 0.04);
         return;
       case 'floor':
+        if (b.model('floor', [], 0, 0, 0)) return;
         b.paint(BOX, wood, 0, 0.12, 0, 0, 4, 0.24, 4);
         for (let i = 0; i < 5; i++) b.paint(BOX, timber, -1.6 + i * 0.8, 0.245, 0, 0, 0.04, 0.02, 4);
         return;
       case 'pillar':
+        if (b.model('pillar', [], 0, 0, 0)) return;
         b.paint(BOX, dark, 0, 0.2, 0, 0, 1.3, 0.4, 1.3);
         b.paint(CYL, stone, 0, 2.2, 0, 0, 0.9, 3.6, 0.9);
         b.paint(BOX, dark, 0, 4.2, 0, 0, 1.3, 0.4, 1.3);
         return;
       case 'stairs':
+        if (b.model('stairs', [], 0, 0, 0)) return;
         for (let i = 0; i < 4; i++) b.paint(BOX, stone, 0, 0.25 + i * 0.5, -1.5 + i * 1, 0, 3, 0.5 + i * 1, 1);
         for (let i = 0; i < 4; i++) b.paint(BOX, dark, 0, 0.5 + i * 1, -1.5 + i * 1, 0, 3.02, 0.06, 1.02);
         return;
       case 'roof':
+        if (b.model('roof', [], 0, 0, 0)) return;
         b.paint(ROOF, 0x4a2e22, 0, 0, 0, 0, 2.6, 2, 4.4);
         b.paint(BOX, timber, 0, 2, 0, 0, 0.16, 0.16, 4.6);
         return;
       case 'tower':
+        if (b.model('tower', [], 0, 0, 0)) return;
         b.paint(CYL, stone, 0, 4, 0, 0, 4, 8, 4);
         b.paint(CYL, dark, 0, 8.2, 0, 0, 4.6, 0.5, 4.6);
         for (let i = 0; i < 8; i++) {
@@ -1209,6 +1286,7 @@ export class World {
         for (const y of [4, 6.2]) b.paint(BOX, 0x1a1612, 2.02, y, 0, Math.PI / 2, 0.5, 0.9, 0.08);
         return;
       case 'arch':
+        if (b.model('arch', [], 0, 0, 0)) return;
         for (const x of [-1.8, 1.8]) {
           b.paint(BOX, stone, x, 2, 0, 0, 0.9, 4, 0.9);
           b.paint(BOX, dark, x, 0.15, 0, 0, 1.1, 0.3, 1.1);
@@ -1217,6 +1295,7 @@ export class World {
         b.paint(BOX, dark, 0, 4.75, 0, 0, 4.8, 0.2, 1.1);
         return;
       case 'lamp': {
+        if (b.model('lamp', [], 0, 0, 0)) return b.modelIn('lamp.lit', mat(0xffd080, { emissive: 0xffb040, emissiveIntensity: 2 }), 0, 0, 0);
         b.paint(CYL6, 0x2a2622, 0, 1.6, 0, 0, 0.14, 3.2, 0.14, 0, 0, true);
         b.paint(BOX, 0x2a2622, 0.3, 3.15, 0, 0, 0.7, 0.08, 0.08, 0, 0, true);
         b.paint(BOX, 0x2a2622, 0.6, 2.85, 0, 0, 0.36, 0.06, 0.36, 0, 0, true);
@@ -1224,6 +1303,7 @@ export class World {
         return;
       }
       case 'statue':
+        if (b.model('statue', [], 0, 0, 0)) return;
         b.paint(BOX, dark, 0, 0.6, 0, 0, 2, 1.2, 2);
         b.paint(CYL, 0x9a968c, 0, 2.3, 0, 0, 0.9, 2.2, 0.7);
         b.paint(ICO, 0x9a968c, 0, 3.75, 0, 0, 0.42, 0.48, 0.42);
@@ -1231,6 +1311,7 @@ export class World {
         b.paint(CYL6, 0x8a867c, 0.9, 2.6, 0.1, 0, 0.1, 3.6, 0.1);
         return;
       case 'well':
+        if (b.model('well', [0, 0x4a2e22], 0, 0, 0, 0, 0.75)) return;
         b.paint(CYL, stone, 0, 0.5, 0, 0, 2.4, 1, 2.4);
         b.paint(CYL, 0x1a2a3a, 0, 0.9, 0, 0, 1.9, 0.12, 1.9);
         for (const x of [-1.05, 1.05]) b.paint(BOX, timber, x, 1.6, 0, 0, 0.16, 2.2, 0.16);
@@ -1238,16 +1319,17 @@ export class World {
         b.paint(CYL, timber, 0, 2.2, 0, 0, 0.12, 2.1, 0.12, 0, Math.PI / 2);
         return;
       case 'tent':
+        if (b.model('tent', [0xb8a888], 0, 0, 0)) return;
         b.paint(CONE4, 0xb8a888, 0, 1.4, 0, Math.PI / 4, 3.4, 2.8, 3.4);
         b.paint(BOX, 0x1a1612, 0, 0.6, 1.25, 0, 0.8, 1.2, 0.04);
         b.paint(CYL6, timber, 0, 3.0, 0, 0, 0.08, 0.5, 0.08);
         return;
       case 'campfire': {
-        for (let i = 0; i < 8; i++) {
+        if (!b.model('campfire', [], 0, 0, 0)) for (let i = 0; i < 8; i++) {
           const a = (i / 8) * TAU;
           b.paint(ROCK, 0x6a645a, Math.cos(a) * 0.8, 0.1, Math.sin(a) * 0.8, a, 0.25, 0.2, 0.25);
         }
-        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x3a2a1c, 0, 0.18, 0, (i / 3) * Math.PI, 0.14, 1.1, 0.14, Math.PI / 2 - 0.2, 0);
+        if (!worldMesh('campfire')) for (let i = 0; i < 3; i++) b.paint(CYL6, 0x3a2a1c, 0, 0.18, 0, (i / 3) * Math.PI, 0.14, 1.1, 0.14, Math.PI / 2 - 0.2, 0);
         b.add(CONE8, mat(0xff9030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), 0, 0.5, 0, 0, 0.6, 0.8, 0.6);
         return;
       }
@@ -1460,7 +1542,7 @@ export class World {
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${near ? VEG_NEAR_FADE : ''}`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * (vGlow * uGlow + vLeaf * uLift);');
     };
-    const rockMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true });
+    const rockMat = new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true, vertexColors: !!worldMesh('rock') });
     return { geos, plantMat, rockMat, grassScale: this.quality === 'low' ? 0.3 : this.quality === 'medium' ? 0.6 : 1 };
   }
 
@@ -1554,7 +1636,7 @@ export class World {
     if (!meshes) return;
     const lowRange = this.quality === 'low' ? 0.75 : 1;
     for (const [kind, set] of sets) {
-      const geo = kind === 'rock' ? ROCK : geos[kind];
+      const geo = kind === 'rock' ? rockGeometry() : geos[kind];
       const mesh = new THREE.InstancedMesh(geo, kind === 'rock' ? rockMat : plantMat, set.mats.length);
       set.mats.forEach((m, i) => mesh.setMatrixAt(i, m));
       set.colors.forEach((c, i) => mesh.setColorAt(i, c));
@@ -1674,6 +1756,21 @@ export class World {
     const plaster = [0x9a8a6c, 0x8a7a62, 0xa89878, 0x857660][Math.floor(this.rand() * 4)];
     const roof = [0x4a2e22, 0x3a3a44, 0x6a5636, 0x5a2a20][Math.floor(this.rand() * 4)];
     const shutter = [0x2e3a2a, 0x4a2220, 0x2a3446, 0x3a2a1c][Math.floor(this.rand() * 4)];
+    if (worldMesh('house')) {
+      // The Blender house, made at 6 x 5 x 3.6 and stretched to this one (the same numbers drawn as below).
+      const sx = w / 6, sy = h / 3.6, sz = d / 5;
+      const chimney = this.rand() < 0.7;
+      if (chimney) this.rand();
+      b.model(chimney ? 'house-chimney' : 'house', [plaster, roof, shutter], x, y, z, ry, sx, sy, sz);
+      b.modelIn('house.lit', mat(0xffb860, { emissive: 0xff9030, emissiveIntensity: 1.2 }), x, y, z, ry, sx, sy, sz);
+      if (chimney) {
+        const lx = 2.1 * sx, lz = 0.9 * sz;
+        this.smokeSource(x + lx * c + lz * s, y + 7.17 * sy + 0.3, z - lx * s + lz * c, 0);
+      }
+      this.houseClutter(x, z, c, s, w, d);
+      this.addCollider(x, z, Math.max(w, d) * 0.55);
+      return;
+    }
     const timber = 0x33241a;
     const stone = 0x5a554c;
     P(BOX, stone, 0, 0.3, 0, w + 0.3, 0.6, d + 0.3);
@@ -1715,7 +1812,12 @@ export class World {
       P(BOX, 0x3e3a36, lx, top, lz, 0.95, 0.18, 0.95);
       this.smokeSource(x + lx * c + lz * s, y + top + 0.3, z - lx * s + lz * c, 0);
     }
-    // Barrels and crates by the walls.
+    this.houseClutter(x, z, c, s, w, d);
+    this.addCollider(x, z, Math.max(w, d) * 0.55);
+  }
+
+  /** Barrels and crates by a house's walls. */
+  private houseClutter(x: number, z: number, c: number, s: number, w: number, d: number) {
     for (let i = 0; i < 2; i++) {
       if (this.rand() < 0.35) continue;
       const lx = (this.rand() < 0.5 ? -1 : 1) * (w / 2 + 0.7);
@@ -1723,12 +1825,12 @@ export class World {
       if (this.rand() < 0.5) this.barrel(x + lx * c + lz * s, z - lx * s + lz * c);
       else this.crate(x + lx * c + lz * s, z - lx * s + lz * c, this.rand() * TAU, 0.7 + this.rand() * 0.3);
     }
-    this.addCollider(x, z, Math.max(w, d) * 0.55);
   }
 
   private barrel(x: number, z: number) {
     const y = this.groundY(x, z);
     const b = this.batch;
+    if (b.model('barrel', [], x, y, z, (x * 7.3 + z * 3.1) % TAU)) return this.addCollider(x, z, 0.45);
     b.paint(CYL, 0x5a3e24, x, y + 0.5, z, 0, 0.75, 1, 0.75);
     for (const yy of [0.18, 0.82]) b.paint(CYL, 0x2a2622, x, y + yy, z, 0, 0.79, 0.07, 0.79, 0, 0, true);
     b.paint(CYL, 0x4a3420, x, y + 1.0, z, 0, 0.62, 0.03, 0.62);
@@ -1738,6 +1840,7 @@ export class World {
   private crate(x: number, z: number, ry: number, s = 0.8) {
     const y = this.groundY(x, z);
     const b = this.batch;
+    if (b.model('crate', [], x, y, z, ry, s)) return this.addCollider(x, z, s * 0.6);
     b.paint(BOX, 0x6a4a2a, x, y + s / 2, z, ry, s, s, s);
     b.paint(BOX, 0x3e2a1a, x, y + s / 2, z, ry, s * 1.02, s * 0.16, s * 1.02);
     b.paint(BOX, 0x3e2a1a, x, y + s / 2, z, ry, s * 0.16, s * 1.02, s * 1.03);
@@ -1749,6 +1852,7 @@ export class World {
     const y = this.groundY(x, z);
     const b = this.batch;
     const c = Math.cos(ry), s = Math.sin(ry);
+    if (b.model('banner', [color], x, y, z, ry)) return this.addCollider(x, z, 0.3);
     b.paint(CYL6, 0x2e2218, x, y + 3, z, 0, 0.18, 6, 0.18);
     b.paint(BOX, 0x2e2218, x + c * 0.5, y + 5.7, z - s * 0.5, ry, 1.5, 0.1, 0.1);
     b.paint(BOX, color, x + c * 0.5, y + 4.3, z - s * 0.5, ry, 1.2, 2.7, 0.04);
@@ -1767,13 +1871,15 @@ export class World {
       const x = x0 + ((x1 - x0) * i) / n;
       const z = z0 + ((z1 - z0) * i) / n;
       const y = this.groundY(x, z);
-      b.paint(BOX, 0x4a3624, x, y + 0.55, z, ry, 0.16, 1.2, 0.16);
+      if (!b.model('fence-post', [], x, y, z, ry + i * 1.7)) b.paint(BOX, 0x4a3624, x, y + 0.55, z, ry, 0.16, 1.2, 0.16);
       if (i % 2 === 0) this.addCollider(x, z, 0.3);
       if (i === n) break;
       const mx = x0 + ((x1 - x0) * (i + 0.5)) / n;
       const mz = z0 + ((z1 - z0) * (i + 0.5)) / n;
       const my = this.groundY(mx, mz);
-      for (const yy of [0.45, 0.9]) b.paint(BOX, 0x5a4430, mx, my + yy, mz, ry, len / n + 0.1, 0.1, 0.06);
+      // Rails follow the ground from post to post.
+      const tilt = Math.atan2(this.groundY(x0 + ((x1 - x0) * (i + 1)) / n, z0 + ((z1 - z0) * (i + 1)) / n) - y, len / n);
+      for (const yy of [0.45, 0.9]) if (!b.model('fence-rail', [], mx, my + yy, mz, ry, len / n + 0.1, 1, 1, 0, tilt)) b.paint(BOX, 0x5a4430, mx, my + yy, mz, ry, len / n + 0.1, 0.1, 0.06);
     }
   }
 
@@ -1791,8 +1897,11 @@ export class World {
       const z = TOWN.z + Math.sin(a) * r;
       const h = 2 + this.rand() * 2.5;
       const tone = [0x6a645a, 0x5e584e, 0x726a5e][Math.floor(this.rand() * 3)];
-      b.paint(BOX, tone, x, this.groundY(x, z) + h / 2 - 0.5, z, -a, 1.2, h, 6.4);
-      b.paint(BOX, 0x56514a, x, this.groundY(x, z) + h - 0.45, z, -a, 1.5, 0.3, 6.5);
+      if (b.model('wall', [], x, this.groundY(x, z) - 0.5, z, -a, 1, h, 1)) b.model('wall-cap', [], x, this.groundY(x, z) + h - 0.45, z, -a);
+      else {
+        b.paint(BOX, tone, x, this.groundY(x, z) + h / 2 - 0.5, z, -a, 1.2, h, 6.4);
+        b.paint(BOX, 0x56514a, x, this.groundY(x, z) + h - 0.45, z, -a, 1.5, 0.3, 6.5);
+      }
       this.addCollider(x, z, 2.6);
     }
     for (const g of gates) {
@@ -1802,9 +1911,11 @@ export class World {
         const x = TOWN.x + Math.cos(a) * r;
         const z = TOWN.z + Math.sin(a) * r;
         const y = this.groundY(x, z);
-        b.paint(BOX, stone, x, y + 3, z, -a, 3, 7, 3);
-        b.paint(BOX, 0x56514a, x, y + 6.6, z, -a, 3.5, 0.5, 3.5);
-        for (const [ox, oz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) b.paint(BOX, stone, x + ox, y + 7.2, z + oz, 0, 0.7, 0.8, 0.7);
+        if (!b.model('gate-tower', [], x, y, z, -a)) {
+          b.paint(BOX, stone, x, y + 3, z, -a, 3, 7, 3);
+          b.paint(BOX, 0x56514a, x, y + 6.6, z, -a, 3.5, 0.5, 3.5);
+          for (const [ox, oz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) b.paint(BOX, stone, x + ox, y + 7.2, z + oz, 0, 0.7, 0.8, 0.7);
+        }
         this.addCollider(x, z, 2);
         const br = r - 3;
         this.banner(TOWN.x + Math.cos(a) * br, TOWN.z + Math.sin(a) * br, -g + Math.PI / 2 + (side < 0 ? Math.PI : 0));
@@ -1838,6 +1949,8 @@ export class World {
     // Chapel of Light.
     {
       const x = 0, z = -28, y = this.groundY(x, z);
+      if (b.model('chapel', [0, 0x3a3a44], x, y, z)) b.modelIn('chapel.lit', mat(0xffe8a0, { emissive: 0xffd060, emissiveIntensity: 1.6 }), x, y, z);
+      else {
       b.paint(BOX, 0x5a554c, x, y + 0.3, z, 0, 9.8, 0.8, 13.8);
       b.paint(BOX, stone, x, y + 4, z, 0, 9, 9, 13);
       b.paint(ROOF, 0x3a3a44, x, y + 8.5, z, 0, 5.4, 4.2, 14);
@@ -1851,6 +1964,7 @@ export class World {
       b.add(CYL, mat(0xffe8a0, { emissive: 0xffd060, emissiveIntensity: 1.6 }), x, y + 12.5, z + 6.55, 0, 1.4, 0.1, 1.4, Math.PI / 2);
       b.paint(BOX, 0x3a352f, x, y + 1.5, z + 6.55, 0, 2, 3, 0.1);
       for (let i = 0; i < 3; i++) b.paint(BOX, 0x6a645a, x, y + 0.1 + i * 0.2, z + 7.2 + (2 - i) * 0.45, 0, 4 - i * 0.4, 0.3, 1);
+      }
       for (const sx of [-1, 1]) this.banner(x + sx * 3.2, z + 8.2, sx < 0 ? Math.PI : 0, 0xd8cfa8);
       this.addCollider(x, z - 2, 6.5);
       this.addCollider(x, z + 3, 5.5);
@@ -1859,11 +1973,14 @@ export class World {
     // Forge.
     {
       const x = 34, z = 16, y = this.groundY(x, z);
-      for (const [px, pz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) b.paint(BOX, 0x3a2a1c, x + px, y + 1.8, z + pz, 0, 0.35, 3.6, 0.35);
-      b.paint(ROOF, 0x4a2e22, x, y + 3.6, z, 0, 4.4, 1.4, 7.6);
-      b.paint(BOX, 0x5a554c, x + 1.8, y + 1, z - 1.8, 0, 2.4, 2, 2);
-      b.paint(BOX, 0x4e4a44, x + 1.8, y + 3.4, z - 2.3, 0, 1, 4.8, 1);
-      b.add(BOX, mat(0xff7020, { emissive: 0xff5010, emissiveIntensity: 2.5 }), x + 1.8, y + 0.9, z - 0.78, 0, 1, 0.7, 0.05);
+      if (b.model('forge', [0, 0x4a2e22], x, y, z)) b.modelIn('forge.lit', mat(0xff7020, { emissive: 0xff5010, emissiveIntensity: 2.5 }), x, y, z);
+      else {
+        for (const [px, pz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) b.paint(BOX, 0x3a2a1c, x + px, y + 1.8, z + pz, 0, 0.35, 3.6, 0.35);
+        b.paint(ROOF, 0x4a2e22, x, y + 3.6, z, 0, 4.4, 1.4, 7.6);
+        b.paint(BOX, 0x5a554c, x + 1.8, y + 1, z - 1.8, 0, 2.4, 2, 2);
+        b.paint(BOX, 0x4e4a44, x + 1.8, y + 3.4, z - 2.3, 0, 1, 4.8, 1);
+        b.add(BOX, mat(0xff7020, { emissive: 0xff5010, emissiveIntensity: 2.5 }), x + 1.8, y + 0.9, z - 0.78, 0, 1, 0.7, 0.05);
+      }
       this.smokeSource(x + 1.8, y + 6.1, z - 2.3, 0);
       this.barrel(x - 3.8, z + 1.2);
       this.crate(x - 3.6, z - 1.4, 0.3, 0.9);
@@ -1874,33 +1991,40 @@ export class World {
     // The Archive.
     {
       const x = -36, z = 6, y = this.groundY(x, z);
-      b.paint(BOX, 0x5a554c, x, y + 0.3, z, 0, 10.8, 0.6, 8.8);
-      b.paint(BOX, 0x7a7468, x, y + 3, z, 0, 10, 6, 8);
-      b.paint(BOX, 0x7a7468, x, y + 6.4, z, 0, 11, 0.8, 9);
-      b.paint(ROOF, 0x3a3a44, x, y + 6.8, z, Math.PI / 2, 4.9, 2.2, 11.4);
-      for (let i = 0; i < 4; i++) b.paint(CYL, 0x9a948a, x + 5.6, y + 3, z - 3 + i * 2, 0, 0.7, 6, 0.7);
-      b.add(BOX, mat(0xffc070, { emissive: 0xff9a40, emissiveIntensity: 1.3 }), x + 5.06, y + 1.5, z, 0, 0.05, 2.6, 1.4);
+      if (b.model('archive', [], x, y, z)) b.modelIn('archive.lit', mat(0xffc070, { emissive: 0xff9a40, emissiveIntensity: 1.3 }), x, y, z);
+      else {
+        b.paint(BOX, 0x5a554c, x, y + 0.3, z, 0, 10.8, 0.6, 8.8);
+        b.paint(BOX, 0x7a7468, x, y + 3, z, 0, 10, 6, 8);
+        b.paint(BOX, 0x7a7468, x, y + 6.4, z, 0, 11, 0.8, 9);
+        b.paint(ROOF, 0x3a3a44, x, y + 6.8, z, Math.PI / 2, 4.9, 2.2, 11.4);
+        for (let i = 0; i < 4; i++) b.paint(CYL, 0x9a948a, x + 5.6, y + 3, z - 3 + i * 2, 0, 0.7, 6, 0.7);
+        b.add(BOX, mat(0xffc070, { emissive: 0xff9a40, emissiveIntensity: 1.3 }), x + 5.06, y + 1.5, z, 0, 0.05, 2.6, 1.4);
+      }
       for (let i = 0; i < 3; i++) this.crate(x - 6.2, z - 2 + i * 1.4, i * 0.4, 0.75);
       this.addCollider(x, z, 6.4);
     }
     // Well, market stall, lamp posts, the Chronicler's desk.
     {
       const y = this.groundY(TOWN.x, TOWN.z);
-      b.paint(CYL, 0x6a645a, TOWN.x, y + 0.5, TOWN.z, 0, 3.2, 1.2, 3.2);
-      b.paint(CYL, 0x56514a, TOWN.x, y + 1.15, TOWN.z, 0, 3.4, 0.15, 3.4);
-      b.add(CYL, mat(0x0a1418, { rough: 0.1 }), TOWN.x, y + 1.05, TOWN.z, 0, 2.6, 0.05, 2.6);
-      for (const sx of [-1, 1]) b.paint(BOX, 0x3a2a1c, TOWN.x + sx * 1.4, y + 2, TOWN.z, 0, 0.2, 2.8, 0.2);
-      b.paint(BOX, 0x3a2a1c, TOWN.x, y + 3.3, TOWN.z, 0, 3.2, 0.18, 0.18);
-      b.paint(ROOF, 0x4a2e22, TOWN.x, y + 3.35, TOWN.z, Math.PI / 2, 1.3, 0.9, 3.6);
-      b.paint(CYL, 0x5a3e24, TOWN.x + 0.4, y + 2.3, TOWN.z, 0, 0.35, 0.4, 0.35);
+      if (!b.model('well', [0, 0x4a2e22], TOWN.x, y, TOWN.z)) {
+        b.paint(CYL, 0x6a645a, TOWN.x, y + 0.5, TOWN.z, 0, 3.2, 1.2, 3.2);
+        b.paint(CYL, 0x56514a, TOWN.x, y + 1.15, TOWN.z, 0, 3.4, 0.15, 3.4);
+        b.add(CYL, mat(0x0a1418, { rough: 0.1 }), TOWN.x, y + 1.05, TOWN.z, 0, 2.6, 0.05, 2.6);
+        for (const sx of [-1, 1]) b.paint(BOX, 0x3a2a1c, TOWN.x + sx * 1.4, y + 2, TOWN.z, 0, 0.2, 2.8, 0.2);
+        b.paint(BOX, 0x3a2a1c, TOWN.x, y + 3.3, TOWN.z, 0, 3.2, 0.18, 0.18);
+        b.paint(ROOF, 0x4a2e22, TOWN.x, y + 3.35, TOWN.z, Math.PI / 2, 1.3, 0.9, 3.6);
+        b.paint(CYL, 0x5a3e24, TOWN.x + 0.4, y + 2.3, TOWN.z, 0, 0.35, 0.4, 0.35);
+      }
       this.addCollider(TOWN.x, TOWN.z, 1.8);
       const sx = 16, sz = 40, sy = this.groundY(sx, sz);
-      b.paint(BOX, 0x5a3e24, sx, sy + 0.5, sz, 0, 4, 1, 1.6);
-      b.paint(BOX, 0x8a2a22, sx, sy + 2.6, sz, 0.15, 4.6, 0.12, 2.4);
-      for (let i = 0; i < 5; i++) b.paint(BOX, 0xd8cfb0, sx - 2 + i * 1.0, sy + 2.5 - 0.02, sz + 1.21, 0.15, 0.5, 0.14, 0.06);
-      for (const px of [-1.9, 1.9]) b.paint(BOX, 0x3a2a1c, sx + px, sy + 1.3, sz - 0.9, 0, 0.15, 2.6, 0.15);
-      const goods = [0xc8962a, 0x8a3a22, 0x5a7a3a, 0xd8c8a0];
-      for (let i = 0; i < 4; i++) b.paint(ICO, goods[i], sx - 1.4 + i * 0.95, sy + 1.15, sz + 0.1, i, 0.32, 0.22, 0.32);
+      if (!b.model('stall', [0x8a2a22], sx, sy, sz)) {
+        b.paint(BOX, 0x5a3e24, sx, sy + 0.5, sz, 0, 4, 1, 1.6);
+        b.paint(BOX, 0x8a2a22, sx, sy + 2.6, sz, 0.15, 4.6, 0.12, 2.4);
+        for (let i = 0; i < 5; i++) b.paint(BOX, 0xd8cfb0, sx - 2 + i * 1.0, sy + 2.5 - 0.02, sz + 1.21, 0.15, 0.5, 0.14, 0.06);
+        for (const px of [-1.9, 1.9]) b.paint(BOX, 0x3a2a1c, sx + px, sy + 1.3, sz - 0.9, 0, 0.15, 2.6, 0.15);
+        const goods = [0xc8962a, 0x8a3a22, 0x5a7a3a, 0xd8c8a0];
+        for (let i = 0; i < 4; i++) b.paint(ICO, goods[i], sx - 1.4 + i * 0.95, sy + 1.15, sz + 0.1, i, 0.32, 0.22, 0.32);
+      }
       this.crate(sx + 2.9, sz - 0.4, 0.2, 0.8);
       this.crate(sx + 3.0, sz + 0.7, 0.9, 0.6);
       this.barrel(sx - 2.9, sz + 0.3);
@@ -1914,11 +2038,14 @@ export class World {
       const glass = mat(0xffd890, { emissive: 0xffa040, emissiveIntensity: 2 });
       for (const [lx, lz] of [[6, 8], [-6, 8], [6, 32], [-6, 32], [8, -8], [-8, -8], [20, 26], [-20, 26]]) {
         const x = TOWN.x + lx, z = TOWN.z + lz, ly = this.groundY(x, z);
-        b.paint(CYL, 0x2a2422, x, ly + 1.6, z, 0, 0.16, 3.2, 0.16, 0, 0, true);
-        b.paint(BOX, 0x2a2422, x, ly + 0.15, z, 0, 0.4, 0.3, 0.4, 0, 0, true);
-        b.paint(BOX, 0x2a2422, x, ly + 3.62, z, 0, 0.42, 0.06, 0.42, 0, 0, true);
-        b.paint(CONE4, 0x2a2422, x, ly + 3.82, z, Math.PI / 4, 0.42, 0.32, 0.42, 0, 0, true);
-        b.add(BOX, glass, x, ly + 3.3, z, 0, 0.3, 0.5, 0.3);
+        if (b.model('lamp', [], x, ly, z)) b.modelIn('lamp.lit', glass, x, ly, z);
+        else {
+          b.paint(CYL, 0x2a2422, x, ly + 1.6, z, 0, 0.16, 3.2, 0.16, 0, 0, true);
+          b.paint(BOX, 0x2a2422, x, ly + 0.15, z, 0, 0.4, 0.3, 0.4, 0, 0, true);
+          b.paint(BOX, 0x2a2422, x, ly + 3.62, z, 0, 0.42, 0.06, 0.42, 0, 0, true);
+          b.paint(CONE4, 0x2a2422, x, ly + 3.82, z, Math.PI / 4, 0.42, 0.32, 0.42, 0, 0, true);
+          b.add(BOX, glass, x, ly + 3.3, z, 0, 0.3, 0.5, 0.3);
+        }
         const s = glowSprite(0xffb050, 1.6);
         s.position.set(x, ly + 3.3, z);
         this.root.add(s);
@@ -1985,18 +2112,20 @@ export class World {
       const { x, z } = s;
       const y = this.groundY(x, z);
       if (s.id === 'cookfire') {
-        for (let i = 0; i < 8; i++) {
+        if (!b.model('cookfire', [], x, y, z)) for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
           b.paint(ICO, i % 2 ? 0x6a645a : 0x5a554c, x + Math.cos(a) * 0.75, y + 0.12, z + Math.sin(a) * 0.75, a, 0.22, 0.16, 0.2);
         }
-        // Three logs crossed like a star (laid flat by rz, aimed by ry).
-        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14 + i * 0.05, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, 0, Math.PI / 2);
-        // A tripod and its pot.
-        for (let i = 0; i < 3; i++) {
-          const a = (i / 3) * Math.PI * 2 + 0.3;
-          b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, 0.35, true);
+        if (!worldMesh('cookfire')) {
+          // Three logs crossed like a star (laid flat by rz, aimed by ry).
+          for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14 + i * 0.05, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, 0, Math.PI / 2);
+          // A tripod and its pot.
+          for (let i = 0; i < 3; i++) {
+            const a = (i / 3) * Math.PI * 2 + 0.3;
+            b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, 0.35, true);
+          }
+          b.paint(CYL, 0x2a2a2c, x, y + 0.85, z, 0, 0.5, 0.35, 0.5, 0, 0, true);
         }
-        b.paint(CYL, 0x2a2a2c, x, y + 0.85, z, 0, 0.5, 0.35, 0.5, 0, 0, true);
         const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 6), mat(0xffa040, { emissive: 0xff6a10, emissiveIntensity: 2.2 }));
         flame.position.set(x, y + 0.42, z);
         this.root.add(flame);
@@ -2011,15 +2140,17 @@ export class World {
         this.loom(x, y, z);
       } else {
         // A trestle table with a vice, a saw, a bundle of arrows, and crates.
-        b.paint(BOX, 0x6a4a2a, x, y + 0.88, z, 0.4, 2.2, 0.1, 0.9);
-        for (const [dx, dz] of [[-0.95, -0.35], [0.95, -0.35], [-0.95, 0.35], [0.95, 0.35]]) {
-          const c = Math.cos(0.4), sn = Math.sin(0.4);
-          b.paint(BOX, 0x4a3420, x + dx * c + dz * sn, y + 0.42, z - dx * sn + dz * c, 0.4, 0.1, 0.84, 0.1);
+        if (!b.model('workbench', [], x, y, z, 0.4)) {
+          b.paint(BOX, 0x6a4a2a, x, y + 0.88, z, 0.4, 2.2, 0.1, 0.9);
+          for (const [dx, dz] of [[-0.95, -0.35], [0.95, -0.35], [-0.95, 0.35], [0.95, 0.35]]) {
+            const c = Math.cos(0.4), sn = Math.sin(0.4);
+            b.paint(BOX, 0x4a3420, x + dx * c + dz * sn, y + 0.42, z - dx * sn + dz * c, 0.4, 0.1, 0.84, 0.1);
+          }
+          b.paint(BOX, 0x3a3a3e, x + 0.7, y + 1.02, z - 0.25, 0.4, 0.22, 0.18, 0.16, 0, 0, true);
+          b.paint(BOX, 0x9a9aa0, x - 0.4, y + 0.95, z + 0.1, 0.9, 0.7, 0.02, 0.18, 0, 0, true);
+          // A bundle of arrows lying along the table.
+          for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.019, y + 0.95, z - 0.1 + i * 0.046, 0.4, 0.02, 0.8, 0.02, 0, Math.PI / 2);
         }
-        b.paint(BOX, 0x3a3a3e, x + 0.7, y + 1.02, z - 0.25, 0.4, 0.22, 0.18, 0.16, 0, 0, true);
-        b.paint(BOX, 0x9a9aa0, x - 0.4, y + 0.95, z + 0.1, 0.9, 0.7, 0.02, 0.18, 0, 0, true);
-        // A bundle of arrows lying along the table.
-        for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.019, y + 0.95, z - 0.1 + i * 0.046, 0.4, 0.02, 0.8, 0.02, 0, Math.PI / 2);
         this.crate(x + 1.6, z + 0.9, 0.2, 0.7);
         this.barrel(x - 1.6, z + 0.6);
         this.addCollider(x, z, 1.2);
@@ -2117,10 +2248,12 @@ export class World {
 
   private anvil(x: number, z: number) {
     const y = this.groundY(x, z);
-    this.batch.paint(BOX, 0x2a2a2c, x, y + 0.75, z, 0, 1.3, 0.35, 0.55, 0, 0, true);
-    this.batch.paint(BOX, 0x2a2a2c, x, y + 0.3, z, 0, 0.6, 0.6, 0.45, 0, 0, true);
-    this.batch.paint(CONE4, 0x2a2a2c, x + 0.85, y + 0.8, z, Math.PI / 4, 0.25, 0.5, 0.25, 0, Math.PI / 2, true);
-    this.batch.paint(CYL, 0x4a3624, x, y + 0.05, z, 0, 1.0, 0.1, 1.0);
+    if (!this.batch.model('anvil', [], x, y, z, 0, 1.15)) {
+      this.batch.paint(BOX, 0x2a2a2c, x, y + 0.75, z, 0, 1.3, 0.35, 0.55, 0, 0, true);
+      this.batch.paint(BOX, 0x2a2a2c, x, y + 0.3, z, 0, 0.6, 0.6, 0.45, 0, 0, true);
+      this.batch.paint(CONE4, 0x2a2a2c, x + 0.85, y + 0.8, z, Math.PI / 4, 0.25, 0.5, 0.25, 0, Math.PI / 2, true);
+      this.batch.paint(CYL, 0x4a3624, x, y + 0.05, z, 0, 1.0, 0.1, 1.0);
+    }
     this.addCollider(x, z, 0.8);
     this.interactables.push({ id: `anvil-${x}-${z}`, kind: 'anvil', x, y: y + 1, z, radius: 3, label: 'Anvil: upgrade and smith' });
   }
@@ -2131,8 +2264,8 @@ export class World {
       const y0 = Math.max(0.6, this.groundY(d.x, d.z - 4));
       for (let i = 0; i < len; i += 2) {
         const z = d.z - 6 + i;
-        this.batch.paint(BOX, i % 4 ? 0x4a3420 : 0x54402a, d.x, y0 + 0.2, z, 0, 3, 0.2, 1.9);
-        if (i % 4 === 0) for (const s of [-1.4, 1.4]) this.batch.paint(CYL, 0x3a2a1a, d.x + s, y0 - 2, z, 0, 0.3, 5, 0.3);
+        if (!this.batch.model('dock-plank', [], d.x, y0 + 0.2, z, (i % 4) * Math.PI / 2)) this.batch.paint(BOX, i % 4 ? 0x4a3420 : 0x54402a, d.x, y0 + 0.2, z, 0, 3, 0.2, 1.9);
+        if (i % 4 === 0) for (const s of [-1.4, 1.4]) if (!this.batch.model('piling', [], d.x + s, y0 - 2, z)) this.batch.paint(CYL, 0x3a2a1a, d.x + s, y0 - 2, z, 0, 0.3, 5, 0.3);
       }
       this.barrel(d.x - 1, d.z - 6.5);
       this.crate(d.x + 1.1, d.z - 6.3, 0.4, 0.7);
@@ -2157,16 +2290,19 @@ export class World {
     for (const s of SHRINES) {
       const y = this.groundY(s.x, s.z);
       const b = this.batch;
-      b.paint(CYL, 0x4e4a44, s.x, y + 0.1, s.z, 0, 4.2, 0.3, 4.2);
-      b.paint(CYL, 0x5a564e, s.x, y + 0.35, s.z, 0, 3.2, 0.5, 3.2);
-      b.paint(BOX, 0x5a564e, s.x, y + 1.3, s.z, 0.2, 0.6, 2.2, 0.6, 0.06);
-      b.paint(BOX, 0x6a665e, s.x, y + 2.45, s.z, 0.2, 0.8, 0.14, 0.8);
+      if (!b.model('shrine', [], s.x, y, s.z, 0.2)) {
+        b.paint(CYL, 0x4e4a44, s.x, y + 0.1, s.z, 0, 4.2, 0.3, 4.2);
+        b.paint(CYL, 0x5a564e, s.x, y + 0.35, s.z, 0, 3.2, 0.5, 3.2);
+        b.paint(BOX, 0x5a564e, s.x, y + 1.3, s.z, 0.2, 0.6, 2.2, 0.6, 0.06);
+        b.paint(BOX, 0x6a665e, s.x, y + 2.45, s.z, 0.2, 0.8, 0.14, 0.8);
+      }
       // Old standing stones around, clear of where the hero wakes.
       for (const a of [0.3, 2.0, 3.5, 4.9]) {
         const x = s.x + Math.cos(a) * 4.4;
         const z = s.z + Math.sin(a) * 4.4;
         const h = 1.2 + this.rand() * 1.1;
-        b.paint(BOX, 0x56524a, x, this.groundY(x, z) + h / 2 - 0.2, z, -a, 0.55, h, 0.4, 0, (this.rand() - 0.5) * 0.2);
+        const lean = (this.rand() - 0.5) * 0.2;
+        if (!b.model('monolith', [0, 0, 0, 0x56524a], x, this.groundY(x, z) - 0.2, z, -a, 0.55, h, 0.4, 0, lean)) b.paint(BOX, 0x56524a, x, this.groundY(x, z) + h / 2 - 0.2, z, -a, 0.55, h, 0.4, 0, lean);
         this.addCollider(x, z, 0.35);
       }
       const ring = new THREE.PlaneGeometry(6.4, 6.4).rotateX(-Math.PI / 2).translate(s.x, y + 0.62, s.z);
@@ -2203,14 +2339,17 @@ export class World {
   private brazier(x: number, z: number) {
     const y = this.groundY(x, z);
     const b = this.batch;
-    b.paint(CYL, 0x4e4a44, x, y + 0.15, z, 0, 1.1, 0.3, 1.1);
-    b.paint(CYL6, 0x56524a, x, y + 0.8, z, 0, 0.55, 1.2, 0.55);
-    b.paint(BOWL, 0x2a2624, x, y + 1.55, z, 0, 1, 1, 1, 0, 0, true);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * TAU + 0.4;
-      b.paint(CONE4, 0x2a2624, x + Math.cos(a) * 0.62, y + 1.86, z + Math.sin(a) * 0.62, a, 0.08, 0.3, 0.08, 0, 0, true);
+    if (b.model('brazier', [], x, y, z)) b.modelIn('brazier.lit', mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y, z);
+    else {
+      b.paint(CYL, 0x4e4a44, x, y + 0.15, z, 0, 1.1, 0.3, 1.1);
+      b.paint(CYL6, 0x56524a, x, y + 0.8, z, 0, 0.55, 1.2, 0.55);
+      b.paint(BOWL, 0x2a2624, x, y + 1.55, z, 0, 1, 1, 1, 0, 0, true);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * TAU + 0.4;
+        b.paint(CONE4, 0x2a2624, x + Math.cos(a) * 0.62, y + 1.86, z + Math.sin(a) * 0.62, a, 0.08, 0.3, 0.08, 0, 0, true);
+      }
+      b.add(CYL, mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y + 1.72, z, 0, 1.05, 0.06, 1.05);
     }
-    b.add(CYL, mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y + 1.72, z, 0, 1.05, 0.06, 1.05);
     this.smokeSource(x, y + 1.8, z, 1);
     if (!this.propMode) this.emitters.push({ pos: new THREE.Vector3(x, y + 2.4, z), color: 0xff8030, intensity: 10, distance: 16, flicker: 0.35 });
     this.addCollider(x, z, 0.65);
@@ -2232,7 +2371,7 @@ export class World {
           const x = t.x + Math.cos(a) * r;
           const z = t.z + Math.sin(a) * r;
           const h = 6 + this.rand() * 6;
-          this.batch.paint(BOX, stone, x, y + h / 2, z, -a, 2, h, 7.2);
+          if (!this.batch.model('pier', [0, 0, 0, stone], x, y, z, -a, 1, h, 1)) this.batch.paint(BOX, stone, x, y + h / 2, z, -a, 2, h, 7.2);
           this.batch.paint(BOX, 0x5a564e, x, y + h + 0.2, z, -a, 2.4, 0.4, 7.4);
           this.addCollider(x, z, 3.4);
         }
@@ -2245,7 +2384,8 @@ export class World {
           const x = t.x + Math.cos(a) * r;
           const z = t.z + Math.sin(a) * r;
           const h = 3 + this.rand() * 5;
-          this.batch.paint(BOX, stone, x, this.groundY(x, z) + h / 2 - 0.4, z, a, 1.6, h, 1.6, (this.rand() - 0.5) * 0.15);
+          const lean = (this.rand() - 0.5) * 0.15;
+          if (!this.batch.model('monolith', [0, 0, 0, stone], x, this.groundY(x, z) - 0.4, z, a, 1.6, h, 1.6, lean)) this.batch.paint(BOX, stone, x, this.groundY(x, z) + h / 2 - 0.4, z, a, 1.6, h, 1.6, lean);
           this.addCollider(x, z, 1.2);
         }
       }
@@ -2272,7 +2412,7 @@ export class World {
       sigil.position.set(t.x, y + 0.08, t.z);
       this.root.add(sigil);
       this.animated.push({ obj: sigil, kind: 'spin', base: 0 });
-      this.batch.paint(BOX, stone, t.x, y + 0.5, t.z, 0, 2.2, 1, 2.2);
+      if (!this.batch.model('altar', [0, 0, 0, stone], t.x, y, t.z)) this.batch.paint(BOX, stone, t.x, y + 0.5, t.z, 0, 2.2, 1, 2.2);
       const orb = glowSprite(color, 2.2);
       orb.position.set(t.x, y + 2, t.z);
       this.root.add(orb);
@@ -2396,15 +2536,20 @@ export class World {
           const x = l.x - 9 + col * 6 + (this.rand() - 0.5) * 1.5, z = l.z - 6 + row * 4.5 + (this.rand() - 0.5) * 1.2;
           const gy = this.groundY(x, z);
           const tall = this.rand() < 0.3;
-          b.paint(BOX, 0x5a5c58, x, gy + (tall ? 0.9 : 0.55), z, (this.rand() - 0.5) * 0.3, 0.8, tall ? 1.8 : 1.1, 0.22, (this.rand() - 0.5) * 0.25, (this.rand() - 0.5) * 0.25);
-          if (tall) b.paint(BOX, 0x5a5c58, x, gy + 1.45, z, 0, 0.7, 0.18, 0.2);
+          const turn = (this.rand() - 0.5) * 0.3, tipX = (this.rand() - 0.5) * 0.25, tipZ = (this.rand() - 0.5) * 0.25;
+          if (!b.model('headstone', [0, 0, 0, 0x5a5c58], x, gy, z, turn, 1, tall ? 1.6 : 1, 1, tipX, tipZ)) {
+            b.paint(BOX, 0x5a5c58, x, gy + (tall ? 0.9 : 0.55), z, turn, 0.8, tall ? 1.8 : 1.1, 0.22, tipX, tipZ);
+            if (tall) b.paint(BOX, 0x5a5c58, x, gy + 1.45, z, 0, 0.7, 0.18, 0.2);
+          }
           this.addCollider(x, z, 0.45);
         }
         const cx = l.x, cz = l.z - 13;
         const cy = this.groundY(cx, cz);
-        b.paint(BOX, 0x4a4c48, cx, cy + 1.6, cz, 0, 5, 3.2, 4);
-        b.paint(ROOF, 0x3a3c38, cx, cy + 3.2, cz, 0, 5.4, 1.6, 4.4);
-        b.paint(BOX, 0x101010, cx, cy + 1.1, cz + 2.01, 0, 1.4, 2.2, 0.05);
+        if (!b.model('crypt', [], cx, cy, cz)) {
+          b.paint(BOX, 0x4a4c48, cx, cy + 1.6, cz, 0, 5, 3.2, 4);
+          b.paint(ROOF, 0x3a3c38, cx, cy + 3.2, cz, 0, 5.4, 1.6, 4.4);
+          b.paint(BOX, 0x101010, cx, cy + 1.1, cz + 2.01, 0, 1.4, 2.2, 0.05);
+        }
         this.addCollider(cx, cz, 2.8);
         const tx = l.x + 10, tz = l.z + 8, ty = this.groundY(tx, tz);
         b.paint(TAPER, 0x2a2420, tx, ty + 2.5, tz, 0, 0.5, 5, 0.5);
@@ -2428,7 +2573,8 @@ export class World {
       const x = ex + Math.cos(a) * 14;
       const z = ez + Math.sin(a) * 14;
       const y = this.groundY(x, z);
-      this.batch.paint(BOX, stone, x, y + 3, z, -a + Math.PI / 2, 6, 6 + this.rand() * 3, 1.2);
+      const h = 6 + this.rand() * 3;
+      if (!this.batch.model('pier', [0, 0, 0, stone], x, y + 3 - h / 2, z, -a + Math.PI, 0.6, h, 6 / 7.2)) this.batch.paint(BOX, stone, x, y + 3, z, -a + Math.PI / 2, 6, h, 1.2);
       this.addCollider(x, z, 3);
       // An eye carved on the inner face, staring at the centre.
       const ix = ex + Math.cos(a) * 13.3;
@@ -2452,7 +2598,7 @@ export class World {
   private buildLoreAndLoot() {
     for (const l of LORE) {
       const y = this.groundY(l.x, l.z);
-      this.batch.paint(BOX, 0x5a564e, l.x, y + 1, l.z, 0.4, 1.4, 2.2, 0.35);
+      if (!this.batch.model('runestone', [0, 0, 0, 0x5a564e], l.x, y - 0.1, l.z, 0.4)) this.batch.paint(BOX, 0x5a564e, l.x, y + 1, l.z, 0.4, 1.4, 2.2, 0.35);
       const g = glowSprite(l.ancient ? 0x60ff90 : 0xffd080, 1.4, 0.7);
       g.position.set(l.x, y + 2.4, l.z);
       this.root.add(g);
@@ -2463,9 +2609,12 @@ export class World {
       const y = this.groundY(t.x, t.z);
       const g = new THREE.Group();
       g.position.set(t.x, y, t.z);
-      const ped = new THREE.Mesh(CYL, mat(0x4a463e));
-      ped.scale.set(0.8, 1.1, 0.8);
-      ped.position.y = 0.55;
+      const pm = worldMesh('pedestal');
+      const ped = pm ? new THREE.Mesh(worldGeometry(pm), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })) : new THREE.Mesh(CYL, mat(0x4a463e));
+      if (!pm) {
+        ped.scale.set(0.8, 1.1, 0.8);
+        ped.position.y = 0.55;
+      }
       g.add(ped);
       const book = new THREE.Mesh(BOX, mat(0x6a2a8a, { emissive: 0x6a30ff, emissiveIntensity: 0.8 }));
       book.scale.set(0.6, 0.12, 0.45);
@@ -2497,8 +2646,9 @@ export class World {
       const g = new THREE.Group();
       g.position.set(o.x, y, o.z);
       for (let k = 0; k < 5; k++) {
-        const c = new THREE.Mesh(CONE4, crystal);
-        c.scale.set(0.5, 1.2 + this.rand(), 0.5);
+        const shard = worldMesh('ore-shard');
+        const c = new THREE.Mesh(shard ? (oreGeo ??= worldGeometry(shard)) : CONE4, crystal);
+        c.scale.set(shard ? 0.9 : 0.5, 1.2 + this.rand(), shard ? 0.9 : 0.5);
         c.position.set((this.rand() - 0.5) * 1.2, 0.5, (this.rand() - 0.5) * 1.2);
         c.rotation.set((this.rand() - 0.5) * 0.8, 0, (this.rand() - 0.5) * 0.8);
         g.add(c);
