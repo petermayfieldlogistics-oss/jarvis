@@ -1309,6 +1309,146 @@ def siren(bt):
         bt.eye(tip + G(0, -0.05, 0), 0.02, [rl], rgb=0x80fff0, squash=2.5)
     return bt.build(0.007, 11000, ('CLOUDS', 0.03, 0.002), surface='fur'), ['fur', 'shell', 'glow', 'scale']
 
+
+# -------------------------------------------------------------- stone giants --
+# Humanoid great foes: the game's humanoid skeleton, its surfaces numbered
+# ('0' matte, '1' metal, '2' glow), coloured in fixed colours of their own.
+
+
+def shard(bt, base, d, length, r, bones, rgb):
+    """A crystal: a five-sided prism ending in a point."""
+    d = d.normalized()
+    tip = base + d * length
+    bt.tube([base - d * r, base + d * length * 0.6, tip], lambda t: r if t < 0.55 else r * (1 - t) / 0.45 + 0.002, bones, surface='2', slot=GLOW, rgb=rgb, n=5, flat=True)
+
+
+def stone_limbs(bt, n, B, rock, k_arm, k_leg, fist, plate=None):
+    """A stone giant's arms and legs, each segment a separate hewn block: boulder shoulders, thick forearms, great fists, pillar legs, block feet."""
+    plate = plate or rock
+    st = dict(stiff=3.2)
+    for side in ('L', 'R'):
+        arm, fore, hand = n['arm' + side], n['fore' + side], n['hand' + side]
+        leg, shin, foot = n['leg' + side], n['shin' + side], n['foot' + side]
+        A, F, H = B[arm], B[fore], B[hand]
+        sd = 1 if A.x > 0 else -1
+        bt.blob(gv(A, sd * 0.04, 0.04, 0), 0.14 * k_arm, 0.12 * k_arm, 0.135 * k_arm, bones=[arm, n['chest']], group='sh' + side, **plate, **st)
+        bt.capsule(gv(A, sd * 0.01, -0.04, 0), F + G(0, 0.02, 0), 0.1 * k_arm, 0.09 * k_arm, bones=[arm, fore], group='arm' + side, **rock, **st)
+        bt.capsule(F + G(0, -0.02, 0), gv(H, 0, 0.04, 0), 0.105 * k_arm, 0.11 * k_arm, bones=[fore, hand], group='fore' + side, **rock, **st)
+        bt.blob(gv(F, sd * 0.03, -0.1, 0.0), 0.12 * k_arm, 0.12 * k_arm, 0.12 * k_arm, bones=[fore], group='bracer' + side, **plate, **st)
+        bt.blob(gv(H, 0, -0.05, 0.02), 0.11 * fist, 0.11 * fist, 0.12 * fist, bones=[hand], group='fist' + side, **rock, **st)
+        for k in range(4):
+            bt.blob(gv(H, (k - 1.5) * 0.048 * fist, -0.11 * fist, 0.075 * fist), 0.03 * fist, 0.04 * fist, 0.04 * fist, bones=[hand], group='fist' + side, **rock, **st)
+        L, S, Ft = B[leg], B[shin], B[foot]
+        bt.blob(gv(L, sd * 0.02, -0.04, 0), 0.15 * k_leg, 0.14 * k_leg, 0.15 * k_leg, bones=[n['hips'], leg], group='hip' + side, **plate, **st)
+        bt.capsule(gv(L, 0, -0.08, 0), S + G(0, 0.03, 0), 0.115 * k_leg, 0.1 * k_leg, bones=[leg, shin], group='thigh' + side, **rock, **st)
+        bt.blob(gv(S, 0, 0.0, 0.05), 0.085 * k_leg, 0.085 * k_leg, 0.07 * k_leg, bones=[leg, shin], group='knee' + side, **plate, **st)
+        bt.capsule(S + G(0, -0.02, 0), gv(Ft, 0, 0.05, 0), 0.1 * k_leg, 0.105 * k_leg, bones=[shin, foot], group='shin' + side, **rock, **st)
+        bt.blob(gv(Ft, 0, -0.02, 0.06), 0.11 * k_leg, 0.07 * k_leg, 0.17 * k_leg, bones=[foot], group='foot' + side, **plate, **st)
+
+
+@builder('h-6ad1895d', 0x9a8a6a)
+def colossus(bt):
+    """Zephyron, the storm colossus: a sandstone giant, cracked and weathered, shot through with storm-blue crystal."""
+    n, B = bt.n, bt.B
+    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
+    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
+    sand = dict(slot=FIXED, rgb=0x9a8a6a, mottle=0.35)
+    pale = dict(slot=FIXED, rgb=0xb4a482, mottle=0.3)
+    blue = 0x58b4ff
+    # The trunk: a great chest, a narrower waist, a belt of stone.
+    st = dict(stiff=3.2)
+    bt.blob(gv(C, 0, 0.04, 0.0), 0.3, 0.22, 0.2, bones=[chest], group='chest', **pale, **st)
+    bt.blob(gv(C, 0, 0.12, -0.06), 0.27, 0.14, 0.18, bones=[chest], group='chest', **sand, **st)
+    bt.capsule(gv(C, 0, -0.1, 0), gv(Sp, 0, -0.02, 0), 0.2, 0.17, bones=[chest, spine], group='waist', **sand, **st)
+    bt.capsule(gv(Sp, 0, 0, 0), gv(Hp, 0, -0.04, 0), 0.17, 0.19, bones=[spine, hips], group='waist', **sand, **st)
+    for x, y, z, r in ((0.15, 0.1, 0.17, 0.11), (-0.15, 0.1, 0.17, 0.11), (0.0, -0.05, 0.18, 0.1)):
+        bt.blob(gv(C, x, y, z), r * 1.1, r * 0.95, r * 0.5, bones=[chest], group=f'plate{x}{y}', **pale, **st)
+    bt.tube([gv(Hp, 0, 0.06, 0), gv(Hp, 0, 0.14, 0)], 0.24, [hips, spine], surface='0', rgb=0x6a5a40, n=12, squash=0.8, wide=Vector((1, 0, 0)))
+    # A loincloth hanging front and back.
+    for fz in (-1, 1):
+        a = gv(Hp, 0, 0.06, fz * 0.17)
+        bt.tube([a, a + G(0, -0.2, fz * 0.04), a + G(0, -0.4, fz * 0.06)], lambda t: 0.13 * (1 - 0.3 * t), [hips], surface='0', rgb=0x6a5a40, n=6, squash=0.15, wide=Vector((1, 0, 0)))
+    # The head: a stone helm with no face, a glowing visor slit, a crown of crystal.
+    bt.capsule(gv(C, 0, 0.18, -0.02), gv(Hd, 0, 0.02, 0), 0.1, 0.085, bones=[chest, head], group='neck', **sand, **st)
+    bt.blob(gv(Hd, 0, 0.13, 0.0), 0.12, 0.14, 0.13, bones=[head], group='head', **pale, **st)
+    bt.blob(gv(Hd, 0, 0.21, -0.01), 0.09, 0.05, 0.1, bones=[head], group='head', **sand, **st)
+    bt.tube([gv(Hd, -0.085, 0.15, 0.13), gv(Hd, 0.085, 0.15, 0.13)], 0.016, [head], surface='2', slot=GLOW, rgb=blue, n=6)
+    for x, y, z, rx, rz in ((0, 0.3, -0.02, 0, 0.0), (0.06, 0.27, -0.03, 0, -0.45), (-0.06, 0.27, -0.03, 0, 0.45), (0.03, 0.25, -0.09, -0.5, -0.2), (-0.03, 0.25, -0.09, -0.5, 0.2)):
+        shard(bt, gv(Hd, x, y - 0.03, z), G(-math.sin(rz), math.cos(rz) * math.cos(rx), math.sin(rx)), 0.15, 0.03, [head], blue)
+    # Arms and legs of stone.
+    stone_limbs(bt, n, B, sand, 1.35, 1.3, 1.4, plate=pale)
+    # Crystal growing out of shoulders, forearms, thighs and back.
+    for side in ('L', 'R'):
+        A, F, L = B[n['arm' + side]], B[n['fore' + side]], B[n['leg' + side]]
+        sd = 1 if A.x > 0 else -1
+        for dx, dy, dz, ln in ((0.12, 0.14, 0.02, 0.22), (0.18, 0.08, -0.06, 0.18), (0.05, 0.16, -0.08, 0.16)):
+            shard(bt, gv(A, sd * dx, dy, dz), G(sd * (0.4 + dx), 1, dz * 2), ln, 0.045, [n['arm' + side]], blue)
+        shard(bt, gv(F, sd * 0.14, -0.1, -0.04), G(sd, 0.4, -0.3), 0.14, 0.035, [n['fore' + side]], blue)
+        shard(bt, gv(L, sd * 0.17, -0.12, 0.0), G(sd, 0.2, 0.1), 0.12, 0.03, [n['leg' + side]], blue)
+    for x, y, rx, rz in ((0.1, 0.23, -0.7, -0.3), (-0.08, 0.26, -0.8, 0.35), (0.0, 0.13, -1.0, 0), (0.16, 0.06, -0.9, -0.6), (-0.15, 0.04, -0.9, 0.6)):
+        shard(bt, gv(C, x, y, -0.2), G(-math.sin(rz) * 0.6, 0.6, -1), 0.22, 0.05, [chest], blue)
+    # The storm core in the chest, cracks running out of it.
+    core = bt.surface(gv(C, 0, 0.04, 0.8), G(0, 0, -1))
+    bt.eye(core, 0.075, [chest], rgb=0x7ac8ff)
+    for i in range(6):
+        a = i / 6 * math.tau + 0.3
+        pts = [bt.surface(gv(C, math.sin(a) * r, 0.04 + math.cos(a) * r, 0.8), G(0, 0, -1)) + G(0, 0, 0.004) for r in (0.07, 0.13, 0.19)]
+        bt.tube(pts, lambda t: 0.012 * (1 - t) + 0.003, [chest], surface='2', slot=GLOW, rgb=blue, n=4)
+    # A tattered cape hanging from the shoulders.
+    cape = [k for k in range(len(B)) if bt.parent[k] == chest and abs(B[k].x) < 0.01 and B[k].y > 0.1]
+    if cape:
+        chain_ = [cape[0]]
+        while bt.child(chain_[-1]) is not None:
+            chain_.append(bt.child(chain_[-1]))
+        pts = [B[k] for k in chain_]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.6
+        bt.tube(curve(pts + [tip], 3), lambda t: 0.36 * (1 + 0.15 * t) * (1 - 0.2 * t * t), chain_, surface='0', rgb=0x5a4a30, n=10, squash=0.08, wide=Vector((1, 0, 0)))
+    return bt.build(0.01, 4200, ('VORONOI', 0.07, 0.016), surface='0', facet=True), ['0', '1', '2']
+
+
+@builder('h-8277b566', 0x2a1c18)
+def golem(bt):
+    """Ignaroth, the magma golem: hunched black basalt in warm plates, molten seams, a furnace in its chest, fists like anvils."""
+    n, B = bt.n, bt.B
+    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
+    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
+    rock = dict(slot=FIXED, rgb=0x2e2420, mottle=0.3)
+    plate = dict(slot=FIXED, rgb=0x6a5040, mottle=0.35)
+    lava = 0xff6a20
+    st = dict(stiff=3.2)
+    bt.blob(gv(C, 0, 0.02, 0.02), 0.32, 0.23, 0.22, bones=[chest], group='chest', **rock, **st)
+    bt.blob(gv(C, 0, 0.14, -0.1), 0.28, 0.16, 0.18, bones=[chest], group='chest', **rock, **st)
+    bt.capsule(gv(C, 0, -0.1, 0), gv(Sp, 0, 0, 0), 0.21, 0.18, bones=[chest, spine], group='waist', **rock, **st)
+    bt.capsule(gv(Sp, 0, 0, 0), gv(Hp, 0, -0.04, 0), 0.18, 0.2, bones=[spine, hips], group='waist', **rock, **st)
+    # Plates of warm basalt over chest, back and shoulders, each its own slab.
+    for i, (x, y, z, r) in enumerate(((0.14, 0.12, 0.18, 0.12), (-0.14, 0.1, 0.18, 0.12), (0.0, -0.03, 0.2, 0.11), (0.12, 0.2, -0.18, 0.13), (-0.13, 0.17, -0.2, 0.13), (0.0, 0.05, -0.24, 0.12))):
+        bt.blob(gv(C, x, y, z), r * 1.15, r * 0.95, r * 0.5, bones=[chest], group=f'plate{i}', **plate, **st)
+    # The head: a lump of rock sunk between the shoulders, two burning eyes and a molten mouth.
+    bt.blob(gv(Hd, 0, 0.08, 0.06), 0.12, 0.11, 0.12, bones=[head], group='head', **plate, **st)
+    bt.blob(gv(Hd, 0, 0.14, 0.03), 0.11, 0.05, 0.09, bones=[head], group='brow', **rock, **st)
+    for sd in (-1, 1):
+        e = bt.surface(gv(Hd, sd * 0.05, 0.1, 0.8), G(0, 0, -1))
+        bt.eye(e + G(0, 0, 0.01), 0.024, [head], rgb=0xffa040, squash=0.6)
+    m = bt.surface(gv(Hd, 0, 0.03, 0.8), G(0, 0, -1))
+    bt.tube([m + G(-0.05, 0, 0.005), m + G(0, -0.008, 0.008), m + G(0.05, 0, 0.005)], 0.012, [head], surface='2', slot=GLOW, rgb=lava, n=4)
+    stone_limbs(bt, n, B, rock, 1.5, 1.4, 1.95, plate=plate)
+    # Molten seams over the limbs and the trunk; the furnace core.
+    for side in ('L', 'R'):
+        A, F, L, S = B[n['arm' + side]], B[n['fore' + side]], B[n['leg' + side]], B[n['shin' + side]]
+        sd = 1 if A.x > 0 else -1
+        for bone, P, dy0, dy1 in ((n['arm' + side], A, -0.05, -0.24), (n['fore' + side], F, -0.04, -0.22), (n['leg' + side], L, -0.1, -0.36), (n['shin' + side], S, -0.05, -0.3)):
+            pts = [bt.surface(gv(P, sd * 0.6, dy, 0.06 + 0.03 * math.sin(dy * 30)), G(-sd, 0, 0)) + G(sd * 0.008, 0, 0) for dy in (dy0, (dy0 + dy1) / 2, dy1)]
+            bt.tube(pts, lambda t: 0.014 * math.sin(math.pi * min(1, 0.15 + t)) + 0.004, [bone], surface='2', slot=GLOW, rgb=lava, n=4)
+    for x, y, rz in ((0.08, 0.13, 0.6), (0.14, 0.0, -0.4), (0.05, -0.12, 0.3), (-0.1, 0.1, -0.7), (-0.13, -0.07, 0.5)):
+        for fz in (1, -1):
+            a = gv(C, x, y, 0.8 * fz)
+            p0 = bt.surface(a, G(0, 0, -fz))
+            p1 = bt.surface(a + G(math.sin(rz) * 0.1, math.cos(rz) * 0.1, 0), G(0, 0, -fz))
+            bt.tube([p0 + G(0, 0, 0.006 * fz), p1 + G(0, 0, 0.006 * fz)], lambda t: 0.012, [chest], surface='2', slot=GLOW, rgb=lava, n=4)
+    core = bt.surface(gv(C, 0, 0.02, 0.8), G(0, 0, -1))
+    bt.eye(core, 0.08, [chest], rgb=0xffb050)
+    return bt.build(0.01, 4200, ('VORONOI', 0.06, 0.018), surface='0', facet=True), ['0', '1', '2']
+
 # -------------------------------------------------------------------- main --
 
 

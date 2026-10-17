@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
+import type { Rig as HRig } from '../src/engine/humanoid';
 
 // Glow sprites draw on a canvas; a stand-in is enough here.
 const ctx = new Proxy({}, { get: () => () => ({ addColorStop() {} }) });
@@ -41,7 +42,10 @@ export const KINDS: Record<string, () => Rig> = {
 // The humanoid monsters and great foes: build each once, then dump every look that was made.
 for (const def of Object.values(W.ENEMIES)) if (def.body === 'humanoid') E.enemyModel(def);
 for (const def of Object.values(W.BOSSES)) if (['colossus', 'golem', 'champion'].includes(def.model)) E.bossModel(def);
-for (const [key, rig] of H.humanoidTemplates()) KINDS[humanoidKey(key)] = () => rig as unknown as Rig;
+for (const [key, rig] of H.humanoidTemplates()) {
+  KINDS[humanoidKey(key)] = () => rig as unknown as Rig;
+  console.log('look', humanoidKey(key), key.slice(0, 90));
+}
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'blender', 'rigs');
 mkdirSync(out, { recursive: true });
@@ -84,7 +88,18 @@ for (const [kind, build] of Object.entries(KINDS)) {
       pincers: j.pincers?.map((p) => ({ arm: at(p.arm), fore: at(p.fore), hand: at(p.hand), finger: at(p.finger), side: p.side })),
       strands: j.strands?.map((c) => c.map(at)), legLen: j.legLen, girth: j.girth,
     }
-    : null;
+    : (rig as unknown as HRig).hips
+      ? (() => {
+        // A humanoid: its named joints.
+        const r = rig as unknown as HRig;
+        return {
+          body: at(r.body), hips: at(r.hips), spine: at(r.spine), chest: at(r.chest), head: at(r.head),
+          armL: at(r.armL), foreL: at(r.foreArmL), handL: at(r.handL), armR: at(r.armR), foreR: at(r.foreArmR), handR: at(r.handR),
+          legL: at(r.legL), shinL: at(r.shinL), footL: at(r.footL), legR: at(r.legR), shinR: at(r.shinR), footR: at(r.footR),
+          cape: at(r.cape), humanoid: true,
+        };
+      })()
+      : null;
   const data = {
     kind,
     names,

@@ -46,7 +46,7 @@ def hexrgb(h):
 class Part:
     """A body part: where it is, how it's coloured and which bones it follows."""
 
-    def __init__(self, bones, slot=MAIN, rgb=0xffffff, belly=False, mottle=0.0, stripes=None, back=None, light=None, under=LIGHT, fade=None):
+    def __init__(self, bones, slot=MAIN, rgb=0xffffff, belly=False, mottle=0.0, stripes=None, back=None, light=None, under=LIGHT, fade=None, group='main'):
         self.bones = list(bones)
         self.slot = slot
         self.rgb = rgb
@@ -59,6 +59,8 @@ class Part:
         self.under = under
         # (y0, y1, k): darker toward y0 (game height), down to k of the shade.
         self.fade = fade
+        # Parts of one group melt together; separate groups stay separate pieces (a giant's arm beside its body).
+        self.group = group
 
     def dist(self, p):
         raise NotImplementedError
@@ -111,6 +113,8 @@ class Beast:
         self.balls = []  # (Part, metaball element spec)
         self.hard = []  # (surface, bmesh, Part)
         self.rng = random.Random(seed)
+        # Where glowing parts go ('glow' on creatures; humanoids number their surfaces).
+        self.glow_surface = '2' if (self.n or {}).get('humanoid') else 'glow'
 
     # ------------------------------------------------------------ organic --
 
@@ -214,7 +218,7 @@ class Beast:
             v.co += Vector(c)
         for f in bm.faces:
             f.smooth = True
-        self.hard.append(('glow' if glow else 'shell', bm, Part(bones, slot=GLOW if glow else FIXED, rgb=rgb)))
+        self.hard.append((self.glow_surface if glow else 'shell', bm, Part(bones, slot=GLOW if glow else FIXED, rgb=rgb)))
 
     # -------------------------------------------------------------- build --
 
@@ -222,11 +226,28 @@ class Beast:
         """A bone's first child (or none)."""
         return self.children[i][0] if self.children[i] else None
 
-    def build(self, voxel, tris, detail=('CLOUDS', 0.03, 0.003), surface='fur'):
-        """Melts the organic parts into one surface and returns every finished surface's arrays."""
+    def build(self, voxel, tris, detail=('CLOUDS', 0.03, 0.003), surface='fur', facet=False):
+        """Melts the organic parts into one surface (faceted, like cut stone, with `facet`) and returns every finished surface's arrays."""
         out = {}
         if self.balls:
-            out[surface] = self._organic(voxel, tris, detail)
+            groups = {}
+            for part, spec in self.balls:
+                groups.setdefault(part.group, []).append((part, spec))
+            weight = {g: sum((sp[3][0] if sp[0] == 'CAPSULE' else 1) * (sp[4] if sp[0] == 'CAPSULE' else max(sp[3])) ** 2 + 1e-4 for _, sp in items) for g, items in groups.items()}
+            total = sum(weight.values())
+            recs = [self._organic(voxel, max(200, int(tris * weight[g] / total)), detail, items) for g, items in groups.items()]
+            rec = recs[0]
+            for r in recs[1:]:
+                off = len(rec['verts'])
+                rec['verts'].extend(r['verts'])
+                rec['normals'].extend(r['normals'])
+                rec['parts'].extend(r['parts'])
+                rec['tris'].extend((a + off, b + off, c + off) for a, b, c in r['tris'])
+            if facet:
+                # Weights first, on the welded surface, so facets sharing a corner move together.
+                rec['weights'] = self._weights(rec)
+                rec = unweld(rec)
+            out[surface] = rec
         by_surf = {}
         for surf, bm, part in self.hard:
             by_surf.setdefault(surf, []).append((bm, part))
@@ -245,27 +266,32 @@ class Beast:
                     tri.append((f[0], f[k], f[k + 1]))
             rec = out.get(surf)
             normals = vertex_normals(verts, tri)
+            mine = {'verts': verts, 'normals': normals, 'parts': parts, 'tris': tri}
             if rec:
+                if 'weights' in rec:
+                    rec['weights'].extend(self._weights(mine))
                 off = len(rec['verts'])
                 rec['verts'].extend(verts)
                 rec['normals'].extend(normals)
                 rec['parts'].extend(parts)
                 rec['tris'].extend((a + off, b + off, c + off) for a, b, c in tri)
             else:
-                out[surf] = {'verts': verts, 'normals': normals, 'parts': parts, 'tris': tri}
+                out[surf] = mine
         for surf, rec in out.items():
-            rec['weights'] = self._weights(rec)
+            if 'weights' not in rec:
+                rec['weights'] = self._weights(rec)
         self._ao(out)
         return out
 
-    def _organic(self, voxel, tris, detail):
+    def _organic(self, voxel, tris, detail, balls=None):
         mb = bpy.data.metaballs.new('body')
         mb.resolution = voxel * 0.8
         mb.render_resolution = voxel * 0.8
         mb.threshold = 0.6
         ob = bpy.data.objects.new('body', mb)
         bpy.context.collection.objects.link(ob)
-        for part, (kind, co, q, size, r, stiff, neg) in self.balls:
+        balls = balls if balls is not None else self.balls
+        for part, (kind, co, q, size, r, stiff, neg) in balls:
             e = mb.elements.new(type=kind)
             e.co = co
             e.rotation = q
@@ -311,8 +337,8 @@ class Beast:
         # Each vertex belongs to the part whose surface it lies nearest.
         allparts = []
         seen = set()
-        for part, _ in self.balls:
-            if id(part) not in seen and not any(spec[6] for p2, spec in self.balls if p2 is part):
+        for part, _ in balls:
+            if id(part) not in seen and not any(spec[6] for p2, spec in balls if p2 is part):
                 seen.add(id(part))
                 allparts.append(part)
         parts = [min(allparts, key=lambda pt: pt.dist(v)) for v in verts]
@@ -425,6 +451,23 @@ class Beast:
 def noise3(p):
     """A cheap smooth noise in 0..1."""
     return 0.5 + 0.25 * (math.sin(p.x * 1.7 + p.y * 2.3) * math.cos(p.y * 1.3 - p.z * 2.9) + math.sin(p.z * 2.1 + p.x * 0.7))
+
+
+def unweld(rec):
+    """Every triangle its own corners, lit by its own face: cut-stone facets."""
+    verts, parts, tris = [], [], []
+    normals, weights = [], []
+    for a, b, c in rec['tris']:
+        va, vb, vc = rec['verts'][a], rec['verts'][b], rec['verts'][c]
+        n = (vb - va).cross(vc - va)
+        n = n.normalized() if n.length > 1e-12 else Vector((0, 0, 1))
+        i = len(verts)
+        verts.extend([va.copy(), vb.copy(), vc.copy()])
+        normals.extend([n, n, n])
+        parts.extend([rec['parts'][a], rec['parts'][b], rec['parts'][c]])
+        weights.extend([rec['weights'][a], rec['weights'][b], rec['weights'][c]])
+        tris.append((i, i + 1, i + 2))
+    return {'verts': verts, 'normals': normals, 'parts': parts, 'tris': tris, 'weights': weights}
 
 
 def vertex_normals(verts, tris):

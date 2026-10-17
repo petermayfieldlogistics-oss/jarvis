@@ -10,7 +10,8 @@
 // blend instead of snapping.
 
 import * as THREE from 'three';
-import { blendCreature, blendGeometry, humanoidKey } from './assets';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { blendBody, blendGeometry, humanoidKey } from './assets';
 import { pivot } from './models';
 import { FLURRY_AT, strideRate, type AnimState, type AttackStyle } from './anim';
 
@@ -723,21 +724,10 @@ class Kit {
   finish(root: THREE.Group, radius: number, ink = false): void {
     root.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones as THREE.Bone[]);
-    const ib = this.inkBuf;
-    if (ink && ib) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(ib.p, 3));
-      g.setAttribute('normal', new THREE.Float32BufferAttribute(ib.n, 3));
-      g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(ib.si, 4));
-      g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(ib.sw, 4));
-      g.setIndex(ib.ix);
-      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), radius);
-      const mesh = new InkMesh(g, inkMaterial());
-      mesh.bind(skeleton, IDENTITY);
-      mesh.boundingSphere = g.boundingSphere.clone();
-      mesh.userData.keep = true;
-      root.add(mesh);
-    }
+    // Remodelled in Blender (great foes): its surfaces in place of those it replaces, on the same bones.
+    const blend = building ? blendBody(humanoidKey(building), this.bones) : null;
+    const remade = blend && [...blend.surfaces.values()].every((b) => b.mode === 'pal') ? blend : null;
+    const surfaces = new Map<number, THREE.BufferGeometry>();
     this.bufs.forEach((b, s) => {
       if (!b) return;
       const g = new THREE.BufferGeometry();
@@ -747,10 +737,47 @@ class Kit {
       g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(b.si, 4));
       g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(b.sw, 4));
       g.setIndex(b.ix);
-      // Remodelled in Blender (enemies and great foes): the Blender surface on the same bones.
-      const blend = building && s !== GLOW ? blendCreature(humanoidKey(building), String(s), this.bones) : null;
-      const geo = blend ? blendGeometry(blend, g) : g;
-      if (blend) g.dispose();
+      const old = blend && !remade && s !== GLOW ? blend.surfaces.get(String(s)) : undefined;
+      if (old) {
+        surfaces.set(s, blendGeometry(old, g));
+        g.dispose();
+      } else surfaces.set(s, g);
+    });
+    if (remade) {
+      for (const name of remade.replace) {
+        surfaces.get(+name)?.dispose();
+        surfaces.delete(+name);
+      }
+      for (const [name, b] of remade.surfaces) surfaces.set(+name, blendGeometry(b, null, 0x808080, +name === GLOW));
+    }
+    const ib = this.inkBuf;
+    if (ink && (ib || remade)) {
+      let g: THREE.BufferGeometry;
+      if (remade) {
+        // The outline drawn round the new surfaces (their normals are smooth already).
+        const parts = [...surfaces.entries()].filter(([s]) => s !== GLOW).map(([, geo]) => {
+          const c = new THREE.BufferGeometry();
+          for (const a of ['position', 'normal', 'skinIndex', 'skinWeight']) c.setAttribute(a, geo.attributes[a]);
+          c.setIndex(geo.index);
+          return c;
+        });
+        g = mergeGeometries(parts, false)!;
+      } else {
+        g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(ib!.p, 3));
+        g.setAttribute('normal', new THREE.Float32BufferAttribute(ib!.n, 3));
+        g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(ib!.si, 4));
+        g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(ib!.sw, 4));
+        g.setIndex(ib!.ix);
+      }
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), radius);
+      const mesh = new InkMesh(g, inkMaterial());
+      mesh.bind(skeleton, IDENTITY);
+      mesh.boundingSphere = g.boundingSphere.clone();
+      mesh.userData.keep = true;
+      root.add(mesh);
+    }
+    for (const [s, geo] of surfaces) {
       // Poses reach well outside the bind pose; cull against a generous sphere.
       geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), radius);
       const mesh = new THREE.SkinnedMesh(geo, surfaceMaterial(s));
@@ -760,7 +787,7 @@ class Kit {
       mesh.castShadow = s !== GLOW;
       mesh.userData.keep = true;
       root.add(mesh);
-    });
+    }
   }
 }
 
