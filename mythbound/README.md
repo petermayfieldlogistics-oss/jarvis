@@ -307,3 +307,14 @@ won't strike first, the ruins appear on the map, but dark damage hurts 20% more.
   can reach them; the blow is sent to that player's game, which lands it on their hero)
 - `src/ui/` – title, character creator, HUD (framed stat and boss bars, spell cooldown sweeps, compass minimap), menus,
   dialogs; the gold ornaments are inline SVGs in `src/styles.css`
+
+## Blender models
+
+Weapons and the shield are modelled in Blender by `blender/weapons.py`, which
+writes `src/assets/weapons.glb`. To rebuild them (Blender as a Python module):
+
+    uv venv -p 3.13 .blenv && uv pip install -p .blenv/bin/python bpy
+    .blenv/bin/python blender/weapons.py --preview   # renders blender/preview/*.png too
+
+The game loads the file before building the world and falls back to the
+models made in code for anything it lacks.

@@ -9,6 +9,7 @@ import type { Character } from './rules/character';
 import { showFront } from './ui/account';
 import { showCreator, showTitle } from './ui/creator';
 import { cleanEdits } from './engine/builder';
+import { loadAssets } from './engine/assets';
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
@@ -66,8 +67,8 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
   loading.className = 'loading';
   loading.innerHTML = '<div>Forging the world…</div>';
   app.appendChild(loading);
-  // Let the loading text paint before the heavy world build.
-  setTimeout(() => {
+  // Let the loading text paint before the heavy world build (the Blender models load first).
+  setTimeout(() => void loadAssets().then(() => {
     const host = document.createElement('div');
     host.className = 'game';
     app.appendChild(host);
@@ -102,7 +103,7 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
     g.start();
     if (fresh) g.story.intro();
     if (invite) joinInvite(g, invite);
-  }, 50);
+  }), 50);
 }
 
 /** Opens the build a link named: the world as its builder left it. */
@@ -141,5 +142,7 @@ declare global {
   }
 }
 window.mythbound = { game: () => game, height: heightAt, cloud };
+// Fetch the Blender models while the title screen shows.
+void loadAssets();
 
 title();

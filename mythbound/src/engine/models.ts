@@ -2,6 +2,7 @@
 // weapons and props. Characters live in humanoid.ts and creatures.ts.
 
 import * as THREE from 'three';
+import { blendModel } from './assets';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RUNES, type RuneId, type WeaponKind } from '../data/defs';
 
@@ -126,7 +127,8 @@ export function outline(root: THREE.Object3D) {
 export function disposeObject(root: THREE.Object3D) {
   root.traverse((o) => {
     const m = o as THREE.Mesh;
-    m.geometry?.dispose();
+    // Blender models' geometry is shared by every copy: it stays.
+    if (!m.userData.shared) m.geometry?.dispose();
     if ((o as THREE.Sprite).isSprite) ((o as THREE.Sprite).material as THREE.SpriteMaterial).dispose();
   });
 }
@@ -378,10 +380,32 @@ export function buildWraps(variant: string, left: boolean, rune?: RuneId): THREE
   return g;
 }
 
+/** Where a rune glows on the Blender-made weapons (their faces sit a little differently). */
+const BLEND_RUNE_SPOTS: Partial<Record<WeaponKind, number[][]>> = {
+  sword: [[0, 0.42, 0.0098, 0.08, 0], [0, 0.42, -0.0098, 0.08, 0]],
+  longsword: [[0, 0.42, 0.0092, 0.08, 0], [0, 0.42, -0.0092, 0.08, 0]],
+  greatsword: [[0, 0.55, 0.0118, 0.1, 0], [0, 0.55, -0.0118, 0.1, 0], [0, 0.85, 0.0112, 0.1, 0], [0, 0.85, -0.0112, 0.1, 0]],
+  dagger: [[0, 0.22, 0.0072, 0.05, 0], [0, 0.22, -0.0072, 0.05, 0]],
+  axe: [[0.0245, 0.8, 0.08, 0.08, PI_2], [-0.0245, 0.8, 0.08, 0.08, -PI_2]],
+  battleaxe: [[0.0245, 0.93, 0.08, 0.08, PI_2], [-0.0245, 0.93, 0.08, 0.08, -PI_2], [0.0245, 0.93, -0.08, 0.08, PI_2], [-0.0245, 0.93, -0.08, 0.08, -PI_2]],
+  spear: [[0, 1.6, 0.0092, 0.07, 0], [0, 1.6, -0.0092, 0.07, Math.PI]],
+};
+
 export function buildWeapon(kind: WeaponKind, legendary = false, rune?: RuneId, id?: string): THREE.Group {
   const g = new THREE.Group();
   // The animator reads this to carry the weapon the right way.
   g.userData.kind = kind;
+  // Modelled in Blender: the model, and any rune glowing on it.
+  const blend = id ? blendModel(id) : null;
+  if (blend) {
+    g.add(blend);
+    if (rune) {
+      const c = RUNES[rune].color;
+      const m = mat(c, { emissive: c, emissiveIntensity: 2.2 });
+      for (const [x, y, z, sz, turn] of BLEND_RUNE_SPOTS[kind] ?? RUNE_SPOTS[kind]) glyph(rune, m, g, x, y, z, sz, turn);
+    }
+    return g;
+  }
   const PI = Math.PI;
   // Brushed rather than mirror-like: the scene has no reflections, so very
   // metallic surfaces would render almost black.
@@ -1177,6 +1201,11 @@ export function setBowString(bow: THREE.Object3D, nock: THREE.Vector3, arrow: bo
 
 export function buildShield(): THREE.Group {
   const g = new THREE.Group();
+  const blend = blendModel('shield');
+  if (blend) {
+    g.add(blend);
+    return g;
+  }
   const wood = mat(0x5a3e26, { rough: 0.85 });
   const iron = mat(0x8c8a84, { rough: 0.45, metal: 0.4 });
   const brass = mat(0xb8944a, { rough: 0.35, metal: 0.5 });
