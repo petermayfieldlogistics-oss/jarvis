@@ -418,6 +418,7 @@ export class Menu {
       <li>${k('G')} combine spells (Mage Lv 3+) · ${k('V')} fly (Draco Lv 6+) · ${k('B')} call or ride your horse (Shift gallops)</li>
       <li>${k('H')} drink flask · ${k('X')} eat (fish, crops) · ${k('Y')} satchel (fruit and sweets) · ${k('T')} switch weapon</li>
       <li>${k('F')} interact · ${k('M')} map · ${k('Esc')} / ${k('I')} menu</li>
+      <li>In the journal: ${k('Q')} / ${k('E')} turn the pages</li>
       <li>${k('J')} fold or open the quest bar (click a quest there to track it)</li></ul></div>
       <div><h4>Touch</h4><ul>
       <li>Left side: virtual joystick (push past the ring to sprint; it glows)</li>

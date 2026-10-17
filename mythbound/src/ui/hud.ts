@@ -6,7 +6,7 @@ import { HORSE } from '../rules/horse';
 import { foodCount } from '../rules/food';
 import { FRUITS } from '../data/goods';
 import { EYES_RUINS, FIELD, LAIRS, SHRINES, TRIALS, WORLD_HALF, ZONES, type QuestId } from '../data/world';
-import { dracoFlightHours, xpToNext, MAX_LEVEL } from '../rules/character';
+import { dracoFlightHours, xpToNext, MAX_LEVEL, MAX_RENOWN, renownXp } from '../rules/character';
 import { comboFor, elementWeakness, isLightSealed, mainWeapon } from '../rules/combat';
 import { Boss } from '../engine/entities';
 import type { Game } from '../engine/game';
@@ -474,13 +474,15 @@ export class Hud {
       this.partyT = 0.2;
       this.updateParty();
     }
-    const xpk = c.level >= MAX_LEVEL ? '100%' : pct(c.xp / xpToNext(c.level));
+    // Past the top level the bar fills toward the next Renown rank.
+    const top = c.level >= MAX_LEVEL;
+    const xpk = top ? (c.renown >= MAX_RENOWN ? '100%' : pct(c.xp / renownXp())) : pct(c.xp / xpToNext(c.level));
     put(this.xpFill, 'width', xpk);
     put(this.txpFill, 'width', xpk);
-    if (this.xpShown !== c.level * 1e7 + c.xp) {
-      this.xpShown = c.level * 1e7 + c.xp;
+    if (this.xpShown !== c.level * 1e9 + c.renown * 1e7 + c.xp) {
+      this.xpShown = c.level * 1e9 + c.renown * 1e7 + c.xp;
       this.xpLevel.textContent = this.txpLevel.textContent = `Lv ${c.level}`;
-      this.xpNum.textContent = c.level >= MAX_LEVEL ? 'MAX' : `${c.xp} / ${xpToNext(c.level)} XP`;
+      this.xpNum.textContent = top ? (c.renown >= MAX_RENOWN ? `Renown ${c.renown} · MAX` : `Renown ${c.renown} · ${c.xp} / ${renownXp()}`) : `${c.xp} / ${xpToNext(c.level)} XP`;
     }
     this.questT -= dt;
     if (this.questT <= 0) {
