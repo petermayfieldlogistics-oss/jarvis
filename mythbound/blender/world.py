@@ -1739,6 +1739,82 @@ def campfire(sc):
         ball(sc, (math.cos(a) * 0.25, 0.08, math.sin(a) * 0.25), 0.1, scale=(1, 0.5, 1), rgb=0x1a1210, subdiv=0)
 
 
+
+@model('boat')
+def boat(sc):
+    """A small sailing boat: a clinker-built hull of overlapping strakes, ribs, thwarts, a mast with a square sail, oars shipped along the sides."""
+    L, W, D = 4.0, 1.8, 0.62
+
+    def hull_at(u, v):
+        """A point on the hull: u along (-1 stern, 1 bow), v round from keel (0) to gunwale (1), on the starboard side."""
+        taper = 1 - abs(u) ** 2.2
+        half = W / 2 * (0.25 + 0.75 * taper)
+        x = half * math.sin(v * math.pi / 2)
+        y = D * (1 - math.cos(v * math.pi / 2)) + 0.12 * u * u
+        return (x, y, u * L / 2 * (1 + 0.04 * v))
+
+    strakes = 5
+    for side in (-1, 1):
+        for k in range(strakes):
+            v0, v1 = k / strakes, (k + 1.25) / strakes
+            verts, faces = [], []
+            n = 16
+            for i in range(n + 1):
+                u = -1 + 2 * i / n
+                for v in (v0, min(1.0, v1)):
+                    x, y, z = hull_at(u, v)
+                    verts.append(G(side * x, y, z))
+                for v in (v0, min(1.0, v1)):
+                    x, y, z = hull_at(u, v)
+                    verts.append(G(side * x * 0.94, y + 0.01, z * 0.985))
+            for i in range(n):
+                a, b = i * 4, (i + 1) * 4
+                f = [(a, b, b + 1, a + 1), (a + 3, b + 3, b + 2, a + 2), (a + 1, b + 1, b + 3, a + 3), (a + 2, b + 2, b, a)]
+                for q in f:
+                    faces.append(q if side > 0 else q[::-1])
+            sc.mesh(verts, faces, rgb=mix_hex(0x5a3e24, 0x2a1a0e, (k % 2) * 0.12), smooth=True)
+    # The keel, stem and sternpost.
+    tube(sc, [hull_at(u, 0) for u in (-1.0, -0.5, 0.0, 0.5, 1.0)], 0.05, sides=6, rgb=0x3a2614)
+    tube(sc, [(0, 0.0, L / 2), (0, 0.5, L / 2 + 0.12), (0, 0.95, L / 2 + 0.18)], 0.06, sides=6, rgb=0x3a2614)
+    tube(sc, [(0, 0.0, -L / 2), (0, 0.6, -L / 2 - 0.08), (0, 0.85, -L / 2 - 0.1)], 0.06, sides=6, rgb=0x3a2614)
+    # Gunwales.
+    for side in (-1, 1):
+        tube(sc, [(side * hull_at(u, 1.0)[0], hull_at(u, 1.0)[1] + 0.02, hull_at(u, 1.0)[2]) for u in (-0.98, -0.6, -0.2, 0.2, 0.6, 0.98)], 0.04, sides=5, rgb=0x6a4a2c)
+    # Ribs and thwarts.
+    for u in (-0.6, -0.3, 0.0, 0.3, 0.6):
+        tube(sc, [(-hull_at(u, 0.95)[0] * 0.92, hull_at(u, 0.95)[1], hull_at(u, 0)[2]), (0, 0.05, hull_at(u, 0)[2]), (hull_at(u, 0.95)[0] * 0.92, hull_at(u, 0.95)[1], hull_at(u, 0)[2])], 0.025, sides=4, rgb=0x4a3220)
+    for u in (-0.45, 0.25):
+        hw = hull_at(u, 0.8)[0] * 0.95
+        box(sc, (hw * 2, 0.05, 0.28), (0, hull_at(u, 0.8)[1], u * L / 2), bevel=0.01, rgb=0x6a4a2c)
+    box(sc, (0.9, 0.04, 2.4), (0, 0.12, 0), rgb=0x4a3220)
+    # Mast, yard and a square sail bellied in the wind.
+    tube(sc, [(0, 0.1, 0.5), (0, 1.8, 0.5), (0, 3.4, 0.5)], lambda u: 0.07 - 0.025 * u, sides=8, rgb=0x6a4a2c)
+    tube(sc, [(-0.9, 3.15, 0.56), (0, 3.18, 0.56), (0.9, 3.15, 0.56)], 0.035, sides=6, rgb=0x6a4a2c)
+    cols, rows = 8, 8
+    verts, faces = [], []
+    for r in range(rows + 1):
+        v = r / rows
+        for c in range(cols + 1):
+            u = c / cols
+            belly = 0.28 * math.sin(math.pi * u) * math.sin(math.pi * (0.15 + 0.85 * v))
+            verts.append(G(-0.82 + u * 1.64, 3.1 - v * 2.1, 0.6 + belly))
+    for r in range(rows):
+        for c in range(cols):
+            i = r * (cols + 1) + c
+            faces.append((i, i + 1, i + cols + 2, i + cols + 1))
+            faces.append((i + cols + 1, i + cols + 2, i + 1, i))
+    sc.mesh(verts, faces, rgb=0xc8b890, smooth=True)
+    for x in (-0.82, 0.82):
+        tube(sc, [(x, 1.0, 0.6), (x * 0.5, 0.75, 1.3)], 0.008, sides=4, rgb=0x8a7a5a)
+    tube(sc, [(0, 3.4, 0.5), (0, 0.95, L / 2 + 0.15)], 0.008, sides=4, rgb=0x8a7a5a)
+    tube(sc, [(0, 3.4, 0.5), (0, 0.85, -L / 2 - 0.08)], 0.008, sides=4, rgb=0x8a7a5a)
+    # Oars shipped along each side.
+    for side in (-1, 1):
+        x = side * 0.62
+        tube(sc, [(x, 0.62, -1.3), (x, 0.64, 0.9)], 0.025, sides=5, rgb=0x8a6a44)
+        box(sc, (0.04, 0.02, 0.5), (x, 0.65, 1.15), rgb=0x8a6a44)
+
+
 # --------------------------------------------------------------------- main --
 
 

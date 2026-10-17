@@ -2,7 +2,7 @@
 // weapons and props. Characters live in humanoid.ts and creatures.ts.
 
 import * as THREE from 'three';
-import { blendModel } from './assets';
+import { blendModel, worldGeometry, worldMesh } from './assets';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RUNES, type RuneId, type WeaponKind } from '../data/defs';
 
@@ -1247,8 +1247,19 @@ export function buildHoe(): THREE.Object3D {
   return compact(g);
 }
 
+let boatMat: THREE.MeshStandardMaterial | null = null;
+
 export function buildBoat(): THREE.Group {
   const g = new THREE.Group();
+  // The Blender boat (blender/world.py), if it loaded.
+  const m = worldMesh('boat');
+  if (m) {
+    boatMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+    const mesh = new THREE.Mesh(worldGeometry(m), boatMat);
+    mesh.castShadow = true;
+    g.add(mesh);
+    return g;
+  }
   const wood = mat(0x5a3e24, { rough: 0.85 });
   part(box(1.6, 0.4, 4), wood, 0, 0.2, 0, g);
   part(box(1.8, 0.5, 0.15), wood, 0, 0.45, 1.95, g);
