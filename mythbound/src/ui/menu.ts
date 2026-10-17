@@ -1,15 +1,10 @@
-import { CLASSES, COMBOS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
-import { ARENA, ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, LORE, PAGES, QUESTS, SHRINES, TRIALS, WEAPON_TRIALS, BOSSES, ZONES, type QuestId, type ZoneId } from '../data/world';
-
-/** Where the world map names the outer lands. */
-const REGION_LABELS: [number, number, ZoneId][] = [
-  [-300, -720, 'peaks'], [640, -680, 'cinder'], [700, -200, 'dunes'], [-700, -150, 'elderwood'], [-620, 680, 'jungle'], [300, 760, 'ocean'],
-];
-import { rewardName } from '../engine/bosses';
-import { dracoFlightHours, maxHp, maxMana, maxStamina, MILESTONES, rank, treesFor, xpToNext } from '../rules/character';
+import { CLASSES, COMBOS, LEGEND_SHARD, PERKS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
+import { ITEMS, LORE, PAGES, SHRINES, WEAPON_TRIALS, type QuestId } from '../data/world';
+import { dracoFlightHours, maxHp, maxMana, maxStamina, MAX_LEVEL, MAX_RENOWN, MILESTONES, rank, renownXp, treesFor, xpToNext } from '../rules/character';
+import { perkSlots, takesPerks } from '../rules/legend';
 import { canCombine, canWield, isLightSealed } from '../rules/combat';
 import { findNode, learnSkill, nodeView, pointsSpent, rankText, respec, respecCost, type NodeView } from '../rules/skills';
-import { questLines, trackedId } from '../engine/questlog';
+import { questLines } from '../engine/questlog';
 import { MAX_KNIVES, ownsKnives } from '../rules/weapons';
 import { isFood, isFruit } from '../rules/food';
 import { hasMade, recipeGold, recipesAt, TOOLS } from '../rules/crafting';
@@ -21,14 +16,20 @@ import { inviteLink } from '../rules/invite';
 import { MATCH, type MatchMode } from '../rules/pvp';
 import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
-import { mapImage, paintMap, toMap } from './mapimage';
+import { Journal } from './journal';
 
 type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
 
 const TABS: [Tab, string][] = [
-  ['character', 'Hero'], ['equipment', 'Gear'], ['skills', 'Skills'], ['spells', 'Spells'], ['quests', 'Quests'],
+  ['character', 'Hero'], ['equipment', 'Inventory'], ['skills', 'Skills'], ['spells', 'Spells'], ['quests', 'Quests'],
   ['map', 'Map'], ['lore', 'Lore'], ['coop', 'Co-op'], ['settings', 'Settings'], ['controls', 'Controls'],
 ];
+
+/** The big title over each page of the journal. */
+const TITLES: Record<Tab, string> = {
+  character: 'Hero', equipment: 'Inventory', skills: 'Skill Tree', spells: 'Spells & Arts', quests: 'Quest Select',
+  map: 'Area Map', lore: 'Lore', coop: 'Co-op', settings: 'Settings', controls: 'Controls',
+};
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -49,11 +50,26 @@ export class Menu {
   private pvpMode: MatchMode = 'ffa';
   private pvpGoal = MATCH.goals[0];
   private pvpTime = MATCH.times[1];
+  /** The Area Map and Quest Select pages. */
+  private journal: Journal;
 
   constructor(parent: HTMLElement, private g: Game) {
     this.el = document.createElement('div');
     this.el.className = 'menu hidden';
     parent.appendChild(this.el);
+    this.journal = new Journal(g, () => this.isOpen && this.render(), (id) => this.travel(id));
+    // Q and E leaf through the journal's pages.
+    window.addEventListener('keydown', (e) => {
+      if (!this.isOpen || e.repeat || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.code === 'KeyQ' || e.code === 'KeyE') this.turn(e.code === 'KeyE' ? 1 : -1);
+    });
+  }
+
+  /** The next (or previous) page of the journal. */
+  private turn(step: number) {
+    const i = TABS.findIndex(([id]) => id === this.tab);
+    this.tab = TABS[(i + step + TABS.length) % TABS.length][0];
+    this.render();
   }
 
   open(tab: Tab = this.tab) {
@@ -79,12 +95,18 @@ export class Menu {
     const prev = this.el.querySelector<HTMLElement>('.mbody');
     const keep = !entering && prev?.dataset.tab === this.tab ? prev.scrollTop : 0;
     this.el.className = 'menu';
+    const g = this.g;
+    const keys = !g.input.touch;
+    // A diamond over a page with something new: points to spend, a quest to hand in.
+    const news = (id: Tab) => (id === 'skills' && g.player.c.skillPoints > 0) || (id === 'quests' && questLines(g.state, g.player.pos.x, g.player.pos.z).some((l) => l.ready));
     this.el.innerHTML = `
       <div class="mpanel${entering ? ' in' : ''}">
-        <div class="mtabs">${TABS.map(([id, name]) => `<button data-tab="${id}" class="${id === this.tab ? 'on' : ''}">${name}${id === 'skills' && this.g.player.c.skillPoints > 0 ? `<i class="badge">${this.g.player.c.skillPoints}</i>` : ''}</button>`).join('')}
-          <button data-act="resume" class="resume">Resume</button></div>
+        <div class="mhead"><h1>${TITLES[this.tab]}</h1><button data-act="resume" class="resume" title="Close">✕</button></div>
+        <div class="mtabs">${keys ? '<button class="mkey" data-turn="-1">Q</button>' : ''}${TABS.map(([id, name]) => `<button data-tab="${id}" class="${id === this.tab ? 'on' : ''}">${news(id) ? '<span class="nd"></span>' : ''}${name}${id === 'skills' && g.player.c.skillPoints > 0 ? `<i class="badge">${g.player.c.skillPoints}</i>` : ''}</button>`).join('')}${keys ? '<button class="mkey" data-turn="1">E</button>' : ''}</div>
         <div class="mbody" data-tab="${this.tab}">${this.body()}</div>
+        ${keys ? `<div class="mfoot"><span><kbd>Q</kbd><kbd>E</kbd> Switch</span>${this.tab === 'map' ? '<span><kbd>Click</kbd> Select</span>' : ''}${this.tab === 'quests' ? '<span><kbd>Click</kbd> Select</span>' : ''}<span><kbd>Esc</kbd> Back</span></div>` : ''}
       </div>`;
+    this.el.querySelectorAll<HTMLButtonElement>('[data-turn]').forEach((b) => b.addEventListener('click', () => this.turn(Number(b.dataset.turn))));
     if (keep) this.el.querySelector<HTMLElement>('.mbody')!.scrollTop = keep;
     // Only the tab buttons: the body also carries data-tab, and re-rendering on a
     // click inside it would wipe out a text box as soon as it is tapped.
@@ -99,8 +121,8 @@ export class Menu {
       case 'equipment': return this.equipment();
       case 'skills': return this.skills();
       case 'spells': return this.spells();
-      case 'quests': return this.quests();
-      case 'map': return `<canvas class="bigmap" width="640" height="640"></canvas><p class="hint">${this.g.input.touch ? 'Tap' : 'Click'} a discovered shrine (gold) to travel there. Red: trials. Grey: conquered.</p>`;
+      case 'quests': return this.journal.questPage();
+      case 'map': return this.journal.mapPage();
       case 'lore': return this.lore();
       case 'coop': return this.coopTab();
       case 'settings': return this.settingsTab();
@@ -129,8 +151,9 @@ export class Menu {
         <div>HP <b>${Math.ceil(p.hp)} / ${maxHp(c)}</b></div>
         <div>Mana <b>${Math.floor(p.mana)} / ${maxMana(c)}</b></div>
         <div>Stamina <b>${maxStamina(c)}</b></div>
-        <div>XP <b>${c.xp} / ${xpToNext(c.level)}</b></div>
+        <div>${c.level >= MAX_LEVEL ? `Renown <b>${c.renown} / ${MAX_RENOWN}</b>` : 'XP'} <b>${c.level >= MAX_LEVEL ? (c.renown >= MAX_RENOWN ? 'max' : `${c.xp} / ${renownXp()}`) : `${c.xp} / ${xpToNext(c.level)}`}</b></div>
         <div>Embers <b>${c.gold}</b></div>
+        <div>Legend Shards <b>${c.items[LEGEND_SHARD] ?? 0}</b></div>
         <div>Trials <b>${WEAPON_TRIALS.filter((t) => this.g.state.trialsDone.includes(t.id)).length} / ${WEAPON_TRIALS.length}</b></div>
       </div>
       <div class="btnrow wardrow"><button data-act="wardrobe">Wardrobe</button><small>Clothes ${wr.garments}/${wr.ofGarments} · Colours ${wr.dyes}/${wr.ofDyes}</small></div>
@@ -151,6 +174,7 @@ export class Menu {
       return `<div class="row${i === c.mainHand ? ' on' : ''}">
         <div><b class="${def.legendary ? 'legend' : ''}">${esc(def.name)}</b> <small>Lv ${w.level} · ${def.kind} · ${def.damage + 4 * (w.level - 1)} dmg${def.element !== 'physical' ? ` · ${def.element}` : ''}</small>${w.rune ? ` <small style="color:#${RUNES[w.rune].color.toString(16).padStart(6, '0')}">ᚱ ${esc(RUNES[w.rune].name)}: ${esc(RUNES[w.rune].description)}</small>` : ''}
         ${def.description ? `<div class="desc">${esc(def.description)}</div>` : ''}
+        ${takesPerks(w.id) ? `<div class="desc perks">${[0, 1, 2].map((k) => (w.perks?.[k] ? `<span class="perk">${PERKS[w.perks[k]].icon} ${esc(PERKS[w.perks[k]].name)}</span>` : k < perkSlots(w) ? '<span class="perk empty">◇ empty slot</span>' : `<span class="perk locked">🔒 Lv ${[1, 5, 10][k]}</span>`)).join('')}</div>` : ''}
         ${check.reason ? `<div class="desc warn">${esc(check.reason)}</div>` : ''}</div>
         ${i === c.mainHand ? '<span class="tag">Equipped</span>' : `<button data-equip="${i}" ${check.ok ? '' : 'disabled'}>Equip</button>`}
       </div>`;
@@ -254,7 +278,7 @@ export class Menu {
     const slots = c.spellSlots.map((s, i) => `<button class="sslot${this.pickSpell ? ' target' : ''}" data-slot="${i}"><i>${i + 1}</i> ${s ? esc(SPELLS[s].name) : '<em>empty</em>'}</button>`).join('');
     const list = c.knownSpells.map((s) => {
       const d = SPELLS[s];
-      return `<div class="row${this.pickSpell === s ? ' on' : ''}"><div><b>${esc(d.name)}</b> <small>${p.costOf(s)} mana · ${d.school}${d.cooldown ? ` · ${d.cooldown}s` : ''}</small><div class="desc">${esc(d.description)}</div></div>
+      return `<div class="row${this.pickSpell === s ? ' on' : ''}"><div><b>${esc(d.name)}</b> <small>${p.costOf(s)} ${d.stamina ? 'stamina' : 'mana'} · ${d.school === 'martial' ? 'art of war' : d.school === 'hunt' ? "hunter's art" : d.school}${d.cooldown ? ` · ${d.cooldown}s` : ''}</small><div class="desc">${esc(d.description)}</div></div>
         <button data-pick="${s}">${this.pickSpell === s ? 'Pick a slot ↑' : 'Assign'}</button></div>`;
     });
     const combos = canCombine(c)
@@ -262,35 +286,10 @@ export class Menu {
       : c.classId === 'mage' ? '<p class="hint">At level 3 you can combine two spells into one.</p>'
         : c.classId === 'monk' ? '<p class="hint">Techniques spend chi (your mana). Every blow that lands brings some back.</p>'
           : c.classId === 'sorcerer' ? '<p class="hint">Hold cast on a channelled spell to keep its beam flowing; it drains mana while held.</p>'
-            : c.classId === 'rogue' ? '<p class="hint">Tricks spend your mana. Vanish (R) first, and your next strike is an ambush.</p>' : '';
+            : c.classId === 'rogue' ? '<p class="hint">Tricks spend your mana. Vanish (R) first, and your next strike is an ambush.</p>'
+              : c.classId === 'warrior' ? '<p class="hint">Arts of war spend stamina, not mana, and only warriors know them. Battle Shout comes at level 6, Unbreakable at 12.</p>'
+                : c.classId === 'ranger' ? "<p class=\"hint\">Hunter's arts spend stamina, not mana, and only rangers know them. Snare Trap comes at level 6, Evasive Leap at 12.</p>" : '';
     return `<h3>Spell bar</h3><div class="sslots">${slots}</div><p class="hint">Tap cast for the main form; hold it for the alternate (Inferno: ring of fire, Way of the Wind: slowing gale, Deal with the Devil: lock on to take a single foe).</p><h3>Known spells</h3>${list.join('')}${combos}`;
-  }
-
-  private quests(): string {
-    const st = this.g.state.quests;
-    const ids = Object.keys(QUESTS) as QuestId[];
-    const active = ids.filter((id) => st[id].state === 'active');
-    const done = ids.filter((id) => st[id].state === 'done');
-    const p = this.g.player.pos;
-    const lines = questLines(this.g.state, p.x, p.z);
-    const tracked = trackedId(this.g.state, lines);
-    const row = (id: QuestId) => {
-      const l = lines.find((x) => x.id === id);
-      const where = l?.target && !l.ready ? ` (${esc(l.target.name)}, ${Math.round(Math.hypot(l.target.x - p.x, l.target.z - p.z) / 10) * 10} m)` : '';
-      const next = l ? `<div class="desc qnext">➤ ${esc(l.objective)}${where}</div>` : '';
-      const track = l ? (id === tracked ? '<span class="tag">Tracked</span>' : `<button data-track="${id}">Track</button>`) : '';
-      return `<div class="row${st[id].state === 'done' ? ' done' : ''}${id === tracked ? ' on' : ''}"><div><b>${esc(QUESTS[id].name)}</b> <small>${st[id].state === 'done' ? 'complete' : `${st[id].progress}/${QUESTS[id].goal}`}</small><div class="desc">${esc(QUESTS[id].description)}</div>${next}</div>${track}</div>`;
-    };
-    const arena = (t: (typeof TRIALS)[number]) => `<div class="row${this.g.state.trialsDone.includes(t.id) ? ' done' : ''}"><div><b>${esc(t.name)}</b> <small>level ${t.level}</small><div class="desc">${esc(BOSSES[t.boss].name)} guards the ${esc(rewardName(BOSSES[t.boss].reward, WEAPONS))}.</div></div></div>`;
-    // The elder foes and the hunted show once someone has told you of them.
-    const elders = st.elders.state !== 'none' ? `<h3>The Elder Foes</h3>${ELDER_TRIALS.map(arena).join('')}` : '';
-    const hunts = st.hunts.state !== 'none'
-      ? `<h3>Monster Hunts</h3>${LAIRS.map((l) => `<div class="row${this.g.state.flags[`hunted-${l.boss}`] ? ' done' : ''}"><div><b>${esc(BOSSES[l.boss].name)}</b> <small>${esc(l.name)}</small><div class="desc">${esc(l.hint)}</div></div></div>`).join('')}`
-      : '';
-    return `<h3>Active</h3>${active.map(row).join('') || '<p class="hint">Talk to the people of Hearthhold.</p>'}
-      <h3>The Six Trials</h3>${WEAPON_TRIALS.map(arena).join('')}
-      ${elders}${hunts}
-      ${done.length ? `<h3>Completed</h3>${done.map(row).join('')}` : ''}`;
   }
 
   private lore(): string {
@@ -599,81 +598,7 @@ export class Menu {
       g.save();
       g.onQuit();
     });
-    const map = this.el.querySelector<HTMLCanvasElement>('.bigmap');
-    if (map) this.drawMap(map);
-  }
-
-  private drawMap(canvas: HTMLCanvasElement) {
-    const g = this.g;
-    const ctx = canvas.getContext('2d')!;
-    const S = canvas.width;
-    ctx.imageSmoothingEnabled = true;
-    // Opening the map paints in a good deal more of it at once.
-    paintMap(80, g.player.pos.x, g.player.pos.z);
-    ctx.drawImage(mapImage(), 0, 0, S, S);
-    ctx.fillStyle = 'rgba(10,8,6,0.15)';
-    ctx.fillRect(0, 0, S, S);
-    // The outer lands' names, faint, over their regions.
-    ctx.font = 'italic 13px Cinzel, serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(240,226,192,0.55)';
-    for (const [x, z, id] of REGION_LABELS) {
-      const [rx, ry] = toMap(x, z, S);
-      ctx.fillText(ZONES[id].name, rx, ry);
-    }
-    ctx.textAlign = 'start';
-    const label = (x: number, z: number, text: string, color: string, r: number) => {
-      const [px, py] = toMap(x, z, S);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.stroke();
-      ctx.font = '12px Cinzel, serif';
-      ctx.fillStyle = '#f0e2c0';
-      ctx.shadowColor = '#000';
-      ctx.shadowBlur = 3;
-      ctx.fillText(text, px + r + 3, py + 4);
-      ctx.shadowBlur = 0;
-    };
-    label(0, 20, 'Hearthhold', '#d8c8a0', 5);
-    label(ARENA.x, ARENA.z, '⚔ Arena of Ares', '#e08060', 5);
-    for (const t of TRIALS) label(t.x, t.z, t.name.replace('Trial of ', '').replace('the ', ''), g.state.trialsDone.includes(t.id) ? '#8a8a8a' : '#ff5a40', 6);
-    if (g.state.quests.hunts.state !== 'none') for (const l of LAIRS) label(l.x, l.z, `☠ ${l.name}`, g.state.flags[`hunted-${l.boss}`] ? '#8a8a8a' : '#c080ff', 5);
-    for (const s of SHRINES) if (g.state.shrinesFound.includes(s.id)) label(s.x, s.z, '', '#ffd070', 5);
-    if (g.state.flags.eyesRevealed) label(EYES_RUINS.x, EYES_RUINS.z, '◉ ◉ ◉', '#60ff90', 5);
-    if (g.state.lostEmbers) label(g.state.lostEmbers.x, g.state.lostEmbers.z, 'Lost embers', '#ffb040', 4);
-    for (const r of g.coop.remotes.values()) if (r.ready) label(r.pos.x, r.pos.z, r.name, r.alive ? '#6fd6ff' : '#4a6a78', 5);
-    const p = g.player;
-    const [px, py] = toMap(p.pos.x, p.pos.z, S);
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(Math.PI - p.yaw);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.moveTo(0, -9);
-    ctx.lineTo(6, 6);
-    ctx.lineTo(0, 3);
-    ctx.lineTo(-6, 6);
-    ctx.fill();
-    ctx.restore();
-    canvas.addEventListener('click', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const mx = ((e.clientX - rect.left) / rect.width) * S;
-      const my = ((e.clientY - rect.top) / rect.height) * S;
-      // The nearest discovered shrine within a finger's width on screen.
-      const reach = (22 * S) / rect.width;
-      let best: string | null = null;
-      let bestD = reach;
-      for (const s of SHRINES) {
-        if (!g.state.shrinesFound.includes(s.id)) continue;
-        const [sx, sy] = toMap(s.x, s.z, S);
-        const d = Math.hypot(sx - mx, sy - my);
-        if (d < bestD) (best = s.id), (bestD = d);
-      }
-      if (best) this.travel(best);
-    });
+    this.journal.bind(this.el);
   }
 
   private travel(id: string) {

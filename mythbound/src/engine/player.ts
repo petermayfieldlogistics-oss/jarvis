@@ -2158,21 +2158,37 @@ export class Player {
     g.shake(0.6);
   }
 
-  /** Arrow Rain: a wave of arrows falls on the circle (aimed at the foes in it, and a few at the ground). */
+  /**
+   * Arrow Rain: a wave of arrows falls on the circle. They are seen dropping
+   * on the foes in it (and a few on the ground); each foe still inside when
+   * they land is struck.
+   */
   private arrowWave(g: Game, x: number, z: number, damage: number) {
-    const sky = (tx: number, tz: number) => new THREE.Vector3(tx + (Math.random() - 0.5) * 3, heightAt(tx, tz) + 22, tz + (Math.random() - 0.5) * 3);
+    const FALL = 0.3;
+    const drop = (tx: number, ty: number, tz: number) => {
+      const from = new THREE.Vector3(tx + (Math.random() - 0.5) * 2, ty + 18, tz + (Math.random() - 0.5) * 2);
+      g.spawnProjectile({ from, to: new THREE.Vector3(tx, ty, tz), speed: 18 / FALL, kind: 'arrow', owner: 'remote', damage: 0, element: 'physical', gravity: 0, source: null });
+    };
     let n = 0;
     for (const e of g.enemies) {
-      if (!e.alive || n >= 6 || Math.hypot(e.pos.x - x, e.pos.z - z) > RAIN.radius + e.radius) continue;
+      if (!e.alive || n >= 8 || Math.hypot(e.pos.x - x, e.pos.z - z) > RAIN.radius + e.radius) continue;
       n++;
-      const to = e.center();
-      g.spawnProjectile({ from: sky(to.x, to.z), to, speed: 46, kind: 'arrow', owner: 'player', damage, element: 'physical', gravity: 0, source: null, draw: 1 });
+      const c = e.center(this.tv);
+      drop(c.x, c.y, c.z);
     }
     for (let i = n; i < 4; i++) {
       const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * RAIN.radius;
       const tx = x + Math.sin(a) * r, tz = z + Math.cos(a) * r;
-      g.spawnProjectile({ from: sky(tx, tz), to: new THREE.Vector3(tx, heightAt(tx, tz), tz), speed: 46, kind: 'arrow', owner: 'player', damage, element: 'physical', gravity: 0, source: null, draw: 1 });
+      drop(tx, heightAt(tx, tz), tz);
     }
+    this.later.push({
+      at: this.now + FALL,
+      run: () => {
+        for (const e of [...g.enemies]) {
+          if (e.alive && Math.hypot(e.pos.x - x, e.pos.z - z) <= RAIN.radius + e.radius) g.hitEnemyWithWeapon(e, damage, 'bow', 'physical', { draw: 1 });
+        }
+      },
+    });
   }
 
   /** Snare Trap springs: it cuts and holds every foe in its circle. */

@@ -791,7 +791,7 @@ export const SPELLS: Record<SpellId, SpellDef> = {
   },
   // ---- Ranger hunter's arts: paid in stamina, and rangers alone know them.
   'arrow-rain': {
-    id: 'arrow-rain', name: 'Arrow Rain', school: 'hunt', element: 'physical', mana: 0, stamina: 25, level: 1, cooldown: 12, power: 0.55,
+    id: 'arrow-rain', name: 'Arrow Rain', school: 'hunt', element: 'physical', mana: 0, stamina: 25, level: 1, cooldown: 12, power: 0.7,
     description: 'Loose a flight of arrows high into the sky: they rain down on the spot you aim at, striking every foe within 5 m six times. Costs no arrows.',
   },
   'mark-prey': {

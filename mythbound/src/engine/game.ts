@@ -1658,7 +1658,7 @@ export class Game {
     if (!t) {
       // No fog up: a hunted foe in a fight close by still gets its bar.
       const h = huntedNear(this);
-      this.hud.setBoss(h ? `${h.bdef.name}, ${h.bdef.title}` : null, h?.hp ?? 0, h?.maxHp ?? 1);
+      this.hud.setBoss(h ? `${h.bdef.name}, ${h.bdef.title}${h.tier ? ` · ${BOSS_TIERS[h.tier].name}` : ''}` : null, h?.hp ?? 0, h?.maxHp ?? 1);
       return;
     }
     const p = this.player.pos;
@@ -1687,7 +1687,7 @@ export class Game {
         return;
       }
     }
-    if (this.boss) this.hud.setBoss(this.boss.alive ? `${this.boss.bdef.name}, ${this.boss.bdef.title}` : null, this.boss.hp, this.boss.maxHp);
+    if (this.boss) this.hud.setBoss(this.boss.alive ? `${this.boss.bdef.name}, ${this.boss.bdef.title}${this.boss.tier ? ` · ${BOSS_TIERS[this.boss.tier].name}` : ''}` : null, this.boss.hp, this.boss.maxHp);
   }
 
   private updateZone() {
