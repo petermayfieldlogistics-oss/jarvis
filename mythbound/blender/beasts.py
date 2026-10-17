@@ -1466,6 +1466,249 @@ def golem(bt):
     bt.eye(core, 0.08, [chest], rgb=0xffb050)
     return bt.build(0.01, 4200, ('VORONOI', 0.06, 0.018), surface='0', facet=True), ['0', '1', '2']
 
+
+# ------------------------------------------------------- humanoid monsters --
+
+
+def bones_of(bt, bone_rgb, eye_rgb, surface='0', glow_cracks=None):
+    """A walking skeleton, bone by bone: skull and jaw, spine, ribcage, pelvis, limb bones with knobbed joints, hands and feet."""
+    n, B = bt.n, bt.B
+    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
+    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
+    bn = lambda pts, r, bones, **kw: bt.tube(pts, r, bones, surface=surface, rgb=bone_rgb, n=kw.pop('n', 7), **kw)
+    ball = lambda c, r, bones, sq=(1, 1, 1), rgb=bone_rgb: bt.hard.append((surface, _ball(c, r, sq), Part(bones, slot=FIXED, rgb=rgb)))
+    # The skull: cranium, brow, cheekbones, deep sockets, a nasal hole, a hinged-looking jaw with teeth.
+    ball(gv(Hd, 0, 0.12, -0.01), 0.1, [head], (0.9, 1.0, 1.05))
+    ball(gv(Hd, 0, 0.05, 0.05), 0.075, [head], (1.0, 0.8, 0.9))
+    for sd in (-1, 1):
+        ball(gv(Hd, sd * 0.038, 0.09, 0.085), 0.03, [head], (1, 0.9, 0.6), rgb=0x0a0806)
+        bt.eye(gv(Hd, sd * 0.038, 0.09, 0.1), 0.013, [head], rgb=eye_rgb)
+        ball(gv(Hd, sd * 0.06, 0.05, 0.06), 0.025, [head], (1, 0.6, 1))
+    ball(gv(Hd, 0, 0.045, 0.115), 0.014, [head], (0.8, 1.3, 0.5), rgb=0x0a0806)
+    bn([gv(Hd, -0.055, 0.0, 0.02), gv(Hd, 0, -0.03, 0.095), gv(Hd, 0.055, 0.0, 0.02)], 0.022, [head])
+    for k in range(6):
+        x = (k - 2.5) * 0.016
+        bt.cone(gv(Hd, x, 0.022, 0.1 - abs(x) * 0.4), gv(Hd, x, 0.0, 0.1 - abs(x) * 0.4), 0.007, [head], surface=surface, rgb=0xe8e0c8)
+    # Neck and spine: a column of vertebrae from skull to pelvis.
+    for k in range(9):
+        t = k / 8
+        p = gv(Hd, 0, -0.02, -0.02).lerp(gv(Hp, 0, 0.02, -0.04), t)
+        bone = [head, chest] if t < 0.2 else [chest, spine] if t < 0.55 else [spine, hips]
+        ball(p, 0.028 - 0.004 * math.sin(math.pi * t), bone, (1.2, 0.7, 1.0))
+        bt.cone(p + G(0, 0, -0.01), p + G(0, -0.02, -0.06), 0.012, bone, surface=surface, rgb=bone_rgb)
+    # The ribcage: ribs curving round from the spine to the breastbone.
+    for k in range(6):
+        y = 0.16 - k * 0.055
+        w = 0.15 - abs(k - 2) * 0.012
+        for sd in (-1, 1):
+            pts = [gv(C, 0, y, -0.06), gv(C, sd * w * 0.9, y - 0.01, -0.03), gv(C, sd * w, y - 0.03, 0.05), gv(C, sd * w * 0.55, y - 0.05, 0.11), gv(C, 0, y - 0.06, 0.12)]
+            bn(curve(pts, 2), 0.011, [chest], n=5)
+    bn([gv(C, 0, 0.14, 0.12), gv(C, 0, -0.04, 0.13), gv(C, 0, -0.16, 0.11)], 0.016, [chest], n=5)
+    for sd in (-1, 1):
+        bn([gv(C, sd * 0.02, 0.17, 0.08), gv(C, sd * 0.12, 0.18, 0.03), gv(C, sd * 0.2, 0.17, 0.0)], 0.014, [chest])
+        bn([gv(C, sd * 0.06, 0.16, -0.08), gv(C, sd * 0.14, 0.12, -0.1), gv(C, sd * 0.2, 0.17, -0.04)], 0.018, [chest], squash=0.4)
+    # The pelvis.
+    for sd in (-1, 1):
+        bn(curve([gv(Hp, 0, 0.0, -0.05), gv(Hp, sd * 0.1, 0.07, -0.02), gv(Hp, sd * 0.13, 0.0, 0.04), gv(Hp, sd * 0.05, -0.06, 0.06)], 3), lambda t: 0.03 - 0.01 * t, [hips], n=7, squash=0.5)
+    ball(gv(Hp, 0, -0.03, -0.04), 0.045, [hips], (1.2, 1, 0.8))
+    # Limbs: long bones with knobbed ends.
+    for side in ('L', 'R'):
+        arm, fore, hand = n['arm' + side], n['fore' + side], n['hand' + side]
+        leg, shin, foot = n['leg' + side], n['shin' + side], n['foot' + side]
+        A, F, H = B[arm], B[fore], B[hand]
+        L, S, Ft = B[leg], B[shin], B[foot]
+        sd = 1 if A.x > 0 else -1
+        ball(A, 0.035, [arm])
+        bn([A, A.lerp(F, 0.5), F], lambda t: 0.018 + 0.006 * abs(t - 0.5) * 2, [arm])
+        ball(F, 0.026, [arm, fore])
+        for dx in (-0.012, 0.012):
+            bn([F + G(dx, 0, 0), F.lerp(H, 0.5) + G(dx, 0, 0), H + G(dx * 0.6, 0.02, 0)], 0.011, [fore], n=5)
+        ball(gv(H, 0, -0.02, 0.01), 0.026, [hand], (1, 1.1, 0.6))
+        for f in range(4):
+            sp = (f - 1.5) * 0.017
+            k0 = gv(H, sp, -0.04, 0.02)
+            bn(curve([k0, k0 + G(sp * 0.3, -0.05, 0.02), k0 + G(sp * 0.3, -0.09, 0.05)], 2), 0.007, [hand], n=4)
+        ball(L, 0.04, [leg, hips])
+        bn([L, L.lerp(S, 0.5), S], lambda t: 0.022 + 0.008 * abs(t - 0.5) * 2, [leg])
+        ball(S + G(0, 0.02, 0.025), 0.03, [leg, shin], (1, 0.8, 0.7))
+        ball(S, 0.032, [shin])
+        bn([S, S.lerp(Ft, 0.5), Ft + G(0, 0.03, 0)], lambda t: 0.02 + 0.006 * abs(t - 0.5) * 2, [shin])
+        bn([Ft + G(-0.025 * sd, 0, 0.02), Ft + G(-0.025 * sd, -0.01, 0.1)], 0.01, [shin, foot])
+        ball(gv(Ft, 0, -0.02, 0.0), 0.03, [foot], (1, 0.8, 1.2))
+        for t in range(4):
+            x = (t - 1.5) * 0.02
+            bn([gv(Ft, x, -0.04, 0.02), gv(Ft, x * 1.2, -0.07, 0.12)], 0.009, [foot], n=4)
+
+
+@builder('h-506bf949', 0xcfc7ad)
+def skeleton(bt):
+    """A risen skeleton: yellowed bones, a rusted pauldron and a rag of a loincloth, cold blue eyes."""
+    n, B = bt.n, bt.B
+    bones_of(bt, 0xcfc7ad, 0x60a0ff)
+    Hp, C = B[n['hips']], B[n['chest']]
+    # A rag hanging from a belt.
+    bt.tube([gv(Hp, -0.13, 0.04, 0.0), gv(Hp, 0, 0.06, 0.09), gv(Hp, 0.13, 0.04, 0.0), gv(Hp, 0, 0.03, -0.09), gv(Hp, -0.13, 0.04, 0.0)], 0.014, [n['hips']], surface='0', rgb=0x4a3a2a, n=5)
+    for fz in (-1, 1):
+        a = gv(Hp, 0.01, 0.04, fz * 0.08)
+        bt.tube([a, a + G(0.01, -0.15, fz * 0.02), a + G(-0.02, -0.3, fz * 0.03)], lambda t: 0.08 * (1 - 0.4 * t), [n['hips']], surface='0', rgb=0x3a342a, n=6, squash=0.15, wide=Vector((1, 0, 0)))
+    # One rusted pauldron on the left shoulder.
+    A = B[n['armL']]
+    bt.hard.append(('1', cap(gv(A, 0.01, 0.04, 0), 0.085, 1.1, G(0.5, 1, 0), segs=14, rings=4, thick=0.012), Part([n['armL']], slot=FIXED, rgb=0x8a7262)))
+    return bt.build(0.01, 500, None, surface='0'), ['0', '1', '2']
+
+
+@builder('h-56336bd5', 0x3a302c)
+def revenant(bt):
+    """An ash revenant: a charred skeleton in broken black plate, embers glowing between its bones, burning eyes, a scorched cape."""
+    n, B = bt.n, bt.B
+    hips, chest, head = n['hips'], n['chest'], n['head']
+    Hp, C, Hd = B[hips], B[chest], B[head]
+    bones_of(bt, 0x3a302c, 0xff8a30)
+    plate = 0x2a2220
+    # A breastplate, broken open on one side, ember light within.
+    bt.hard.append(('1', cap(gv(C, 0.02, 0.02, 0.0), 0.2, 1.25, G(0, 0, 1), segs=16, rings=5, thick=0.02), Part([chest], slot=FIXED, rgb=plate)))
+    bt.hard.append(('1', cap(gv(C, 0.0, 0.04, -0.02), 0.19, 1.15, G(0, 0, -1), segs=16, rings=5, thick=0.02), Part([chest], slot=FIXED, rgb=plate)))
+    bt.eye(gv(C, -0.05, 0.0, 0.03), 0.06, [chest], rgb=0xff6a20)
+    for side in ('L', 'R'):
+        A, L = B[n['arm' + side]], B[n['leg' + side]]
+        sd = 1 if A.x > 0 else -1
+        bt.hard.append(('1', cap(gv(A, sd * 0.02, 0.04, 0), 0.1, 1.15, G(sd * 0.6, 1, 0), segs=14, rings=4, thick=0.015), Part([n['arm' + side]], slot=FIXED, rgb=plate)))
+        bt.hard.append(('1', cap(gv(A, sd * 0.03, -0.02, 0), 0.085, 1.0, G(sd * 1, 0.4, 0), segs=14, rings=4, thick=0.015), Part([n['arm' + side]], slot=FIXED, rgb=plate)))
+        bt.tube([gv(L, 0, -0.08, 0.02), gv(L, 0, -0.32, 0.03)], lambda t: 0.075 - 0.01 * t, [n['leg' + side]], surface='1', rgb=plate, n=8, squash=0.7)
+        S = B[n['shin' + side]]
+        bt.tube([gv(S, 0, -0.06, 0.03), gv(S, 0, -0.34, 0.03)], lambda t: 0.06 - 0.008 * t, [n['shin' + side]], surface='1', rgb=plate, n=8, squash=0.7)
+        for k in range(3):
+            bt.eye(gv(L, sd * 0.03, -0.1 - k * 0.12, 0.06), 0.012, [n['leg' + side]], rgb=0xff6a20)
+    # A skirt of scorched mail plates.
+    for k in range(10):
+        a = k / 10 * math.tau
+        p = gv(Hp, math.sin(a) * 0.15, -0.05, math.cos(a) * 0.12)
+        bt.tube([p, p + G(math.sin(a) * 0.03, -0.18, math.cos(a) * 0.03)], lambda t: 0.04, [hips], surface='1', rgb=plate, n=4, squash=0.25, wide=G(math.cos(a), 0, -math.sin(a)))
+    # A ragged cape on its own bones.
+    cape = n.get('cape', -1)
+    if cape is not None and cape >= 0:
+        chain_ = [cape]
+        while bt.child(chain_[-1]) is not None:
+            chain_.append(bt.child(chain_[-1]))
+        pts = [B[k] for k in chain_]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.6
+        bt.tube(curve(pts + [tip], 3), lambda t: 0.26 * (1 + 0.1 * t) * (1 - 0.35 * t * t), chain_, surface='0', rgb=0x1e1614, n=10, squash=0.08, wide=Vector((1, 0, 0)))
+    return bt.build(0.01, 500, None, surface='0'), ['0', '1', '2']
+
+
+@builder('h-921ba84b', 0x8aa2b4)
+def frost_troll(bt):
+    """A frost troll: hunched, pot-bellied and long-armed, frost-blue hide, a tusked underbite, a white mane, ice growing from its shoulders."""
+    n, B = bt.n, bt.B
+    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
+    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
+    hide = dict(slot=FIXED, rgb=0x8aa2b4, mottle=0.35)
+    pale = dict(slot=FIXED, rgb=0xb4c4d0, mottle=0.3)
+    bt.blob(gv(C, 0, 0.06, -0.04), 0.3, 0.22, 0.22, bones=[chest], **hide)
+    bt.blob(gv(C, 0, 0.16, -0.1), 0.26, 0.14, 0.17, bones=[chest], **hide)
+    bt.blob(gv(Sp, 0, -0.02, 0.06), 0.24, 0.2, 0.22, bones=[spine], **pale)
+    bt.capsule(gv(Sp, 0, 0, 0), gv(Hp, 0, -0.02, 0), 0.22, 0.2, bones=[spine, hips], **hide)
+    # The head sunk forward between the shoulders: heavy brow, small eyes, a jutting jaw with tusks, a big nose.
+    bt.capsule(gv(C, 0, 0.18, 0.0), gv(Hd, 0, 0.0, 0.03), 0.13, 0.1, bones=[chest, head], **hide)
+    bt.blob(gv(Hd, 0, 0.1, 0.04), 0.11, 0.11, 0.11, bones=[head], **hide)
+    bt.blob(gv(Hd, 0, 0.14, 0.11), 0.1, 0.035, 0.05, bones=[head], **hide)
+    bt.blob(gv(Hd, 0, 0.05, 0.14), 0.035, 0.05, 0.05, bones=[head], **pale)
+    bt.blob(gv(Hd, 0, -0.02, 0.1), 0.1, 0.06, 0.08, bones=[head], **hide)
+    for sd in (-1, 1):
+        e = bt.surface(gv(Hd, sd * 0.045, 0.11, 0.6), G(0, 0, -1))
+        bt.eye(e + G(0, 0, 0.004), 0.013, [head], rgb=0x9ad8ff)
+        bt.tube(curve([gv(Hd, sd * 0.05, -0.02, 0.15), gv(Hd, sd * 0.06, 0.04, 0.17), gv(Hd, sd * 0.045, 0.08, 0.15)], 2), lambda t: 0.018 * (1 - t) + 0.003, [head], surface='0', rgb=0xe8e4d8, n=6)
+        bt.tube([gv(Hd, sd * 0.1, 0.11, 0.0), gv(Hd, sd * 0.17, 0.14, -0.04)], lambda t: 0.035 * (1 - t) + 0.003, [head], surface='0', slot=FIXED, rgb=0x8aa2b4, n=6, squash=0.4)
+    # A shaggy white mane down the back, a beard.
+    for k in range(9):
+        a = (k / 8 - 0.5) * 2.4 + math.pi
+        root = gv(Hd, math.sin(a) * 0.08, 0.17, math.cos(a) * 0.08)
+        bt.tube([root, root + G(math.sin(a) * 0.05, -0.15, math.cos(a) * 0.08), root + G(math.sin(a) * 0.06, -0.32, math.cos(a) * 0.12 - 0.04)], lambda t: 0.04 * (1 - 0.8 * t), [head, chest], surface='0', rgb=0xe8eef4, n=5, squash=0.5)
+    for x in (-0.04, 0.0, 0.04):
+        bt.tube([gv(Hd, x, -0.06, 0.14), gv(Hd, x * 1.3, -0.16, 0.13)], lambda t: 0.025 * (1 - 0.8 * t), [head], surface='0', rgb=0xe8eef4, n=5)
+    # Long heavy arms, huge hands; short thick legs.
+    for side in ('L', 'R'):
+        arm, fore, hand = n['arm' + side], n['fore' + side], n['hand' + side]
+        leg, shin, foot = n['leg' + side], n['shin' + side], n['foot' + side]
+        A, F, H = B[arm], B[fore], B[hand]
+        L, S, Ft = B[leg], B[shin], B[foot]
+        sd = 1 if A.x > 0 else -1
+        bt.blob(gv(A, sd * 0.02, 0.03, -0.02), 0.13, 0.12, 0.13, bones=[arm, chest], group='sh' + side, **hide)
+        bt.capsule(gv(A, 0, -0.04, 0), F, 0.1, 0.085, bones=[arm, fore], group='arm' + side, **hide)
+        bt.capsule(F, gv(H, 0, 0.03, 0), 0.09, 0.075, bones=[fore, hand], group='arm' + side, **hide)
+        bt.blob(gv(H, 0, -0.06, 0.02), 0.07, 0.08, 0.075, bones=[hand], group='arm' + side, **hide)
+        for f in range(4):
+            bt.capsule(gv(H, (f - 1.5) * 0.034, -0.1, 0.05), gv(H, (f - 1.5) * 0.038, -0.17, 0.08), 0.022, 0.017, bones=[hand], group='arm' + side, **hide)
+        bt.tube([gv(F, 0, -0.04, 0), gv(F, 0, -0.18, 0.01)], 0.1, [fore], surface='0', rgb=0x8a7a64, n=10)
+        bt.capsule(gv(L, 0, -0.02, 0), S, 0.13, 0.1, bones=[leg, shin], **hide)
+        bt.capsule(S, gv(Ft, 0, 0.04, 0), 0.095, 0.085, bones=[shin, foot], **hide)
+        bt.blob(gv(Ft, 0, -0.02, 0.07), 0.08, 0.05, 0.13, bones=[foot], **hide)
+        for t in range(3):
+            bt.cone(gv(Ft, (t - 1) * 0.04, -0.04, 0.17), gv(Ft, (t - 1) * 0.045, -0.06, 0.22), 0.016, [foot], surface='0', rgb=0x3a3a40)
+        # Ice crystals growing from the shoulders.
+        for dx, dy, ln in ((0.06, 0.12, 0.16), (0.12, 0.07, 0.12), (0.0, 0.13, 0.12)):
+            shard(bt, gv(A, sd * dx, dy, -0.05), G(sd * (0.3 + dx * 3), 1, -0.4), ln, 0.03, [arm], 0x9ad8ff)
+    # A hide loincloth on a rope belt.
+    bt.tube([gv(Hp, -0.2, 0.06, 0.0), gv(Hp, 0, 0.08, 0.19), gv(Hp, 0.2, 0.06, 0.0), gv(Hp, 0, 0.04, -0.19), gv(Hp, -0.2, 0.06, 0.0)], 0.02, [hips], surface='0', rgb=0x6a5a40, n=5)
+    for fz in (-1, 1):
+        a = gv(Hp, 0, 0.05, fz * 0.18)
+        bt.tube([a, a + G(0, -0.18, fz * 0.03), a + G(0, -0.34, fz * 0.04)], lambda t: 0.13 * (1 - 0.3 * t), [hips], surface='0', rgb=0x4e4234, n=6, squash=0.15, wide=Vector((1, 0, 0)))
+    return bt.build(0.008, 6000, ('CLOUDS', 0.04, 0.006), surface='0'), ['0', '1', '2']
+
+
+@builder('h-14460606', 0x5a7a6a)
+def drowned(bt):
+    """One of the drowned: a bloated sea-green corpse in rotting rags, barnacled and hung with weed, glowing eyes in a sunken face."""
+    n, B = bt.n, bt.B
+    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
+    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
+    flesh = dict(slot=FIXED, rgb=0x5a7a6a, mottle=0.45)
+    rag = dict(slot=FIXED, rgb=0x2a3a34, mottle=0.3)
+    bt.blob(gv(C, 0, 0.04, 0.0), 0.2, 0.18, 0.15, bones=[chest], **rag)
+    bt.blob(gv(Sp, 0, -0.02, 0.04), 0.18, 0.17, 0.17, bones=[spine], **flesh)
+    bt.capsule(gv(Sp, 0, 0, 0), gv(Hp, 0, -0.02, 0), 0.17, 0.16, bones=[spine, hips], **rag)
+    bt.capsule(gv(C, 0, 0.16, 0.0), gv(Hd, 0, 0.02, 0.0), 0.07, 0.06, bones=[chest, head], **flesh)
+    # The head: a gaunt skull of a face, sunken cheeks, lank hair, glowing eyes, a slack jaw.
+    bt.blob(gv(Hd, 0, 0.12, 0.0), 0.1, 0.12, 0.11, bones=[head], **flesh)
+    bt.blob(gv(Hd, 0, 0.04, 0.05), 0.07, 0.06, 0.07, bones=[head], **flesh)
+    for sd in (-1, 1):
+        e = bt.surface(gv(Hd, sd * 0.038, 0.12, 0.6), G(0, 0, -1))
+        bt.hard.append(('0', _ball(e, 0.022, (1, 0.8, 0.5)), Part([head], slot=FIXED, rgb=0x0a1210)))
+        bt.eye(e + G(0, 0, 0.006), 0.012, [head], rgb=0x60ffe0)
+    m = bt.surface(gv(Hd, 0, 0.03, 0.6), G(0, 0, -1))
+    bt.hard.append(('0', _ball(m, 0.02, (1.2, 0.8, 0.5)), Part([head], slot=FIXED, rgb=0x0a1210)))
+    for k in range(7):
+        a = (k / 6 - 0.5) * 2.6 + math.pi
+        root = gv(Hd, math.sin(a) * 0.09, 0.19, math.cos(a) * 0.09)
+        bt.tube([root, root + G(math.sin(a) * 0.04, -0.15, math.cos(a) * 0.05), root + G(math.sin(a) * 0.03, -0.3, math.cos(a) * 0.06)], lambda t: 0.025 * (1 - 0.7 * t), [head, chest], surface='0', rgb=0x1a2420, n=4, squash=0.5)
+    for side in ('L', 'R'):
+        arm, fore, hand = n['arm' + side], n['fore' + side], n['hand' + side]
+        leg, shin, foot = n['leg' + side], n['shin' + side], n['foot' + side]
+        A, F, H = B[arm], B[fore], B[hand]
+        L, S, Ft = B[leg], B[shin], B[foot]
+        sd = 1 if A.x > 0 else -1
+        bt.capsule(A, F, 0.055, 0.045, bones=[arm, fore], group='arm' + side, **rag)
+        bt.capsule(F, gv(H, 0, 0.03, 0), 0.042, 0.034, bones=[fore, hand], group='arm' + side, **flesh)
+        bt.blob(gv(H, 0, -0.05, 0.02), 0.035, 0.05, 0.03, bones=[hand], group='arm' + side, **flesh)
+        for f in range(4):
+            bt.capsule(gv(H, (f - 1.5) * 0.018, -0.08, 0.03), gv(H, (f - 1.5) * 0.02, -0.15, 0.06), 0.01, 0.007, bones=[hand], group='arm' + side, **flesh)
+        bt.capsule(gv(L, 0, -0.03, 0), S, 0.07, 0.055, bones=[leg, shin], **rag)
+        bt.capsule(S, gv(Ft, 0, 0.04, 0), 0.05, 0.045, bones=[shin, foot], **flesh)
+        bt.blob(gv(Ft, 0, -0.02, 0.06), 0.045, 0.035, 0.1, bones=[foot], **flesh)
+        # Rags hanging from the sleeve.
+        a0 = A.lerp(F, 0.85)
+        bt.tube([a0, a0 + G(sd * 0.02, -0.12, -0.02)], lambda t: 0.05 * (1 - 0.6 * t), [fore], surface='0', rgb=0x2a3a34, n=5, squash=0.2, wide=G(0, 0, 1))
+    # Weed and barnacles.
+    for k in range(6):
+        a = k / 6 * math.tau + 0.3
+        root = gv(C, math.sin(a) * 0.17, 0.1 - (k % 2) * 0.1, math.cos(a) * 0.13)
+        bt.tube([root, root + G(math.sin(a) * 0.03, -0.25, math.cos(a) * 0.02), root + G(math.sin(a) * 0.02, -0.5, math.cos(a) * 0.03)], lambda t: 0.03 * (1 - 0.7 * t), [chest, spine], surface='0', rgb=0x2e5030 if k % 2 else 0x3e6034, n=4, squash=0.3)
+    for k in range(10):
+        a = k * 2.4
+        p = bt.surface(gv(C, math.sin(a) * 0.5, 0.12 - (k % 4) * 0.08, math.cos(a) * 0.5), G(-math.sin(a), 0, -math.cos(a)))
+        bt.hard.append(('0', _ball(p, 0.016, (1, 1, 0.6)), Part([chest], slot=FIXED, rgb=0xa8b0a2)))
+    return bt.build(0.007, 5000, ('CLOUDS', 0.03, 0.004), surface='0'), ['0', '1', '2']
+
 # -------------------------------------------------------------------- main --
 
 
