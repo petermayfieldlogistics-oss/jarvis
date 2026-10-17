@@ -3,6 +3,7 @@ import soilUrl from '../assets/ground-soil.webp?url';
 import grassUrl from '../assets/ground-grass.webp?url';
 import rockUrl from '../assets/ground-rock.webp?url';
 import sandUrl from '../assets/ground-sand.webp?url';
+import snowUrl from '../assets/ground-snow.webp?url';
 import { fbm, lerp, noise2, smoothstep, tileableNoise } from './noise';
 import { CINDER_CONES, ISLAND, ISLES, LAVA_POOLS, OASES, PASS, SHRINES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId } from '../data/world';
 
@@ -299,7 +300,7 @@ vWNrm = normalize(mat3(modelMatrix) * objectNormal);
 `;
 const TERRAIN_FRAG_PARS = /* glsl */ `
 uniform sampler2D uDetail;
-uniform sampler2D uSoil, uGrass, uRock, uSand;
+uniform sampler2D uSoil, uGrass, uRock, uSand, uSnow;
 uniform float uGround;
 varying vec3 vWPos;
 varying vec3 vWNrm;
@@ -356,9 +357,17 @@ gB /= dot(gB, vec4(1.0)) + 1e-5;
 float gFar = smoothstep(30.0, 170.0, distance(vWPos, cameraPosition));
 vec3 gAlb = mix((gS.rgb * gB.x + gG.rgb * gB.y + gR.rgb * gB.z + gA.rgb * gB.w) * 2.0, vec3(1.0), gFar * 0.5);
 float gH = dot(vec4(gS.a, gG.a, gR.a, gA.a), gB);
+// Snow over all of it where the ground is white, settling first in the hollows.
+float gCmax = max(gC.r, max(gC.g, gC.b));
+float gSnowW = smoothstep(0.3, 0.52, gLum) * (1.0 - smoothstep(0.08, 0.2, (gCmax - min(gC.r, min(gC.g, gC.b))) / (gCmax + 1e-4)));
+vec4 gN = gTap(uSnow, gUv, gUv2, gK);
+float gSn = clamp(gSnowW * 1.7 + (gN.a - gH) * 0.8 - 0.35, 0.0, 1.0) * step(0.01, gSnowW);
+gH = mix(gH, gN.a, gSn);
 // Bump only where a texel covers more than a pixel (finer detail would only sparkle).
 float gLod = clamp(1.6 - length(fwidth(gUv)) * 512.0, 0.0, 1.0);
 vec3 tCol = diffuseColor.rgb * (1.0 + tVar * mix(1.0, 0.6, uGround)) * mix(vec3(1.0), gAlb, uGround);
+// Snow is its own cold white, whatever the ground beneath.
+tCol = mix(tCol, vec3(0.86, 0.9, 0.98) * mix(gN.rgb * 2.0, vec3(1.0), gFar * 0.5) * (1.0 + tVar * 0.25), gSn * uGround);
 // Dry and lush tufts on open ground.
 tCol = mix(tCol, tCol * vec3(1.14, 1.06, 0.8), smoothstep(0.5, 0.85, tD2.a) * (1.0 - tRock) * 0.7);
 tCol = mix(tCol, tCol * vec3(0.86, 1.04, 0.86), smoothstep(0.55, 0.9, tD1.a) * (1.0 - tRock) * 0.5);
@@ -385,7 +394,7 @@ tCol = mix(tCol, tCob, tRoad);
 diffuseColor.rgb = tCol;
 `;
 const TERRAIN_ROUGH = /* glsl */ `
-roughnessFactor = mix(roughnessFactor, dot(gB, vec4(0.97, 0.93, 0.84, 0.9)), uGround);
+roughnessFactor = mix(roughnessFactor, mix(dot(gB, vec4(0.97, 0.93, 0.84, 0.9)), 0.6, gSn), uGround);
 roughnessFactor = mix(roughnessFactor, 0.32, tWet * 0.85);
 roughnessFactor = mix(roughnessFactor, 0.7, tRoad * tStone);
 `;
@@ -400,7 +409,7 @@ const TERRAIN_NORMAL = /* glsl */ `
   vec3 gSx = dFdx(-vViewPosition), gSy = dFdy(-vViewPosition);
   vec3 gR1 = cross(gSy, normal), gR2 = cross(normal, gSx);
   float gDet = dot(gSx, gR1);
-  vec3 gGrad = sign(gDet) * (dFdx(gH) * gR1 + dFdy(gH) * gR2) * 1.4 * uGround * gLod;
+  vec3 gGrad = sign(gDet) * (dFdx(gH) * gR1 + dFdy(gH) * gR2) * (1.2 - 0.8 * gB.y) * uGround * gLod;
   normal = normalize(abs(gDet) * normal - gGrad);
 }
 `;
@@ -412,13 +421,14 @@ export const TILES = Math.round((WORLD_HALF * 2) / TILE);
 const materials = new Map<boolean, THREE.MeshStandardMaterial>();
 
 let groundTex: { uniforms: Record<string, THREE.IUniform> } | null = null;
-/** The four ground layers (see scripts/ground-textures.py); the ground goes plain until all have loaded. */
+/** The ground layers (see scripts/ground-textures.py); the ground goes plain until all have loaded. */
 function groundTextures() {
   if (groundTex) return groundTex;
   const uniforms: Record<string, THREE.IUniform> = { uGround: { value: 0 } };
   const loader = new THREE.TextureLoader();
-  let left = 4;
-  for (const [name, url] of [['uSoil', soilUrl], ['uGrass', grassUrl], ['uRock', rockUrl], ['uSand', sandUrl]] as const) {
+  const layers = [['uSoil', soilUrl], ['uGrass', grassUrl], ['uRock', rockUrl], ['uSand', sandUrl], ['uSnow', snowUrl]] as const;
+  let left = layers.length;
+  for (const [name, url] of layers) {
     const tex = loader.load(url, () => {
       if (--left === 0) uniforms.uGround.value = 1;
     });
@@ -489,7 +499,7 @@ function groundColor(x: number, z: number, y: number, ny: number, out: THREE.Col
     out.lerp(SCORCH, smoothstep(0.85, 1, run) * smoothstep(VOLCANO.radius, VOLCANO.crater + 20, dv) * 0.6);
   } else if (zone.id === 'peaks') {
     // Snow on the heights, thinning on the steepest faces.
-    out.lerp(SNOW, smoothstep(34, 60, y + 8 * noise2(x / 40, z / 40)) * (1 - rock * 0.55));
+    out.lerp(SNOW, smoothstep(26, 48, y + 8 * noise2(x / 40, z / 40)) * (1 - rock * 0.55));
   } else if (zone.id === 'cinder') {
     // Glowing seams and the scorched rims of the lava pools.
     out.lerp(EMBER, (1 - smoothstep(0, 0.05, Math.abs(noise2(x / 26, z / 26)))) * 0.55);

@@ -1,5 +1,5 @@
 """
-Bakes the ground's surface textures: src/assets/ground-{soil,grass,rock,sand}.webp.
+Bakes the ground's surface textures: src/assets/ground-{soil,grass,rock,sand,snow}.webp.
 
 Each is a seamless 512² tile. RGB is the layer's colour divided by its own mean
 (stored at half scale, so 0.5 means "the ground's colour as it is"); the terrain
@@ -234,8 +234,27 @@ def sand():
     return save('sand', rgb, h)
 
 
+def snow():
+    """Snow: soft wind-carved drifts, faint ripples, blue shadow in the hollows, glinting crystals."""
+    drift = fbm(6, 3, 0.55, seed=51)
+    yy, xx = np.mgrid[0:N, 0:N].astype(float)
+    w = fbm(4, 4, seed=52)
+    ripple = 0.5 + 0.5 * np.sin((xx * 0.4 + yy * 0.9) / N * np.pi * 2 * 5 + w * 8)
+    fine = fbm(3, 64, 0.5, seed=53)
+    h = drift * 0.6 + ripple * 0.15 + fine * 0.25
+    t = 0.86 + 0.1 * (h - 0.5)
+    rgb = np.dstack([t * 0.95, t * 0.97, t * 1.02])
+    # Blue in the hollows.
+    hollow = np.clip((0.45 - drift) * 2.5, 0, 1)
+    rgb = rgb * (1 - 0.12 * hollow[..., None]) + np.array([0.0, 0.01, 0.04]) * hollow[..., None]
+    r = np.random.default_rng(54)
+    glint = r.random((N, N)) < 0.006
+    rgb = np.where(glint[..., None], np.minimum(1, rgb * 1.25), rgb)
+    return save('snow', rgb, h)
+
+
 if __name__ == '__main__':
-    tiles = [soil(), grass(), rock(), sand()]
+    tiles = [soil(), grass(), rock(), sand(), snow()]
     if '--preview' in sys.argv:
         strip = np.concatenate([np.tile(np.clip(t, 0, 1), (2, 2, 1)) for t in tiles], axis=1)
         Image.fromarray((strip * 255).astype(np.uint8)).save(os.path.join(os.path.dirname(__file__), '..', 'blender', 'preview', 'ground.png'))
