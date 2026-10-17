@@ -5,11 +5,12 @@
 Every model is built from Blender objects (bevelled boxes, tubes, metaball
 canopies, displaced rocks), each painted with a colour or a colour slot the
 game fills in (a house's plaster, roof and shutters), shaded with
-ray-traced occlusion and written to src/assets/world.bin. Plants also carry
+ray-traced occlusion and written to src/assets/world.bin.gz. Plants also carry
 how much the land's own colour tints each part and how much it glows, as
 the game's swaying vegetation expects.
 """
 
+import gzip
 import json
 import math
 import os
@@ -24,7 +25,7 @@ from mathutils.bvhtree import BVHTree
 from mathutils.noise import noise as pnoise
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, '..', 'src', 'assets', 'world.bin')
+OUT = os.path.join(HERE, '..', 'src', 'assets', 'world.bin.gz')
 MODELS = {}
 TAU = math.tau
 
@@ -333,7 +334,7 @@ def pack(name, m):
 
 
 def read(path):
-    with open(path, 'rb') as fh:
+    with gzip.open(path, 'rb') as fh:
         raw = fh.read()
     if raw[:4] != b'MBW1':
         return [], []
@@ -348,7 +349,8 @@ def read(path):
 
 def write(heads, blobs_):
     header = json.dumps(heads).encode()
-    with open(OUT, 'wb') as fh:
+    # Gzipped (the game unpacks it as it loads); no timestamp, so the same models make the same file.
+    with open(OUT, 'wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', compresslevel=9, mtime=0) as fh:
         fh.write(b'MBW1')
         fh.write(struct.pack('<I', len(header)))
         fh.write(header)
@@ -1069,6 +1071,311 @@ def well(sc):
     box(sc, (3.2, 0.18, 0.18), (0, 3.3, 0), bevel=0.03, rgb=TIMBER)
     for side in (-1, 1):
         box(sc, (3.4, 0.08, 1.15), (0, 3.62, side * 0.5), rot=(side * 0.62, 0, 0), bevel=0.02, slot=ROOFS, rgb=0xffffff)
+
+
+# ---------------------------------------------------------------- landmarks --
+
+
+def ball(sc, c, r, scale=(1, 1, 1), subdiv=1, **kw):
+    b = bmesh.new()
+    bmesh.ops.create_icosphere(b, subdivisions=subdiv, radius=r)
+    me = bpy.data.meshes.new('ball')
+    b.to_mesh(me)
+    b.free()
+    o = obj(me)
+    o.scale = (scale[0], scale[2], scale[1])
+    o.location = G(*c)
+    kw.setdefault('smooth', subdiv > 1)
+    return sc.add(o, **kw)
+
+
+def column(sc, base, h, r, rgb=0x9a948a, fluted=True, sides=12):
+    """A column: a square plinth, a fluted shaft with a little entasis, a capital."""
+    x, y, z = base
+    box(sc, (r * 2.6, 0.22, r * 2.6), (x, y + 0.11, z), bevel=0.03, rgb=mix_hex(rgb, 0, 0.15))
+    tube(sc, [(x, y + 0.2, z), (x, y + h * 0.5, z), (x, y + h - 0.25, z)], lambda u: r * (1 - 0.12 * u + 0.05 * math.sin(math.pi * u)), sides=sides,
+         profile=(lambda a, u: 1 - 0.07 * abs(math.cos(a * sides / 2))) if fluted else None, rgb=rgb)
+    tube(sc, [(x, y + h - 0.3, z), (x, y + h - 0.12, z)], lambda u: r * (1.0 + 0.4 * u), sides=sides, rgb=rgb)
+    box(sc, (r * 2.8, 0.14, r * 2.8), (x, y + h - 0.07, z), bevel=0.02, rgb=mix_hex(rgb, 0, 0.1))
+
+
+def window_arch(sc, at, w, h, ry, depth=0.12, frame=0x5e584e, lit=False):
+    """A round-headed window: stone jambs and an arch of voussoirs (the pane itself is drawn lit, apart)."""
+    x, y, z = at
+    c, s_ = math.cos(ry), math.sin(ry)
+    P = lambda lx, ly, lz: (x + lx * c + lz * s_, y + ly, z - lx * s_ + lz * c)
+    if lit:
+        verts, faces = [], []
+        n = 8
+        pts = [(-w / 2, 0), (w / 2, 0)] + [(math.cos(math.pi * k / n) * w / 2, h - w / 2 + math.sin(math.pi * k / n) * w / 2) for k in range(n + 1)]
+        ctr = len(pts)
+        for lx, ly in pts:
+            verts.append(G(*P(lx, ly, depth)))
+        verts.append(G(*P(0, h * 0.5, depth)))
+        ring = [0, 1] + list(range(2, ctr))
+        for i in range(len(ring)):
+            faces.append((ctr, ring[(i + 1) % len(ring)], ring[i]))
+        return sc.mesh(verts, faces, rgb=0xffffff, smooth=False, ao=False)
+    for sx in (-1, 1):
+        box(sc, (0.16, h - w / 2, depth * 2), P(sx * (w / 2 + 0.08), (h - w / 2) / 2, 0), rot=(0, ry, 0), rgb=frame)
+    n = 7
+    for k in range(n):
+        a0, a1 = math.pi * k / n, math.pi * (k + 1) / n
+        a = (a0 + a1) / 2
+        r = w / 2 + 0.08
+        box(sc, (0.16, 0.26, depth * 2), P(math.cos(a) * r, h - w / 2 + math.sin(a) * r, 0), rot=(0, ry, a - math.pi / 2), rgb=mix_hex(frame, 0, (k % 2) * 0.08))
+
+
+@model('chapel')
+def chapel(sc):
+    """The Chapel of Light: a stone nave with buttresses and arched windows, a slate roof, a bell tower with a spire and a golden sun, a rose window."""
+    rng = sc.rng
+    # Plinth, walls of coursed stone, buttresses.
+    stones(sc, -4.9, 4.9, -0.1, 0.7, -6.9, 0.2, rng, rgb=0x5a554c, course=0.4)
+    box(sc, (9.8, 0.8, 13.8), (0, 0.3, 0), rgb=0x5a554c)
+    for side in (-1, 1):
+        stones(sc, -6.5, 6.5, 0.7, 8.5, side * 4.55, 0.12, rng, rgb=0x6a645a, course=0.5, along='z', width=(0.8, 1.5))
+    stones(sc, -4.5, 4.5, 0.7, 8.5, -6.55, 0.12, rng, rgb=0x6a645a, course=0.5, width=(0.8, 1.5))
+    stones(sc, -4.5, 4.5, 0.7, 8.5, 6.55, 0.12, rng, rgb=0x6a645a, course=0.5, width=(0.8, 1.5))
+    box(sc, (9, 8, 13), (0, 4.5, 0), rgb=0x5e584e)
+    for sx in (-1, 1):
+        for zz in (-4.5, -1.5, 1.5, 4.5):
+            box(sc, (0.9, 6.0, 1.0), (sx * 4.85, 3.5, zz), bevel=0.05, rgb=0x5e584e)
+            box(sc, (0.9, 1.5, 1.0), (sx * 5.0, 7.0, zz), rot=(0, 0, -sx * 0.5), bevel=0.05, rgb=0x56514a)
+        for zz in (-3.0, 0.0, 3.0):
+            window_arch(sc, (sx * 4.5, 3.0, zz), 1.0, 3.0, sx * math.pi / 2)
+    # The roof: slate courses over a steep gable.
+    roof(sc, 13, 9, 4.2, 8.5, over=0.4, rows=9)
+    # The front: a great door under an arch, steps up to it, the rose window above.
+    box(sc, (2.4, 3.4, 0.25), (0, 2.4, 6.55), rgb=0x3a352f)
+    planks(sc, 2.0, 3.0, (0, 2.2, 6.68), 6, 0x4a3220)
+    window_arch(sc, (0, 0.7, 6.6), 2.3, 3.9, 0)
+    for i in range(3):
+        box(sc, (4 - i * 0.4, 0.3, 1.0), (0, 0.1 + i * 0.2, 7.2 + (2 - i) * 0.45), bevel=0.04, rgb=0x6a645a)
+    tube(sc, [(0, 12.5, 6.5), (0, 12.5, 6.75)], 1.0, sides=16, rgb=0x5e584e)
+    # The bell tower over the door, its spire and the sun at the top.
+    stones(sc, -1.5, 1.5, 8.0, 17.4, 3.5, 0.14, rng, rgb=0x6a645a, course=0.6, width=(0.7, 1.2))
+    stones(sc, -1.5, 1.5, 8.0, 17.4, 6.5, 0.14, rng, rgb=0x6a645a, course=0.6, width=(0.7, 1.2))
+    stones(sc, 3.5, 6.5, 8.0, 17.4, -1.5, 0.14, rng, rgb=0x6a645a, course=0.6, along='z', width=(0.7, 1.2))
+    stones(sc, 3.5, 6.5, 8.0, 17.4, 1.5, 0.14, rng, rgb=0x6a645a, course=0.6, along='z', width=(0.7, 1.2))
+    box(sc, (2.9, 9.6, 2.9), (0, 12.6, 5), rgb=0x5e584e)
+    for sx, sz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        window_arch(sc, (sx * 1.5, 14.8, 5 + sz * 1.5), 0.8, 1.8, math.atan2(sx, sz) if sz != 0 or sx != 0 else 0)
+    box(sc, (3.6, 0.6, 3.6), (0, 17.6, 5), bevel=0.06, rgb=0x56514a)
+    cone(sc, (0, 17.8, 5), (0, 22.6, 5), 2.4, sides=4, rgb=0x3a3a44)
+    tube(sc, [(0, 22.4, 5), (0, 23.8, 5)], 0.08, sides=6, rgb=0xb08a3a)
+    tube(sc, [(-0.45, 23.4, 5), (0.45, 23.4, 5)], 0.08, sides=6, rgb=0xb08a3a)
+    ball(sc, (0, 23.85, 5), 0.16, rgb=0xd8b050)
+
+
+@model('chapel.lit')
+def chapel_lit(sc):
+    for sx in (-1, 1):
+        for zz in (-3.0, 0.0, 3.0):
+            window_arch(sc, (sx * 4.5, 3.0, zz), 1.0, 3.0, sx * math.pi / 2, depth=0.14, lit=True)
+    window_arch(sc, (0, 4.6, 6.6), 1.2, 2.1, 0, depth=0.16, lit=True)
+    tube(sc, [(0, 12.5, 6.72), (0, 12.5, 6.8)], 0.82, sides=16, rgb=0xffffff, ao=False)
+
+
+@model('forge')
+def forge(sc):
+    """The forge: an open timber shed, a stone hearth with a tall chimney, bellows, a quenching trough and racks of tools."""
+    rng = sc.rng
+    for px, pz in ((-3, -3), (3, -3), (-3, 3), (3, 3)):
+        box(sc, (0.35, 3.6, 0.35), (px, 1.8, pz), bevel=0.04, rgb=0x3a2a1c)
+        box(sc, (0.5, 0.25, 0.5), (px, 0.12, pz), bevel=0.04, rgb=0x56514a)
+    for pz in (-3, 3):
+        box(sc, (6.6, 0.25, 0.25), (0, 3.55, pz), bevel=0.03, rgb=0x3a2a1c)
+        for sx in (-1, 1):
+            box(sc, (0.14, 1.3, 0.14), (sx * 2.5, 3.0, pz), rot=(0, 0, sx * 0.75), bevel=0.02, rgb=0x3a2a1c)
+    roof(sc, 6.4, 6.6, 1.4, 3.6, over=0.5, rows=6)
+    # The hearth and its chimney.
+    stones(sc, 0.6, 3.0, 0.0, 2.0, -2.82, 0.12, rng, rgb=0x5a554c, course=0.35)
+    stones(sc, -2.85, -0.75, 0.0, 2.0, 0.6, 0.12, rng, rgb=0x5a554c, course=0.35, along='z')
+    stones(sc, -2.85, -0.75, 0.0, 2.0, 3.0, 0.12, rng, rgb=0x5a554c, course=0.35, along='z')
+    box(sc, (2.4, 2.0, 2.0), (1.8, 1.0, -1.8), rgb=0x4e4a44)
+    box(sc, (1.0, 0.7, 0.3), (1.8, 0.95, -0.8), rgb=0x140c08)
+    stones(sc, 1.3, 2.3, 2.0, 5.8, -1.75, 0.08, rng, rgb=0x56514a, course=0.3)
+    stones(sc, 1.3, 2.3, 2.0, 5.8, -2.85, 0.08, rng, rgb=0x56514a, course=0.3)
+    box(sc, (1.0, 3.8, 1.0), (1.8, 3.9, -2.3), rgb=0x3e3a36)
+    box(sc, (1.2, 0.2, 1.2), (1.8, 5.85, -2.3), bevel=0.03, rgb=0x3e3a36)
+    # Bellows beside the hearth.
+    box(sc, (0.7, 0.18, 1.0), (0.3, 0.9, -1.6), rot=(0, 0, 0.15), bevel=0.04, rgb=0x6a4a2c)
+    box(sc, (0.7, 0.18, 1.0), (0.3, 0.6, -1.6), bevel=0.04, rgb=0x5a3e24)
+    tube(sc, [(0.3, 0.75, -1.05), (0.7, 0.85, -0.95)], 0.05, sides=6, rgb=0x2a2622)
+    # A quenching trough and a rack of tongs and hammers.
+    box(sc, (1.6, 0.6, 0.6), (-1.5, 0.3, -2.2), bevel=0.04, rgb=0x5a3e24)
+    box(sc, (1.4, 0.05, 0.42), (-1.5, 0.58, -2.2), rgb=0x18262c)
+    box(sc, (2.0, 0.12, 0.12), (-1.2, 1.9, -2.85), bevel=0.02, rgb=0x3a2a1c)
+    for k in range(5):
+        x = -2.0 + k * 0.4
+        tube(sc, [(x, 1.85, -2.8), (x + 0.02, 1.2, -2.78)], 0.02, sides=5, rgb=0x2a2622)
+        if k % 2:
+            box(sc, (0.16, 0.1, 0.1), (x + 0.02, 1.18, -2.78), bevel=0.01, rgb=0x3a3a3e)
+
+
+@model('forge.lit')
+def forge_lit(sc):
+    box(sc, (0.9, 0.6, 0.06), (1.8, 0.95, -0.66), rgb=0xffffff, ao=False)
+
+
+@model('archive')
+def archive(sc):
+    """The Archive: a pale stone hall on a plinth, a colonnade along its front, a cornice and a shallow slate roof."""
+    rng = sc.rng
+    box(sc, (10.8, 0.6, 8.8), (0, 0.3, 0), bevel=0.05, rgb=0x5a554c)
+    for side in (-1, 1):
+        stones(sc, -4.9, 4.9, 0.6, 6.0, side * 4.05, 0.1, rng, rgb=0x7a7468, course=0.55, width=(0.9, 1.6))
+    stones(sc, -3.9, 3.9, 0.6, 6.0, -5.05, 0.1, rng, rgb=0x7a7468, course=0.55, along='z', width=(0.9, 1.6))
+    box(sc, (10, 5.5, 8), (0, 3.3, 0), rgb=0x6e685e)
+    box(sc, (11, 0.8, 9), (0, 6.4, 0), bevel=0.08, rgb=0x7a7468)
+    box(sc, (11.3, 0.2, 9.3), (0, 6.0, 0), bevel=0.03, rgb=0x6a645a)
+    for i in range(4):
+        column(sc, (5.6, 0.6, -3 + i * 2), 5.6, 0.35, rgb=0x9a948a)
+    for zz in (-2.0, 2.0):
+        window_arch(sc, (5.05, 2.0, zz), 0.9, 2.6, math.pi / 2)
+    box(sc, (0.3, 3.0, 1.6), (5.1, 2.1, 0), rgb=0x3a2a1c)
+    planks(sc, 1.4, 2.6, (5.26, 1.9, 0), 4, 0x4a3220, rot=(0, math.pi / 2, 0))
+    # A low hipped roof.
+    for side in (-1, 1):
+        verts = [G(-5.7, 6.8, side * 4.7), G(5.7, 6.8, side * 4.7), G(4.0, 8.9, side * 0.6), G(-4.0, 8.9, side * 0.6)]
+        sc.mesh(verts, [(0, 1, 2, 3)] if side > 0 else [(3, 2, 1, 0)], rgb=0x3a3a44, smooth=False)
+        verts = [G(side * 5.7, 6.8, -4.7), G(side * 5.7, 6.8, 4.7), G(side * 4.0, 8.9, 0.6), G(side * 4.0, 8.9, -0.6)]
+        sc.mesh(verts, [(0, 1, 2, 3)] if side < 0 else [(3, 2, 1, 0)], rgb=0x34343e, smooth=False)
+    box(sc, (8.1, 0.16, 1.4), (0, 8.95, 0), bevel=0.03, rgb=0x2e2e36)
+
+
+@model('archive.lit')
+def archive_lit(sc):
+    for zz in (-2.0, 2.0):
+        window_arch(sc, (5.05, 2.0, zz), 0.9, 2.6, math.pi / 2, depth=0.14, lit=True)
+
+
+@model('stall')
+def stall(sc):
+    """A market stall: a plank counter, four posts, a striped awning and wares in baskets."""
+    planks(sc, 4.0, 1.0, (0, 0.5, 0.78), 5, 0x5a3e24)
+    box(sc, (4, 0.95, 1.5), (0, 0.48, 0), rgb=0x4a3420)
+    box(sc, (4.1, 0.08, 1.7), (0, 1.0, 0), bevel=0.02, rgb=0x6a4a2c)
+    for px in (-1.9, 1.9):
+        for pz in (-0.85, 0.85):
+            box(sc, (0.14, 2.6 if pz < 0 else 2.2, 0.14), (px, 1.3 if pz < 0 else 1.1, pz), bevel=0.02, rgb=0x3a2a1c)
+    for k in range(8):
+        x = -2.3 + (k + 0.5) * 4.6 / 8
+        box(sc, (4.6 / 8 + 0.01, 0.06, 2.4), (x, 2.48, 0), rot=(0.18, 0, 0), slot=1 if k % 2 == 0 else 0, rgb=0xffffff if k % 2 == 0 else 0xd8cfb0)
+    for k in range(8):
+        x = -2.3 + (k + 0.5) * 4.6 / 8
+        box(sc, (4.6 / 8 * 0.9, 0.22, 0.04), (x, 2.17, 1.22), rot=(0.1, 0, 0), slot=1 if k % 2 == 0 else 0, rgb=0xffffff if k % 2 == 0 else 0xd8cfb0)
+    goods = [0xc8962a, 0x8a3a22, 0x5a7a3a, 0xd8c8a0]
+    for i in range(4):
+        x = -1.4 + i * 0.95
+        tube(sc, [(x, 1.04, 0.1), (x, 1.2, 0.1)], lambda u: 0.26 + 0.06 * u, sides=10, rgb=0x8a6a40)
+        for k in range(6):
+            a = k * 2.4
+            ball(sc, (x + math.cos(a) * 0.12, 1.24 + (k % 2) * 0.06, 0.1 + math.sin(a) * 0.12), 0.08, rgb=goods[i], subdiv=0)
+
+
+@model('anvil')
+def anvil(sc):
+    """A smith's anvil on a stump: horn, heel, a waisted body, a broad foot."""
+    tube(sc, [(0, 0, 0), (0, 0.3, 0)], 0.5, sides=12, rgb=0x4a3624, profile=lambda a, u: 1 + 0.05 * math.sin(a * 5))
+    box(sc, (0.62, 0.12, 0.5), (0, 0.36, 0), bevel=0.03, rgb=0x2a2a2c)
+    box(sc, (0.4, 0.26, 0.3), (0, 0.55, 0), bevel=0.03, rgb=0x2a2a2c)
+    box(sc, (1.0, 0.24, 0.42), (-0.08, 0.78, 0), bevel=0.04, rgb=0x3a3a3e)
+    tube(sc, [(0.42, 0.78, 0), (0.68, 0.79, 0), (0.92, 0.84, 0)], lambda u: 0.16 * (1 - u) + 0.015, sides=10, rgb=0x3a3a3e, smooth=True)
+    box(sc, (0.08, 0.06, 0.08), (-0.45, 0.92, 0), rgb=0x1a1a1c)
+
+
+@model('brazier')
+def brazier(sc):
+    """A fire brazier: a round stone foot, a carved pillar, an iron bowl with four horns."""
+    tube(sc, [(0, 0, 0), (0, 0.3, 0)], 0.55, sides=14, rgb=0x4e4a44)
+    tube(sc, [(0, 0.3, 0), (0, 0.8, 0), (0, 1.35, 0)], lambda u: 0.27 - 0.05 * math.sin(math.pi * u), sides=8, rgb=0x56524a, profile=lambda a, u: 1 - 0.08 * abs(math.cos(a * 4)))
+    tube(sc, [(0, 1.35, 0), (0, 1.55, 0), (0, 1.78, 0)], lambda u: 0.3 + 0.32 * u, sides=14, rgb=0x2a2624, cap=True)
+    tube(sc, [(0, 1.74, 0), (0, 1.82, 0)], 0.64, sides=14, rgb=0x3a3430)
+    for i in range(4):
+        a = i / 4 * TAU + 0.4
+        cone(sc, (math.cos(a) * 0.62, 1.78, math.sin(a) * 0.62), (math.cos(a) * 0.72, 2.12, math.sin(a) * 0.72), 0.06, sides=5, rgb=0x2a2624)
+    for k in range(5):
+        a = k * 1.3
+        ball(sc, (math.cos(a) * 0.3, 1.8, math.sin(a) * 0.3), 0.14, scale=(1, 0.6, 1), rgb=0x1a1412, subdiv=0)
+
+
+@model('brazier.lit')
+def brazier_lit(sc):
+    tube(sc, [(0, 1.76, 0), (0, 1.8, 0)], 0.56, sides=14, rgb=0xffffff, ao=False)
+
+
+@model('monolith')
+def monolith(sc):
+    """A weathered standing stone, one unit wide, deep and tall (stretched to each stone)."""
+    rock_mesh(sc, (0.6, 0.55, 0.6), 11, tris=90, flat_bottom=False, rgb=0xffffff, slot=4)
+    for p in sc.pieces:
+        me = p.me
+        for v in me.vertices:
+            v.co.z = (v.co.z + 0.55) / 1.1
+            v.co.x *= 1.0 - 0.15 * v.co.z
+            v.co.y *= 1.0 - 0.15 * v.co.z
+
+
+@model('altar')
+def altar(sc):
+    """A trial altar: a block of carved stone on a stepped base, runes cut round its top (drawn in the stone's colour)."""
+    box(sc, (2.6, 0.3, 2.6), (0, 0.0, 0), bevel=0.05, slot=4, rgb=0xd0d0d0)
+    box(sc, (2.2, 0.8, 2.2), (0, 0.55, 0), bevel=0.06, slot=4, rgb=0xffffff)
+    box(sc, (2.4, 0.18, 2.4), (0, 1.0, 0), bevel=0.04, slot=4, rgb=0xe0e0e0)
+    for k in range(4):
+        a = k * math.pi / 2
+        for j in range(3):
+            box(sc, (0.28, 0.32, 0.04), (math.sin(a) * 1.11 + math.cos(a) * (j - 1) * 0.6, 0.55, math.cos(a) * 1.11 - math.sin(a) * (j - 1) * 0.6), rot=(0, a, 0), slot=4, rgb=0x707070)
+
+
+@model('pier')
+def pier(sc):
+    """A colosseum pier: an arcaded block of stone, one unit tall (stretched), 2 deep and 7.2 long, its top worn."""
+    rng = sc.rng
+    for side in (-1, 1):
+        stones(sc, -3.6, 3.6, 0.0, 1.0, side * 1.0, 0.1, rng, rgb=0xffffff, course=0.14, along='z', width=(0.7, 1.3))
+    box(sc, (1.9, 1.0, 7.1), (0, 0.5, 0), rgb=0xd8d8d8)
+    for p in sc.pieces:
+        p.slot = 4
+
+
+@model('cookfire')
+def cookfire(sc):
+    """A cookfire: a ring of stones, crossed logs, a tripod and its pot."""
+    rng = sc.rng
+    for i in range(9):
+        a = i / 9 * TAU
+        rock_mesh(sc, (0.24, 0.17, 0.2), 30 + i, tris=40, rgb=mix_hex(0x6a645a, 0, rng.uniform(0, 0.2)))
+        p = sc.pieces[-1]
+        for v in p.me.vertices:
+            v.co += G(math.cos(a) * 0.75, 0.08, math.sin(a) * 0.75)
+    for i in range(3):
+        a = i / 3 * math.pi
+        tube(sc, [(math.cos(a) * -0.45, 0.14 + i * 0.05, math.sin(a) * -0.45), (math.cos(a) * 0.45, 0.14 + i * 0.05, math.sin(a) * 0.45)], 0.07, sides=7, rgb=0x4a3420, profile=lambda an, u: 1 + 0.1 * math.sin(an * 3))
+    for i in range(3):
+        a = i / 3 * TAU + 0.3
+        tube(sc, [(math.cos(a) * 0.62, 0.0, math.sin(a) * 0.62), (0, 1.55, 0)], 0.03, sides=5, rgb=0x2a2622)
+    tube(sc, [(0, 1.5, 0), (0, 1.05, 0)], 0.008, sides=4, rgb=0x2a2622)
+    tube(sc, [(0, 0.68, 0), (0, 0.85, 0), (0, 1.02, 0)], lambda u: 0.24 + 0.04 * math.sin(math.pi * u), sides=12, rgb=0x2a2a2c)
+
+
+@model('workbench')
+def workbench(sc):
+    """A fletcher's trestle table: a plank top, splayed legs, a vice, a saw and a bundle of arrows."""
+    for k in range(4):
+        box(sc, (2.2, 0.1, 0.9 / 4 - 0.012), (0, 0.88, -0.45 + 0.9 / 8 + k * 0.9 / 4), rgb=mix_hex(0x6a4a2a, 0, (k % 3) * 0.07))
+    for dx in (-0.95, 0.95):
+        for dz in (-0.35, 0.35):
+            box(sc, (0.1, 0.9, 0.1), (dx, 0.42, dz), rot=(dz * 0.3, 0, 0), bevel=0.015, rgb=0x4a3420)
+        box(sc, (0.08, 0.08, 0.7), (dx, 0.25, 0), rgb=0x4a3420)
+    box(sc, (0.22, 0.18, 0.16), (0.7, 1.02, -0.25), bevel=0.02, rgb=0x3a3a3e)
+    tube(sc, [(0.7, 1.02, -0.35), (0.7, 1.02, -0.5)], 0.015, sides=5, rgb=0x3a3a3e)
+    box(sc, (0.7, 0.012, 0.18), (-0.4, 0.94, 0.1), rot=(0, 0.5, 0), rgb=0x9a9aa0)
+    box(sc, (0.16, 0.05, 0.06), (-0.78, 0.95, 0.31), rot=(0, 0.5, 0), bevel=0.01, rgb=0x5a3e24)
+    for i in range(6):
+        tube(sc, [(0.1 + i * 0.02, 0.95, -0.4 + i * 0.04), (0.1 + i * 0.02 + 0.3, 0.95, 0.35 + i * 0.04)], 0.01, sides=4, rgb=0x8a6a44)
 
 
 # --------------------------------------------------------------------- main --

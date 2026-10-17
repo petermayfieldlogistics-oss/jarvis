@@ -7,9 +7,10 @@ Each builder sculpts its creature from metaball clay around the skeleton the
 game animates (so every animation still plays), adds hard parts (claws,
 teeth, horns, eyes), and paints it with colour slots the game fills from the
 creature's own colour (so a frost wolf and a grey wolf share one model). The
-result goes into src/assets/creatures.bin beside whatever else is there.
+result goes into src/assets/creatures.bin.gz beside whatever else is there.
 """
 
+import gzip
 import json
 import math
 import os
@@ -25,7 +26,7 @@ from kit import DARK, FIXED, GLOW, LIGHT, MAIN, Beast, G, Part, lerp, look, pack
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RIGS = os.path.join(HERE, 'rigs')
-OUT = os.path.join(HERE, '..', 'src', 'assets', 'creatures.bin')
+OUT = os.path.join(HERE, '..', 'src', 'assets', 'creatures.bin.gz')
 BUILDERS = {}
 # The colour each was modelled for (the game's default), for previews.
 COLOURS = {}
@@ -1532,7 +1533,7 @@ def preview(kind, surfaces):
 
 
 def read(path):
-    with open(path, 'rb') as fh:
+    with gzip.open(path, 'rb') as fh:
         raw = fh.read()
     if raw[:4] != b'MBC3':
         return [], []
@@ -1549,7 +1550,8 @@ def read(path):
 
 def write(heads, blobs):
     header = json.dumps(heads).encode()
-    with open(OUT, 'wb') as fh:
+    # Gzipped (the game unpacks it as it loads); no timestamp, so the same models make the same file.
+    with open(OUT, 'wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', compresslevel=9, mtime=0) as fh:
         fh.write(b'MBC3')
         fh.write(struct.pack('<I', len(header)))
         fh.write(header)

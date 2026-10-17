@@ -481,7 +481,7 @@ def vertex_normals(verts, tris):
 
 
 def pack(beast, surfaces, replace):
-    """One creature's record for creatures.bin (format 3): header and bytes."""
+    """One creature's record for creatures.bin.gz (format 3): header and bytes."""
     data = beast.data
     head = {'kind': data['kind'], 'bones': len(data['bones']), 'bind': [b['w'] for b in data['bones'][:3]], 'replace': replace, 'surfaces': []}
     blobs = []

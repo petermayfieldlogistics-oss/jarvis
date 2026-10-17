@@ -1937,6 +1937,8 @@ export class World {
     // Chapel of Light.
     {
       const x = 0, z = -28, y = this.groundY(x, z);
+      if (b.model('chapel', [0, 0x3a3a44], x, y, z)) b.modelIn('chapel.lit', mat(0xffe8a0, { emissive: 0xffd060, emissiveIntensity: 1.6 }), x, y, z);
+      else {
       b.paint(BOX, 0x5a554c, x, y + 0.3, z, 0, 9.8, 0.8, 13.8);
       b.paint(BOX, stone, x, y + 4, z, 0, 9, 9, 13);
       b.paint(ROOF, 0x3a3a44, x, y + 8.5, z, 0, 5.4, 4.2, 14);
@@ -1950,6 +1952,7 @@ export class World {
       b.add(CYL, mat(0xffe8a0, { emissive: 0xffd060, emissiveIntensity: 1.6 }), x, y + 12.5, z + 6.55, 0, 1.4, 0.1, 1.4, Math.PI / 2);
       b.paint(BOX, 0x3a352f, x, y + 1.5, z + 6.55, 0, 2, 3, 0.1);
       for (let i = 0; i < 3; i++) b.paint(BOX, 0x6a645a, x, y + 0.1 + i * 0.2, z + 7.2 + (2 - i) * 0.45, 0, 4 - i * 0.4, 0.3, 1);
+      }
       for (const sx of [-1, 1]) this.banner(x + sx * 3.2, z + 8.2, sx < 0 ? Math.PI : 0, 0xd8cfa8);
       this.addCollider(x, z - 2, 6.5);
       this.addCollider(x, z + 3, 5.5);
@@ -1958,11 +1961,14 @@ export class World {
     // Forge.
     {
       const x = 34, z = 16, y = this.groundY(x, z);
-      for (const [px, pz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) b.paint(BOX, 0x3a2a1c, x + px, y + 1.8, z + pz, 0, 0.35, 3.6, 0.35);
-      b.paint(ROOF, 0x4a2e22, x, y + 3.6, z, 0, 4.4, 1.4, 7.6);
-      b.paint(BOX, 0x5a554c, x + 1.8, y + 1, z - 1.8, 0, 2.4, 2, 2);
-      b.paint(BOX, 0x4e4a44, x + 1.8, y + 3.4, z - 2.3, 0, 1, 4.8, 1);
-      b.add(BOX, mat(0xff7020, { emissive: 0xff5010, emissiveIntensity: 2.5 }), x + 1.8, y + 0.9, z - 0.78, 0, 1, 0.7, 0.05);
+      if (b.model('forge', [0, 0x4a2e22], x, y, z)) b.modelIn('forge.lit', mat(0xff7020, { emissive: 0xff5010, emissiveIntensity: 2.5 }), x, y, z);
+      else {
+        for (const [px, pz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) b.paint(BOX, 0x3a2a1c, x + px, y + 1.8, z + pz, 0, 0.35, 3.6, 0.35);
+        b.paint(ROOF, 0x4a2e22, x, y + 3.6, z, 0, 4.4, 1.4, 7.6);
+        b.paint(BOX, 0x5a554c, x + 1.8, y + 1, z - 1.8, 0, 2.4, 2, 2);
+        b.paint(BOX, 0x4e4a44, x + 1.8, y + 3.4, z - 2.3, 0, 1, 4.8, 1);
+        b.add(BOX, mat(0xff7020, { emissive: 0xff5010, emissiveIntensity: 2.5 }), x + 1.8, y + 0.9, z - 0.78, 0, 1, 0.7, 0.05);
+      }
       this.smokeSource(x + 1.8, y + 6.1, z - 2.3, 0);
       this.barrel(x - 3.8, z + 1.2);
       this.crate(x - 3.6, z - 1.4, 0.3, 0.9);
@@ -1973,12 +1979,15 @@ export class World {
     // The Archive.
     {
       const x = -36, z = 6, y = this.groundY(x, z);
-      b.paint(BOX, 0x5a554c, x, y + 0.3, z, 0, 10.8, 0.6, 8.8);
-      b.paint(BOX, 0x7a7468, x, y + 3, z, 0, 10, 6, 8);
-      b.paint(BOX, 0x7a7468, x, y + 6.4, z, 0, 11, 0.8, 9);
-      b.paint(ROOF, 0x3a3a44, x, y + 6.8, z, Math.PI / 2, 4.9, 2.2, 11.4);
-      for (let i = 0; i < 4; i++) b.paint(CYL, 0x9a948a, x + 5.6, y + 3, z - 3 + i * 2, 0, 0.7, 6, 0.7);
-      b.add(BOX, mat(0xffc070, { emissive: 0xff9a40, emissiveIntensity: 1.3 }), x + 5.06, y + 1.5, z, 0, 0.05, 2.6, 1.4);
+      if (b.model('archive', [], x, y, z)) b.modelIn('archive.lit', mat(0xffc070, { emissive: 0xff9a40, emissiveIntensity: 1.3 }), x, y, z);
+      else {
+        b.paint(BOX, 0x5a554c, x, y + 0.3, z, 0, 10.8, 0.6, 8.8);
+        b.paint(BOX, 0x7a7468, x, y + 3, z, 0, 10, 6, 8);
+        b.paint(BOX, 0x7a7468, x, y + 6.4, z, 0, 11, 0.8, 9);
+        b.paint(ROOF, 0x3a3a44, x, y + 6.8, z, Math.PI / 2, 4.9, 2.2, 11.4);
+        for (let i = 0; i < 4; i++) b.paint(CYL, 0x9a948a, x + 5.6, y + 3, z - 3 + i * 2, 0, 0.7, 6, 0.7);
+        b.add(BOX, mat(0xffc070, { emissive: 0xff9a40, emissiveIntensity: 1.3 }), x + 5.06, y + 1.5, z, 0, 0.05, 2.6, 1.4);
+      }
       for (let i = 0; i < 3; i++) this.crate(x - 6.2, z - 2 + i * 1.4, i * 0.4, 0.75);
       this.addCollider(x, z, 6.4);
     }
@@ -1996,12 +2005,14 @@ export class World {
       }
       this.addCollider(TOWN.x, TOWN.z, 1.8);
       const sx = 16, sz = 40, sy = this.groundY(sx, sz);
-      b.paint(BOX, 0x5a3e24, sx, sy + 0.5, sz, 0, 4, 1, 1.6);
-      b.paint(BOX, 0x8a2a22, sx, sy + 2.6, sz, 0.15, 4.6, 0.12, 2.4);
-      for (let i = 0; i < 5; i++) b.paint(BOX, 0xd8cfb0, sx - 2 + i * 1.0, sy + 2.5 - 0.02, sz + 1.21, 0.15, 0.5, 0.14, 0.06);
-      for (const px of [-1.9, 1.9]) b.paint(BOX, 0x3a2a1c, sx + px, sy + 1.3, sz - 0.9, 0, 0.15, 2.6, 0.15);
-      const goods = [0xc8962a, 0x8a3a22, 0x5a7a3a, 0xd8c8a0];
-      for (let i = 0; i < 4; i++) b.paint(ICO, goods[i], sx - 1.4 + i * 0.95, sy + 1.15, sz + 0.1, i, 0.32, 0.22, 0.32);
+      if (!b.model('stall', [0x8a2a22], sx, sy, sz)) {
+        b.paint(BOX, 0x5a3e24, sx, sy + 0.5, sz, 0, 4, 1, 1.6);
+        b.paint(BOX, 0x8a2a22, sx, sy + 2.6, sz, 0.15, 4.6, 0.12, 2.4);
+        for (let i = 0; i < 5; i++) b.paint(BOX, 0xd8cfb0, sx - 2 + i * 1.0, sy + 2.5 - 0.02, sz + 1.21, 0.15, 0.5, 0.14, 0.06);
+        for (const px of [-1.9, 1.9]) b.paint(BOX, 0x3a2a1c, sx + px, sy + 1.3, sz - 0.9, 0, 0.15, 2.6, 0.15);
+        const goods = [0xc8962a, 0x8a3a22, 0x5a7a3a, 0xd8c8a0];
+        for (let i = 0; i < 4; i++) b.paint(ICO, goods[i], sx - 1.4 + i * 0.95, sy + 1.15, sz + 0.1, i, 0.32, 0.22, 0.32);
+      }
       this.crate(sx + 2.9, sz - 0.4, 0.2, 0.8);
       this.crate(sx + 3.0, sz + 0.7, 0.9, 0.6);
       this.barrel(sx - 2.9, sz + 0.3);
@@ -2089,18 +2100,20 @@ export class World {
       const { x, z } = s;
       const y = this.groundY(x, z);
       if (s.id === 'cookfire') {
-        for (let i = 0; i < 8; i++) {
+        if (!b.model('cookfire', [], x, y, z)) for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
           b.paint(ICO, i % 2 ? 0x6a645a : 0x5a554c, x + Math.cos(a) * 0.75, y + 0.12, z + Math.sin(a) * 0.75, a, 0.22, 0.16, 0.2);
         }
-        // Three logs crossed like a star (laid flat by rz, aimed by ry).
-        for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14 + i * 0.05, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, 0, Math.PI / 2);
-        // A tripod and its pot.
-        for (let i = 0; i < 3; i++) {
-          const a = (i / 3) * Math.PI * 2 + 0.3;
-          b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, 0.35, true);
+        if (!worldMesh('cookfire')) {
+          // Three logs crossed like a star (laid flat by rz, aimed by ry).
+          for (let i = 0; i < 3; i++) b.paint(CYL6, 0x4a3420, x, y + 0.14 + i * 0.05, z, (i / 3) * Math.PI, 0.14, 0.9, 0.14, 0, Math.PI / 2);
+          // A tripod and its pot.
+          for (let i = 0; i < 3; i++) {
+            const a = (i / 3) * Math.PI * 2 + 0.3;
+            b.paint(BOX, 0x2a2622, x + Math.cos(a) * 0.55, y + 0.75, z + Math.sin(a) * 0.55, -a, 0.05, 1.6, 0.05, 0, 0.35, true);
+          }
+          b.paint(CYL, 0x2a2a2c, x, y + 0.85, z, 0, 0.5, 0.35, 0.5, 0, 0, true);
         }
-        b.paint(CYL, 0x2a2a2c, x, y + 0.85, z, 0, 0.5, 0.35, 0.5, 0, 0, true);
         const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 6), mat(0xffa040, { emissive: 0xff6a10, emissiveIntensity: 2.2 }));
         flame.position.set(x, y + 0.42, z);
         this.root.add(flame);
@@ -2115,15 +2128,17 @@ export class World {
         this.loom(x, y, z);
       } else {
         // A trestle table with a vice, a saw, a bundle of arrows, and crates.
-        b.paint(BOX, 0x6a4a2a, x, y + 0.88, z, 0.4, 2.2, 0.1, 0.9);
-        for (const [dx, dz] of [[-0.95, -0.35], [0.95, -0.35], [-0.95, 0.35], [0.95, 0.35]]) {
-          const c = Math.cos(0.4), sn = Math.sin(0.4);
-          b.paint(BOX, 0x4a3420, x + dx * c + dz * sn, y + 0.42, z - dx * sn + dz * c, 0.4, 0.1, 0.84, 0.1);
+        if (!b.model('workbench', [], x, y, z, 0.4)) {
+          b.paint(BOX, 0x6a4a2a, x, y + 0.88, z, 0.4, 2.2, 0.1, 0.9);
+          for (const [dx, dz] of [[-0.95, -0.35], [0.95, -0.35], [-0.95, 0.35], [0.95, 0.35]]) {
+            const c = Math.cos(0.4), sn = Math.sin(0.4);
+            b.paint(BOX, 0x4a3420, x + dx * c + dz * sn, y + 0.42, z - dx * sn + dz * c, 0.4, 0.1, 0.84, 0.1);
+          }
+          b.paint(BOX, 0x3a3a3e, x + 0.7, y + 1.02, z - 0.25, 0.4, 0.22, 0.18, 0.16, 0, 0, true);
+          b.paint(BOX, 0x9a9aa0, x - 0.4, y + 0.95, z + 0.1, 0.9, 0.7, 0.02, 0.18, 0, 0, true);
+          // A bundle of arrows lying along the table.
+          for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.019, y + 0.95, z - 0.1 + i * 0.046, 0.4, 0.02, 0.8, 0.02, 0, Math.PI / 2);
         }
-        b.paint(BOX, 0x3a3a3e, x + 0.7, y + 1.02, z - 0.25, 0.4, 0.22, 0.18, 0.16, 0, 0, true);
-        b.paint(BOX, 0x9a9aa0, x - 0.4, y + 0.95, z + 0.1, 0.9, 0.7, 0.02, 0.18, 0, 0, true);
-        // A bundle of arrows lying along the table.
-        for (let i = 0; i < 5; i++) b.paint(CYL6, 0x8a6a44, x + 0.1 + i * 0.019, y + 0.95, z - 0.1 + i * 0.046, 0.4, 0.02, 0.8, 0.02, 0, Math.PI / 2);
         this.crate(x + 1.6, z + 0.9, 0.2, 0.7);
         this.barrel(x - 1.6, z + 0.6);
         this.addCollider(x, z, 1.2);
@@ -2221,10 +2236,12 @@ export class World {
 
   private anvil(x: number, z: number) {
     const y = this.groundY(x, z);
-    this.batch.paint(BOX, 0x2a2a2c, x, y + 0.75, z, 0, 1.3, 0.35, 0.55, 0, 0, true);
-    this.batch.paint(BOX, 0x2a2a2c, x, y + 0.3, z, 0, 0.6, 0.6, 0.45, 0, 0, true);
-    this.batch.paint(CONE4, 0x2a2a2c, x + 0.85, y + 0.8, z, Math.PI / 4, 0.25, 0.5, 0.25, 0, Math.PI / 2, true);
-    this.batch.paint(CYL, 0x4a3624, x, y + 0.05, z, 0, 1.0, 0.1, 1.0);
+    if (!this.batch.model('anvil', [], x, y, z, 0, 1.15)) {
+      this.batch.paint(BOX, 0x2a2a2c, x, y + 0.75, z, 0, 1.3, 0.35, 0.55, 0, 0, true);
+      this.batch.paint(BOX, 0x2a2a2c, x, y + 0.3, z, 0, 0.6, 0.6, 0.45, 0, 0, true);
+      this.batch.paint(CONE4, 0x2a2a2c, x + 0.85, y + 0.8, z, Math.PI / 4, 0.25, 0.5, 0.25, 0, Math.PI / 2, true);
+      this.batch.paint(CYL, 0x4a3624, x, y + 0.05, z, 0, 1.0, 0.1, 1.0);
+    }
     this.addCollider(x, z, 0.8);
     this.interactables.push({ id: `anvil-${x}-${z}`, kind: 'anvil', x, y: y + 1, z, radius: 3, label: 'Anvil: upgrade and smith' });
   }
@@ -2270,7 +2287,8 @@ export class World {
         const x = s.x + Math.cos(a) * 4.4;
         const z = s.z + Math.sin(a) * 4.4;
         const h = 1.2 + this.rand() * 1.1;
-        b.paint(BOX, 0x56524a, x, this.groundY(x, z) + h / 2 - 0.2, z, -a, 0.55, h, 0.4, 0, (this.rand() - 0.5) * 0.2);
+        const lean = (this.rand() - 0.5) * 0.2;
+        if (!b.model('monolith', [0, 0, 0, 0x56524a], x, this.groundY(x, z) - 0.2, z, -a, 0.55, h, 0.4, 0, lean)) b.paint(BOX, 0x56524a, x, this.groundY(x, z) + h / 2 - 0.2, z, -a, 0.55, h, 0.4, 0, lean);
         this.addCollider(x, z, 0.35);
       }
       const ring = new THREE.PlaneGeometry(6.4, 6.4).rotateX(-Math.PI / 2).translate(s.x, y + 0.62, s.z);
@@ -2307,14 +2325,17 @@ export class World {
   private brazier(x: number, z: number) {
     const y = this.groundY(x, z);
     const b = this.batch;
-    b.paint(CYL, 0x4e4a44, x, y + 0.15, z, 0, 1.1, 0.3, 1.1);
-    b.paint(CYL6, 0x56524a, x, y + 0.8, z, 0, 0.55, 1.2, 0.55);
-    b.paint(BOWL, 0x2a2624, x, y + 1.55, z, 0, 1, 1, 1, 0, 0, true);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * TAU + 0.4;
-      b.paint(CONE4, 0x2a2624, x + Math.cos(a) * 0.62, y + 1.86, z + Math.sin(a) * 0.62, a, 0.08, 0.3, 0.08, 0, 0, true);
+    if (b.model('brazier', [], x, y, z)) b.modelIn('brazier.lit', mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y, z);
+    else {
+      b.paint(CYL, 0x4e4a44, x, y + 0.15, z, 0, 1.1, 0.3, 1.1);
+      b.paint(CYL6, 0x56524a, x, y + 0.8, z, 0, 0.55, 1.2, 0.55);
+      b.paint(BOWL, 0x2a2624, x, y + 1.55, z, 0, 1, 1, 1, 0, 0, true);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * TAU + 0.4;
+        b.paint(CONE4, 0x2a2624, x + Math.cos(a) * 0.62, y + 1.86, z + Math.sin(a) * 0.62, a, 0.08, 0.3, 0.08, 0, 0, true);
+      }
+      b.add(CYL, mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y + 1.72, z, 0, 1.05, 0.06, 1.05);
     }
-    b.add(CYL, mat(0xff8030, { emissive: 0xff5010, emissiveIntensity: 2.4 }), x, y + 1.72, z, 0, 1.05, 0.06, 1.05);
     this.smokeSource(x, y + 1.8, z, 1);
     if (!this.propMode) this.emitters.push({ pos: new THREE.Vector3(x, y + 2.4, z), color: 0xff8030, intensity: 10, distance: 16, flicker: 0.35 });
     this.addCollider(x, z, 0.65);
@@ -2336,7 +2357,7 @@ export class World {
           const x = t.x + Math.cos(a) * r;
           const z = t.z + Math.sin(a) * r;
           const h = 6 + this.rand() * 6;
-          this.batch.paint(BOX, stone, x, y + h / 2, z, -a, 2, h, 7.2);
+          if (!this.batch.model('pier', [0, 0, 0, stone], x, y, z, -a, 1, h, 1)) this.batch.paint(BOX, stone, x, y + h / 2, z, -a, 2, h, 7.2);
           this.batch.paint(BOX, 0x5a564e, x, y + h + 0.2, z, -a, 2.4, 0.4, 7.4);
           this.addCollider(x, z, 3.4);
         }
@@ -2349,7 +2370,8 @@ export class World {
           const x = t.x + Math.cos(a) * r;
           const z = t.z + Math.sin(a) * r;
           const h = 3 + this.rand() * 5;
-          this.batch.paint(BOX, stone, x, this.groundY(x, z) + h / 2 - 0.4, z, a, 1.6, h, 1.6, (this.rand() - 0.5) * 0.15);
+          const lean = (this.rand() - 0.5) * 0.15;
+          if (!this.batch.model('monolith', [0, 0, 0, stone], x, this.groundY(x, z) - 0.4, z, a, 1.6, h, 1.6, lean)) this.batch.paint(BOX, stone, x, this.groundY(x, z) + h / 2 - 0.4, z, a, 1.6, h, 1.6, lean);
           this.addCollider(x, z, 1.2);
         }
       }
@@ -2376,7 +2398,7 @@ export class World {
       sigil.position.set(t.x, y + 0.08, t.z);
       this.root.add(sigil);
       this.animated.push({ obj: sigil, kind: 'spin', base: 0 });
-      this.batch.paint(BOX, stone, t.x, y + 0.5, t.z, 0, 2.2, 1, 2.2);
+      if (!this.batch.model('altar', [0, 0, 0, stone], t.x, y, t.z)) this.batch.paint(BOX, stone, t.x, y + 0.5, t.z, 0, 2.2, 1, 2.2);
       const orb = glowSprite(color, 2.2);
       orb.position.set(t.x, y + 2, t.z);
       this.root.add(orb);

@@ -229,7 +229,7 @@ class Skin {
         surfaces.get(surf as Surface)?.dispose();
         surfaces.delete(surf as Surface);
       }
-      for (const [surf, b] of blend.surfaces) surfaces.set(surf as Surface, blendGeometry(b, null, colour, surf === 'glow'));
+      for (const [surf, b] of blend.surfaces) surfaces.set(surf as Surface, blendGeometry(b, colour, surf === 'glow'));
     }
     for (const [surf, geo] of surfaces) {
       let material = surfaceMaterial(surf);

@@ -725,8 +725,7 @@ class Kit {
     root.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones as THREE.Bone[]);
     // Remodelled in Blender (great foes): its surfaces in place of those it replaces, on the same bones.
-    const blend = building ? blendBody(humanoidKey(building), this.bones) : null;
-    const remade = blend && [...blend.surfaces.values()].every((b) => b.mode === 'pal') ? blend : null;
+    const remade = building ? blendBody(humanoidKey(building), this.bones) : null;
     const surfaces = new Map<number, THREE.BufferGeometry>();
     this.bufs.forEach((b, s) => {
       if (!b) return;
@@ -737,18 +736,14 @@ class Kit {
       g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(b.si, 4));
       g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(b.sw, 4));
       g.setIndex(b.ix);
-      const old = blend && !remade && s !== GLOW ? blend.surfaces.get(String(s)) : undefined;
-      if (old) {
-        surfaces.set(s, blendGeometry(old, g));
-        g.dispose();
-      } else surfaces.set(s, g);
+      surfaces.set(s, g);
     });
     if (remade) {
       for (const name of remade.replace) {
         surfaces.get(+name)?.dispose();
         surfaces.delete(+name);
       }
-      for (const [name, b] of remade.surfaces) surfaces.set(+name, blendGeometry(b, null, 0x808080, +name === GLOW));
+      for (const [name, b] of remade.surfaces) surfaces.set(+name, blendGeometry(b, 0x808080, +name === GLOW));
     }
     const ib = this.inkBuf;
     if (ink && (ib || remade)) {

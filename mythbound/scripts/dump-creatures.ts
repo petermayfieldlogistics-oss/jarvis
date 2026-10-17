@@ -1,5 +1,5 @@
 // Writes each creature's skeleton and skin (as built in code) to
-// blender/rigs/<kind>.json, for blender/creatures.py to remodel.
+// blender/rigs/<kind>.json, for blender/beasts.py to sculpt over.
 //   npx vite-node scripts/dump-creatures.ts
 
 import { mkdirSync, writeFileSync } from 'node:fs';

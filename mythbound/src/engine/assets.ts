@@ -6,32 +6,27 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import weaponsUrl from '../assets/weapons.glb?url';
-import creaturesUrl from '../assets/creatures.bin?url';
-import worldUrl from '../assets/world.bin?url';
+import creaturesUrl from '../assets/creatures.bin.gz?url';
+import worldUrl from '../assets/world.bin.gz?url';
 
 const models = new Map<string, THREE.Object3D>();
 let loading: Promise<void> | null = null;
 
 /**
- * A creature surface modelled in Blender (blender/beasts.py, blender/creatures.py),
- * ready to bind to the game's own skeleton. 'pal' surfaces carry colour slots
- * the creature's own colour fills in; 'src' ones take each vertex's colour
- * from a vertex of the surface the game built.
+ * A creature surface modelled in Blender (blender/beasts.py), ready to bind
+ * to the game's own skeleton. Its vertices carry colour slots the
+ * creature's own colour fills in (see blendGeometry).
  */
 export interface BlendSurface {
-  mode: 'pal' | 'src';
   pos: Float32Array;
   nrm: Int8Array;
   si: Uint8Array;
   sw: Uint8Array;
   idx: Uint16Array | Uint32Array;
-  /** 'pal': colour slot, shade (occlusion and markings), fixed colour. */
-  slot?: Uint8Array;
-  shade?: Uint8Array;
-  rgb?: Uint8Array;
-  /** 'src': occlusion and the game-built vertex whose colour this one takes. */
-  ao?: Uint8Array;
-  src?: Uint16Array | Uint32Array;
+  /** Colour slot, shade (occlusion and markings), fixed colour. */
+  slot: Uint8Array;
+  shade: Uint8Array;
+  rgb: Uint8Array;
 }
 
 export interface BlendCreature {
@@ -44,7 +39,7 @@ export interface BlendCreature {
 
 const creatures = new Map<string, BlendCreature>();
 
-type SurfaceHead = { surf: string; mode?: 'pal' | 'src'; verts: number; tris: number; big: boolean; bytes: number; box: number[] };
+type SurfaceHead = { surf: string; verts: number; tris: number; big: boolean; bytes: number; box: number[] };
 
 /** Reads creatures.bin: 'MBC3', a JSON header, then each surface's arrays in turn. */
 function readCreatures(buf: ArrayBuffer) {
@@ -67,15 +62,14 @@ function readCreatures(buf: ArrayBuffer) {
       const lo = [x0, y0, z0], span = [x1 - x0, y1 - y0, z1 - z0];
       for (let i = 0; i < nv * 3; i++) pos[i] = lo[i % 3] + (q[i] / 65535) * span[i % 3];
       const nrm = new Int8Array(take(nv * 3));
-      const mode = s.mode ?? 'src';
-      const extra = mode === 'pal'
-        ? { slot: new Uint8Array(take(nv)), shade: new Uint8Array(take(nv)), rgb: new Uint8Array(take(nv * 3)) }
-        : { ao: new Uint8Array(take(nv)), src: s.big ? new Uint32Array(take(nv * wide)) : new Uint16Array(take(nv * wide)) };
+      const slot = new Uint8Array(take(nv));
+      const shade = new Uint8Array(take(nv));
+      const rgb = new Uint8Array(take(nv * 3));
       const si = new Uint8Array(take(nv * 4));
       const sw = new Uint8Array(take(nv * 4));
       const idx = s.big ? new Uint32Array(take(s.tris * 3 * wide)) : new Uint16Array(take(s.tris * 3 * wide));
       off = start + s.bytes;
-      surfaces.set(s.surf, { mode, pos, nrm, si, sw, idx, ...extra });
+      surfaces.set(s.surf, { pos, nrm, si, sw, idx, slot, shade, rgb });
     }
     creatures.set(h.kind, { bones: h.bones, bind: h.bind, replace: h.replace ?? [...surfaces.keys()], surfaces });
   }
@@ -98,11 +92,6 @@ export function blendBody(kind: string, bones: THREE.Object3D[]): BlendCreature 
   return c;
 }
 
-/** One surface of a body's Blender model (see blendBody). */
-export function blendCreature(kind: string, surf: string, bones: THREE.Object3D[]): BlendSurface | null {
-  return blendBody(kind, bones)?.surfaces.get(surf) ?? null;
-}
-
 /** Bodies whose Blender model no longer fits their skeleton (shown by tests and the dev console). */
 export const blendMisses = new Set<string>();
 
@@ -112,16 +101,30 @@ export function loadAssets(): Promise<void> {
   return loading;
 }
 
-function loadCreatures(): Promise<void> {
-  return fetch(creaturesUrl)
+/**
+ * A gzipped file, unpacked (the model files are stored gzipped: half the
+ * download). Some servers unpack it on the way (sending it with a gzip
+ * encoding); what arrives still packed is unpacked here.
+ */
+function fetchGzipped(url: string): Promise<ArrayBuffer> {
+  return fetch(url)
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+    .then((buf) => {
+      const head = new Uint8Array(buf, 0, 2);
+      if (head[0] !== 0x1f || head[1] !== 0x8b) return buf;
+      if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('no DecompressionStream'));
+      return new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    });
+}
+
+function loadCreatures(): Promise<void> {
+  return fetchGzipped(creaturesUrl)
     .then(readCreatures)
     .catch((err) => console.warn('Blender creatures not loaded; using the built-in ones.', err));
 }
 
 function loadWorld(): Promise<void> {
-  return fetch(worldUrl)
-    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+  return fetchGzipped(worldUrl)
     .then(readWorld)
     .catch((err) => console.warn('Blender scenery not loaded; using the built-in one.', err));
 }
@@ -234,43 +237,28 @@ const _base = new THREE.Color();
 const _c = new THREE.Color();
 
 /**
- * A Blender surface as a skinned geometry. A 'pal' surface is coloured from
- * the creature's colour (its own, a pale belly colour, a dark marking
- * colour, or a fixed one) times its baked shade; a 'src' surface takes its
- * colours from the game-built surface `own`.
+ * A Blender surface as a skinned geometry, coloured from the creature's
+ * colour (its own, a pale belly colour, a dark marking colour, or a fixed
+ * one) times its baked shade.
  */
-export function blendGeometry(b: BlendSurface, own: THREE.BufferGeometry | null, colour = 0x808080, glow = false): THREE.BufferGeometry {
+export function blendGeometry(b: BlendSurface, colour = 0x808080, glow = false): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const n = b.pos.length / 3;
-  let col: Float32Array;
-  let cs = 3;
-  if (b.mode === 'pal') {
-    col = new Float32Array(n * 3);
-    _base.setHex(colour);
-    const light = _base.clone().lerp(new THREE.Color(0xeadcc4), 0.6);
-    const dark = _base.clone().multiplyScalar(0.42);
-    for (let i = 0; i < n; i++) {
-      const slot = b.slot![i];
-      if (slot === 0) _c.copy(_base);
-      else if (slot === 1) _c.copy(light);
-      else if (slot === 2) _c.copy(dark);
-      else _c.setRGB(b.rgb![i * 3] / 255, b.rgb![i * 3 + 1] / 255, b.rgb![i * 3 + 2] / 255, THREE.SRGBColorSpace);
-      // Glow is pure colour (it lights itself); the rest is shaded.
-      if (!glow) _c.multiplyScalar(b.shade![i] / 255);
-      col[i * 3] = _c.r;
-      col[i * 3 + 1] = _c.g;
-      col[i * 3 + 2] = _c.b;
-    }
-  } else {
-    const from = own!.attributes.color;
-    cs = from.itemSize;
-    col = new Float32Array(n * cs);
-    for (let i = 0; i < n; i++) {
-      const k = b.ao![i] / 255;
-      const s = b.src![i];
-      for (let c = 0; c < 3; c++) col[i * cs + c] = from.getComponent(s, c) * k;
-      if (cs === 4) col[i * cs + 3] = from.getComponent(s, 3);
-    }
+  const col = new Float32Array(n * 3);
+  _base.setHex(colour);
+  const light = _base.clone().lerp(new THREE.Color(0xeadcc4), 0.6);
+  const dark = _base.clone().multiplyScalar(0.42);
+  for (let i = 0; i < n; i++) {
+    const slot = b.slot[i];
+    if (slot === 0) _c.copy(_base);
+    else if (slot === 1) _c.copy(light);
+    else if (slot === 2) _c.copy(dark);
+    else _c.setRGB(b.rgb[i * 3] / 255, b.rgb[i * 3 + 1] / 255, b.rgb[i * 3 + 2] / 255, THREE.SRGBColorSpace);
+    // Glow is pure colour (it lights itself); the rest is shaded.
+    if (!glow) _c.multiplyScalar(b.shade[i] / 255);
+    col[i * 3] = _c.r;
+    col[i * 3 + 1] = _c.g;
+    col[i * 3 + 2] = _c.b;
   }
   const nrm = new Float32Array(n * 3);
   for (let i = 0; i < n * 3; i++) nrm[i] = b.nrm[i] / 127;
@@ -278,7 +266,7 @@ export function blendGeometry(b: BlendSurface, own: THREE.BufferGeometry | null,
   for (let i = 0; i < n * 4; i++) sw[i] = b.sw[i] / 255;
   g.setAttribute('position', new THREE.BufferAttribute(b.pos, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  g.setAttribute('color', new THREE.BufferAttribute(col, cs));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Uint16Array.from(b.si), 4));
   g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
   g.setIndex(new THREE.BufferAttribute(b.idx, 1));
