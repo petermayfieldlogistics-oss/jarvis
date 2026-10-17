@@ -320,11 +320,7 @@ Monsters and great foes are sculpted anew over their own skeletons, so every
 animation still plays. `blender/beasts.py` builds each from metaball clay
 around the bones (`blender/kit.py` holds the tools: clay, horns and claws,
 cloth strips, weights, occlusion), paints it with colour slots the game fills
-from the monster's own colour, and writes `src/assets/creatures.bin.gz`.
-Clothed foes (bandits, sea raiders, legionaries, the Champion, the drowned)
-are dressed piece by piece with the `Body` kit in the same file: a head and
-hands of skin, then tunic, sleeves, breeches, boots, skirts and coat tails,
-belts and armour bands that hug the cloth beneath them.
+from the monster's own colour, and writes `src/assets/creatures.bin.gz`:
 
     npx vite-node scripts/dump-creatures.ts          # writes blender/rigs/*.json (the skeletons)
     .blenv/bin/python blender/beasts.py --preview    # every creature, renders blender/preview/new/
