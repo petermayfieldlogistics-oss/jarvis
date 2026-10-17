@@ -105,3 +105,50 @@ export function nextSurface(angles: number[], current: number, toward: number): 
   }
   return best;
 }
+
+// ------------------------------------------------------------ difficulty --
+
+/**
+ * Once a great foe has fallen it can be fought again on a harder footing:
+ * each tier beaten opens the next. A tier multiplies the foe's health, its
+ * blows and its pace, lifts its level, and pays more experience and embers
+ * plus Legend Shards (doubled the first time that tier falls).
+ */
+export interface BossTier {
+  id: number;
+  name: string;
+  hp: number;
+  damage: number;
+  speed: number;
+  /** Levels added to the foe (and to the level the journal recommends). */
+  levels: number;
+  xp: number;
+  gold: number;
+  shards: number;
+  /** The colour the journal and the health bar give it. */
+  color: string;
+}
+
+export const BOSS_TIERS: BossTier[] = [
+  { id: 0, name: 'Normal', hp: 1, damage: 1, speed: 1, levels: 0, xp: 1, gold: 1, shards: 0, color: '#d8c8a0' },
+  { id: 1, name: 'Heroic', hp: 2, damage: 1.45, speed: 1.08, levels: 8, xp: 2, gold: 2, shards: 2, color: '#6fd0ff' },
+  { id: 2, name: 'Mythic', hp: 3.5, damage: 2, speed: 1.16, levels: 16, xp: 3.5, gold: 3, shards: 4, color: '#c080ff' },
+  { id: 3, name: 'Godslayer', hp: 6, damage: 2.8, speed: 1.25, levels: 26, xp: 6, gold: 5, shards: 7, color: '#ff6a40' },
+];
+
+export const TOP_TIER = BOSS_TIERS.length - 1;
+
+/** The hardest tier a hero may pick, given the hardest they have beaten (-1: never beaten). */
+export const tierOpen = (best: number) => Math.max(0, Math.min(TOP_TIER, best + 1));
+
+/** The tier a fight will use: the one picked, if it is open (otherwise the hardest open one). */
+export const tierFor = (pick: number, best: number) => Math.max(0, Math.min(Math.floor(pick) || 0, tierOpen(best)));
+
+/** The level the journal recommends for a foe on a tier. */
+export const tierLevel = (baseLevel: number, tier: number) => baseLevel + (BOSS_TIERS[tier]?.levels ?? 0);
+
+/** What felling a foe on a tier pays: experience and embers multiplied, and Legend Shards. */
+export function tierReward(tier: number, firstTime: boolean, base: { xp: number; gold: number }): { xp: number; gold: number; shards: number } {
+  const t = BOSS_TIERS[Math.max(0, Math.min(TOP_TIER, tier))];
+  return { xp: Math.round(base.xp * t.xp), gold: Math.round(base.gold * t.gold), shards: t.shards * (firstTime ? 2 : 1) };
+}

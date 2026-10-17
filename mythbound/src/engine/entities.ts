@@ -7,6 +7,7 @@ import { animateCreature, buildCrab, buildDragon, buildFloater, buildImp, buildI
 import { newAnim, type AnimState, type AttackStyle } from './anim';
 import { heightAt, WATER_LEVEL } from './terrain';
 import { newTeamMemory } from '../rules/teamcombo';
+import { BOSS_TIERS } from '../rules/boss';
 import type { Game } from './game';
 import type { Hero } from './hero';
 
@@ -1082,6 +1083,8 @@ export class Boss extends Enemy {
   protected dustT = 0;
   protected telegraphs: TelegraphHandle[] = [];
   protected auraFx: { stop(): void } | null = null;
+  /** Its difficulty tier: 0 Normal, then Heroic, Mythic and Godslayer. */
+  tier = 0;
   private bossPoise = 0;
   private bossStagger = 0;
   private bossStaggerImmune = 0;
@@ -1105,7 +1108,7 @@ export class Boss extends Enemy {
     return this.bdef.name;
   }
   get level() {
-    return this.bdef.level;
+    return this.bdef.level + BOSS_TIERS[this.tier].levels;
   }
   get dark() {
     return this.bdef.dark;
@@ -1126,7 +1129,13 @@ export class Boss extends Enemy {
     return AFFINITY_COLOR[this.bdef.affinity];
   }
   damage() {
-    return Math.round(this.bdef.damage * (this.phase === 2 ? 1.15 : 1));
+    return Math.round(this.bdef.damage * (this.phase === 2 ? 1.15 : 1) * BOSS_TIERS[this.tier].damage);
+  }
+
+  /** Fought on a harder tier (rules/boss.ts): more health now, and harder blows and more pace from here on. */
+  setTier(tier: number) {
+    this.tier = Math.max(0, Math.min(BOSS_TIERS.length - 1, tier));
+    this.scaleHealth(1);
   }
 
   /** Great foes don't budge. */
@@ -1174,7 +1183,7 @@ export class Boss extends Enemy {
     a.fury += ((this.phase === 2 ? 1 : 0) - a.fury) * Math.min(1, dt * 2);
     const speedMul = (this.phase === 2 ? 1.25 : 1) * (this.status.slow > 0 || this.status.blind > 0 ? 0.6 : 1) * (this.status.root > 0 ? 0 : 1);
     let moveX = 0, moveZ = 0;
-    let speed = this.bdef.speed * speedMul;
+    let speed = this.bdef.speed * speedMul * BOSS_TIERS[this.tier].speed;
     a.attack = -1;
     a.windup = 0;
 
@@ -1268,7 +1277,7 @@ export class Boss extends Enemy {
 
   /** More heroes, a tougher boss. */
   scaleHealth(k: number) {
-    this.maxHp = this.hp = Math.round(this.bdef.hp * k);
+    this.maxHp = this.hp = Math.round(this.bdef.hp * k * BOSS_TIERS[this.tier].hp);
     this.bossLastHp = this.hp;
   }
 

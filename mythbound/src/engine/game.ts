@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { ANCIENT_GLYPH, RUNES, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
+import { ANCIENT_GLYPH, LEGEND_SHARD, RUNES, SPELLS, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
 import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
-import { addXp, dracoFlightHours, killHeal, killRestore, killXp, levelRewards, maxHp, rank, type Character } from '../rules/character';
+import { addXp, artsDue, dracoFlightHours, killHeal, killRestore, killXp, learnSpell, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { satchelCount } from '../rules/food';
 import { clearFed, fedNightVision } from '../rules/fed';
-import { bossHealthScale } from '../rules/boss';
-import { elementWeakness, incomingDamage, outgoingDamage, soulOrPowerToll, type FuryState } from '../rules/combat';
+import { BOSS_TIERS, bossHealthScale, tierFor, tierOpen, tierReward } from '../rules/boss';
+import { hasPerk, holdsReaper, PERK, REAP } from '../rules/legend';
+import { elementWeakness, incomingDamage, outgoingDamage, PREY, soulOrPowerToll, type FuryState } from '../rules/combat';
 import { emberBonus, HEX } from '../rules/classes';
 import { BURST_COLOR, type Burst } from '../rules/power';
 import { comboElement, noteTeamHit, TEAM, teamBonus, type TeamMark } from '../rules/teamcombo';
@@ -552,9 +553,38 @@ export class Game {
       targetBleeding: e.status.bleed > 0,
       ambush: o.ambush,
       finisher: o.finisher,
+      targetBoss: e instanceof Boss,
+      roll: Math.random(),
+      shout: this.player.shout > 0,
+      focused: this.player.useFocus(),
     });
     this.damageEnemy(e, r.amount, element, { source: 'player', tags: r.tags });
     if (kind === 'bow' && c.skills['hunters-mark']) e.status.marked = 8;
+    this.legendHit(e, r.amount);
+  }
+
+  /** What the weapon in hand does on a hit: Reaper's Edge reaps, and its legend perks. */
+  private legendHit(e: Enemy, dealt: number) {
+    const p = this.player;
+    const c = p.c;
+    const heal = dealt * ((holdsReaper(c) ? REAP.heal : 0) + (hasPerk(c, 'vampiric') ? PERK.vampiric : 0));
+    if (heal >= 0.5 && p.alive && p.hp < p.maxHp) {
+      p.heal(heal);
+      if (heal >= 2) this.fx.emit(p.center(), { color: holdsReaper(c) ? 0x60ffa0 : 0xff4060, count: 4, speed: 1.2, life: 0.5, up: 1 });
+    }
+    if (hasPerk(c, 'thunderstrike') && ++p.perkHits % PERK.thunderstrike.every === 0) {
+      const at = e.pos.clone();
+      this.fx.lightning(at.clone().add(new THREE.Vector3(0, 24, 0)), e.center());
+      this.audio.play('zap');
+      for (const f of [...this.enemies]) {
+        if (f.alive && f.pos.distanceTo(at) < PERK.thunderstrike.radius + f.radius) this.damageEnemy(f, dealt * PERK.thunderstrike.power, 'lightning', { source: 'player' });
+      }
+    }
+    if (hasPerk(c, 'tempest') && e.alive && Math.random() < PERK.tempest.chance) {
+      if (!(e instanceof Boss)) this.shoveEnemy(e, e.pos.x - p.pos.x, e.pos.z - p.pos.z, PERK.tempest.shove);
+      e.status.slow = Math.max(e.status.slow, PERK.tempest.slow);
+      this.fx.emit(e.center(), { color: 0xc8ffe4, count: 14, speed: 4, life: 0.5 });
+    }
   }
 
   /** Knocks a monster back (and maybe up): here, or (a guest's copy) by asking the host, whose game moves it. */
@@ -578,6 +608,8 @@ export class Game {
     if (weak && weak === element) dmg *= 1.5;
     if (e.affinity !== 'none' && e.affinity !== 'dark' && element === e.affinity) dmg *= 0.5;
     if (e.status.marked > 0) dmg *= 1.15;
+    // The ranger's marked prey takes more from the ranger.
+    if (e === this.player.prey && e.status.marked > 0 && !remote && o.source !== 'combo') dmg *= PREY.mine;
     // A hexed foe takes more from everyone.
     if (e.status.hex > 0) dmg *= HEX.taken;
     // Striking (or casting at) a foe ends a rogue's Vanish.
@@ -706,10 +738,11 @@ export class Game {
       id: isBoss ? e.bdef.id : e.def.id,
       boss: isBoss,
       // Monsters out of their home region (a level bonus) are tougher, and teach more.
-      xp: isBoss ? e.bdef.xp : (e.summoned ? e.def.xp * 0.3 : e.def.xp) * (1 + 0.12 * e.levelBonus),
+      xp: isBoss ? tierReward(e.tier, false, e.bdef).xp : (e.summoned ? e.def.xp * 0.3 : e.def.xp) * (1 + 0.12 * e.levelBonus),
       lv: e.level,
       minion: e.summoned,
-      gold: isBoss ? e.bdef.gold : Math.round(e.def.gold * (0.6 + Math.random() * 0.8)),
+      gold: isBoss ? tierReward(e.tier, false, e.bdef).gold : Math.round(e.def.gold * (0.6 + Math.random() * 0.8)),
+      tier: isBoss ? e.tier : undefined,
       x: Math.round(e.pos.x),
       z: Math.round(e.pos.z),
       by: [...e.hitBy],
@@ -780,6 +813,7 @@ export class Game {
         this.hud.toast(`Found a ${RUNES[rune].name}! Inscribe it on a weapon at an anvil.`, 'quest');
       }
     }
+    if (bossDef && credited) this.tierFelled(bossDef, info.tier ?? 0);
     // A hunted foe has no fog: those who fought it share the spoils.
     if (bossDef?.mini) {
       if (credited) this.huntDone(bossDef);
@@ -807,6 +841,40 @@ export class Game {
     at.y += 0.9;
     if (hp >= 1) this.fx.damageNumber(at, `+${Math.round(hp)}`, 'heal');
     if (mana >= 1) this.fx.damageNumber(at, `+${Math.round(mana)}`, 'mana');
+  }
+
+  // ------------------------------------------------------- difficulty --
+
+  /** The hardest tier this hero has beaten a great foe on (-1: never). */
+  bossBest(id: BossId): number {
+    return this.state.bossBest[id] ?? -1;
+  }
+
+  /** The tier the next fight with a great foe will be on. */
+  bossTier(id: BossId): number {
+    return tierFor(this.state.bossPick[id] ?? 0, this.bossBest(id));
+  }
+
+  /** Picks the tier for a great foe's next fight (only open tiers). */
+  pickTier(id: BossId, tier: number) {
+    this.state.bossPick[id] = Math.max(0, Math.min(tier, tierOpen(this.bossBest(id))));
+  }
+
+  /** A great foe fell on a tier: Legend Shards (twice over the first time), and the next tier opens. */
+  private tierFelled(boss: BossDef, tier: number) {
+    const best = this.bossBest(boss.id);
+    const first = tier > best;
+    if (first) this.state.bossBest[boss.id] = tier;
+    const { shards } = tierReward(tier, first, boss);
+    const c = this.player.c;
+    if (shards > 0) {
+      c.items[LEGEND_SHARD] = (c.items[LEGEND_SHARD] ?? 0) + shards;
+      setTimeout(() => this.hud.toast(`+${shards} Legend Shards${first ? ' (first time on ' + BOSS_TIERS[tier].name + ')' : ''}. Set legend perks at an anvil.`, 'quest'), 3400);
+    }
+    if (first && tier < BOSS_TIERS.length - 1) {
+      const next = BOSS_TIERS[tier + 1];
+      setTimeout(() => this.hud.toast(`${boss.name} can now be fought on ${next.name}. Pick it in your journal (Quests).`, 'quest'), 4800);
+    }
   }
 
   /** A hunted foe slain: its unique drop the first time, ore and a bounty mark every time. */
@@ -839,7 +907,17 @@ export class Game {
   gainXp(xp: number) {
     const c = this.player.c;
     const from = c.level;
+    const renown = c.renown;
     const gained = addXp(c, xp);
+    if (c.renown > renown) {
+      this.hud.banner(`RENOWN ${c.renown}`, 'level', `+${c.renown - renown}% health and damage`);
+      this.audio.play('levelup');
+    }
+    // A warrior's or ranger's new art comes with its level.
+    for (const art of artsDue(c)) {
+      learnSpell(c, art);
+      setTimeout(() => this.hud.toast(`New art: ${SPELLS[art].name}! (see Spells in your journal)`, 'skill'), 2600);
+    }
     if (gained > 0) {
       this.player.hp = this.player.maxHp;
       this.player.mana = this.player.maxMana;
@@ -908,7 +986,7 @@ export class Game {
         source.status.stun = Math.max(source.status.stun, 1.2);
       }
     }
-    let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0, ironSkin: p.ironSkin > 0 });
+    let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0, ironSkin: p.ironSkin > 0, unbreakable: p.unbreakable > 0 });
     // A Ward of Dawn soaks up what it can.
     if (p.ward > 0 && dmg > 0) {
       const soak = Math.min(p.ward, dmg);
@@ -931,6 +1009,8 @@ export class Game {
       this.hud.toast(`-${Math.round(dmg)} max HP, forever.`, 'devil');
     }
     p.hp = Math.min(p.hp, maxHp(p.c)) - dmg;
+    // Unbreakable: nothing takes the warrior below 1.
+    if (p.unbreakable > 0 && p.hp < 1) p.hp = 1;
     if (dmg >= 1) {
       p.endMeditation();
       // A blow throws a rider (and no climbing on for a moment).
@@ -1028,9 +1108,10 @@ export class Game {
   startTrial(t: TrialDef, peer?: number) {
     if (this.activeTrial) return;
     if (this.coop.isGuest) return this.coop.requestTrial(t.id);
-    if (peer === undefined && this.state.trialsDone.includes(t.id)) return this.hud.toast('You have already conquered this trial.');
     const boss = makeBoss(BOSSES[t.boss], t.id);
     if (!boss) return;
+    // A conquered trial is fought again on the tier picked for it.
+    boss.setTier(this.bossTier(t.boss));
     // Everyone near the altar is sealed in; more heroes, a tougher boss.
     const inside = (h: Hero) => Math.hypot(h.pos.x - t.x, h.pos.z - t.z) < t.radius + 3;
     const ids: number[] = [];
@@ -1058,7 +1139,8 @@ export class Game {
     const fog = this.world.trialFog.get(t.id);
     if (fog) fog.visible = true;
     if (inside) {
-      this.hud.banner(t.name, 'zone', t.intro);
+      const tier = this.boss?.tier ?? 0;
+      this.hud.banner(tier ? `${t.name} · ${BOSS_TIERS[tier].name}` : t.name, 'zone', t.intro);
       this.audio.play('roar');
       this.audio.setMood(1, BOSSES[t.boss].dark);
     } else this.hud.toast(`The fog rises over the ${t.name}.`);
@@ -1576,7 +1658,7 @@ export class Game {
     if (!t) {
       // No fog up: a hunted foe in a fight close by still gets its bar.
       const h = huntedNear(this);
-      this.hud.setBoss(h ? `${h.bdef.name}, ${h.bdef.title}` : null, h?.hp ?? 0, h?.maxHp ?? 1);
+      this.hud.setBoss(h ? `${h.bdef.name}, ${h.bdef.title}${h.tier ? ` · ${BOSS_TIERS[h.tier].name}` : ''}` : null, h?.hp ?? 0, h?.maxHp ?? 1);
       return;
     }
     const p = this.player.pos;
@@ -1605,7 +1687,7 @@ export class Game {
         return;
       }
     }
-    if (this.boss) this.hud.setBoss(this.boss.alive ? `${this.boss.bdef.name}, ${this.boss.bdef.title}` : null, this.boss.hp, this.boss.maxHp);
+    if (this.boss) this.hud.setBoss(this.boss.alive ? `${this.boss.bdef.name}, ${this.boss.bdef.title}${this.boss.tier ? ` · ${BOSS_TIERS[this.boss.tier].name}` : ''}` : null, this.boss.hp, this.boss.maxHp);
   }
 
   private updateZone() {

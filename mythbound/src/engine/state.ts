@@ -1,7 +1,8 @@
 // World progress and saving.
 
 import { RUNES } from '../data/defs';
-import { QUESTS, type QuestId } from '../data/world';
+import { LAIRS, QUESTS, TRIALS, type QuestId } from '../data/world';
+import { TOP_TIER } from '../rules/boss';
 import { normalizeCharacter, type Character } from '../rules/character';
 import { newFarm, normalizeFarm, type FarmState } from '../rules/farming';
 import { newMarket, normalizeMarket, type Market } from '../rules/food';
@@ -32,6 +33,10 @@ export interface WorldState {
   farm: FarmState;
   /** Nell's day (from play time) and the fish she has bought from this hero on it. */
   market: Market;
+  /** Each great foe's hardest difficulty tier beaten (rules/boss.ts): 0 Normal. Absent: never beaten. */
+  bossBest: Record<string, number>;
+  /** The tier the hero picked for each great foe's next fight. */
+  bossPick: Record<string, number>;
 }
 
 export interface SaveData {
@@ -60,6 +65,8 @@ export function newWorldState(): WorldState {
     playTime: 0,
     farm: newFarm(),
     market: newMarket(),
+    bossBest: {},
+    bossPick: {},
   };
 }
 
@@ -84,6 +91,13 @@ export function normalizeSave(data: SaveData): SaveData {
   data.world.farm = normalizeFarm(data.world.farm);
   // So did Nell's stall.
   data.world.market = normalizeMarket(data.world.market);
+  // And the harder tiers: a foe beaten before them counts as beaten on Normal.
+  const w = data.world;
+  const tiers = (x: unknown) => Object.fromEntries(Object.entries(x && typeof x === 'object' ? x : {}).filter(([, v]) => typeof v === 'number' && v >= 0 && v <= TOP_TIER).map(([k, v]) => [k, Math.floor(v as number)]));
+  w.bossBest = tiers(w.bossBest);
+  w.bossPick = tiers(w.bossPick);
+  for (const t of TRIALS) if (w.trialsDone.includes(t.id)) w.bossBest[t.boss] ??= 0;
+  for (const l of LAIRS) if (w.flags[`hunted-${l.boss}`]) w.bossBest[l.boss] ??= 0;
   // JSON turns Infinity into null.
   if (data.character.lightSealedUntil === null) data.character.lightSealedUntil = Infinity;
   normalizeCharacter(data.character);

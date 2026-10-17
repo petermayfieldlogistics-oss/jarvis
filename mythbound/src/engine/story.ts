@@ -1,12 +1,14 @@
 // Conversations and everything the hero can interact with.
 
-import { ANCIENT_GLYPH, CLASSES, RACES, RELICS, ROLES, RUNES, SPELLS, WEAPONS, type ClassId, type RaceId, type RuneId, type ShopId, type SpellId } from '../data/defs';
+import { ANCIENT_GLYPH, CLASSES, PERKS, RACES, RELICS, ROLES, RUNES, SPELLS, WEAPONS, type PerkId, type ClassId, type RaceId, type RuneId, type ShopId, type SpellId } from '../data/defs';
 import { BOSSES, ELDER_TRIALS, ITEMS, LAIRS, LORE, PAGES, plotCentre, QUESTS, SHRINES, TOMES, TRIALS, WEAPON_TRIALS, type QuestId } from '../data/world';
 import { isRelic, rewardName } from './bosses';
 import { canLearnSpell, dracoFlightHours, learnSpell, lightHealMultiplier, MAX_WEAPON_LEVEL, shopPrice, upgradeCost, type Character } from '../rules/character';
 import { canWield, isLightSealed } from '../rules/combat';
 import { MAX_KNIVES, buyRune, buyWeapon, canBearRune, inscribe, ownsKnives, refillKnives, runesHeld, shopStock } from '../rules/weapons';
 import type { DialogOption, DialogSpec } from '../ui/dialog';
+import { perkCost, perkProblem, perkSlots, setPerk, shardsHeld, SLOT_LEVELS, takesPerks } from '../rules/legend';
+import { BOSS_TIERS, tierLevel, tierOpen } from '../rules/boss';
 import type { Game } from './game';
 import * as THREE from 'three';
 import type { Interactable } from './world';
@@ -86,7 +88,7 @@ export class Story {
   label(it: Interactable): string {
     if (it.kind === 'trial') {
       const t = TRIALS.find((x) => `trial-${x.id}` === it.id)!;
-      return this.g.state.trialsDone.includes(t.id) ? `${t.name} (conquered)` : it.label;
+      return this.g.state.trialsDone.includes(t.id) ? `${t.name} (conquered: fight again)` : it.label;
     }
     if (it.kind === 'lore') {
       const l = LORE.find((x) => `lore-${x.id}` === it.id)!;
@@ -1260,6 +1262,8 @@ export class Story {
         },
       };
     });
+    // Legendary weapons take legend perks, paid for in Legend Shards.
+    if (c.weapons.some((w) => takesPerks(w.id))) options.push({ label: `Legend perks (${shardsHeld(c)} Legend Shards)`, action: () => this.perksWhich(npc) });
     // Runes and smithing share one button, so the forge stays short however many weapons you carry.
     const inscribe = runesHeld(c).length > 0;
     options.push({
@@ -1417,6 +1421,66 @@ export class Story {
     });
   }
 
+  /** At an anvil: which legendary weapon takes a perk… */
+  private perksWhich(npc: boolean) {
+    const c = this.c;
+    const options: DialogOption[] = [];
+    c.weapons.forEach((w, i) => {
+      if (!takesPerks(w.id)) return;
+      const have = (w.perks ?? []).map((p) => PERKS[p].name).join(', ');
+      options.push({ label: `${WEAPONS[w.id].name} Lv ${w.level}: ${perkSlots(w)} slot${perkSlots(w) === 1 ? '' : 's'}${have ? ` (${have})` : ''}`, action: () => this.perkSlotsOf(npc, i) });
+    });
+    options.push({ label: 'Back', action: () => this.forge(npc) });
+    this.open({
+      title: 'Legend perks',
+      subtitle: `${shardsHeld(c)} Legend Shards`,
+      text: 'A legendary weapon (or a great foe\'s unique drop) takes legend perks: one slot to begin with, a second at level 5 and a third at level 10. Legend Shards come from great foes felled on Heroic, Mythic and Godslayer (pick the difficulty in your journal, under Quests).',
+      options,
+    });
+  }
+
+  /** …which of its slots… */
+  private perkSlotsOf(npc: boolean, index: number) {
+    const c = this.c;
+    const w = c.weapons[index];
+    const open = perkSlots(w);
+    const options: DialogOption[] = SLOT_LEVELS.map((lv, slot) => {
+      const p = w.perks?.[slot];
+      if (slot >= open) return { label: `Slot ${slot + 1}: opens at level ${lv}`, disabled: true };
+      // Slots fill in order.
+      if (slot > (w.perks?.length ?? 0)) return { label: `Slot ${slot + 1}: fill slot ${slot} first`, disabled: true };
+      return { label: `Slot ${slot + 1}: ${p ? `${PERKS[p].icon} ${PERKS[p].name} (replace for ${perkCost(slot)} shards)` : `empty (${perkCost(slot)} shards)`}`, action: () => this.perkPick(npc, index, slot) };
+    });
+    options.push({ label: 'Back', action: () => this.perksWhich(npc) });
+    this.open({ title: WEAPONS[w.id].name, subtitle: `${shardsHeld(c)} Legend Shards`, text: 'Choose a slot.', options });
+  }
+
+  /** …and which perk. */
+  private perkPick(npc: boolean, index: number, slot: number) {
+    const c = this.c;
+    const g = this.g;
+    const w = c.weapons[index];
+    const options: DialogOption[] = (Object.keys(PERKS) as PerkId[]).map((id) => {
+      const why = perkProblem(c, index, slot, id);
+      return {
+        label: `${PERKS[id].icon} ${PERKS[id].name}: ${PERKS[id].text}`,
+        disabled: !!why,
+        action: () => {
+          if (!setPerk(c, index, slot, id)) return;
+          if (index === c.mainHand) g.player.equip();
+          g.audio.play('slam');
+          g.audio.play('rune');
+          g.fx.emit(g.player.center(), { color: 0xffd27a, count: 50, speed: 5, life: 0.7 });
+          g.hud.toast(`${WEAPONS[w.id].name} now bears ${PERKS[id].name}.`, 'skill');
+          g.save();
+          this.perkSlotsOf(npc, index);
+        },
+      };
+    });
+    options.push({ label: 'Back', action: () => this.perkSlotsOf(npc, index) });
+    this.open({ title: `${WEAPONS[w.id].name}: slot ${slot + 1}`, subtitle: `${perkCost(slot)} Legend Shards (you have ${shardsHeld(c)})`, text: 'Choose a perk. A weapon bears each perk once.', options });
+  }
+
   /** At an anvil: which weapon takes the rune… */
   private inscribeWhich(npc: boolean) {
     const c = this.c;
@@ -1485,8 +1549,26 @@ export class Story {
   private trial(id: string) {
     const g = this.g;
     const t = TRIALS.find((x) => x.id === id)!;
-    if (g.state.trialsDone.includes(id)) return g.hud.toast('This trial is conquered.');
     const boss = BOSSES[t.boss];
+    if (g.state.trialsDone.includes(id)) {
+      // Conquered: fight it again, on any tier beaten so far or the next one up.
+      const open = tierOpen(g.bossBest(t.boss));
+      const options: DialogOption[] = BOSS_TIERS.map((tier) => ({
+        label: `${tier.name}${tier.id ? `: ×${tier.hp} health, ×${tier.damage} damage, ${tier.shards}+ Legend Shards` : ''} (level ${tierLevel(t.level, tier.id)})${g.bossBest(t.boss) >= tier.id ? ' ✓' : ''}`,
+        disabled: tier.id > open,
+        action: () => {
+          g.pickTier(t.boss, tier.id);
+          g.startTrial(t);
+        },
+      }));
+      options.push({ label: 'Not yet' });
+      return this.open({
+        title: `${t.name} (conquered)`,
+        subtitle: 'Fight again',
+        text: `${boss.name} can be fought again. Each difficulty you beat opens the next: Heroic, Mythic, then Godslayer. Harder fights pay far more experience and embers, and Legend Shards for legend perks.`,
+        options,
+      });
+    }
     this.open({
       title: t.name,
       subtitle: `Recommended level ${t.level}`,
