@@ -316,5 +316,14 @@ writes `src/assets/weapons.glb`. To rebuild them (Blender as a Python module):
     uv venv -p 3.13 .blenv && uv pip install -p .blenv/bin/python bpy
     .blenv/bin/python blender/weapons.py --preview   # renders blender/preview/*.png too
 
-The game loads the file before building the world and falls back to the
-models made in code for anything it lacks.
+Monsters and great foes are remodelled over their own skeletons, so every
+animation still plays. First dump the bodies as the game builds them, then
+let Blender fuse, smooth, detail and shade them:
+
+    npx vite-node scripts/dump-creatures.ts          # writes blender/rigs/*.json
+    .blenv/bin/python blender/creatures.py --preview  # writes src/assets/creatures.bin
+    .blenv/bin/python blender/creatures.py wolf --merge  # just one, kept with the rest
+
+The game loads both files before building the world and falls back to the
+models made in code for anything it lacks (or whose skeleton has changed
+since the remodel: dump and remodel again after changing a creature).

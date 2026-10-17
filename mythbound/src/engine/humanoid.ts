@@ -10,6 +10,7 @@
 // blend instead of snapping.
 
 import * as THREE from 'three';
+import { blendCreature, blendGeometry, humanoidKey } from './assets';
 import { pivot } from './models';
 import { FLURRY_AT, strideRate, type AnimState, type AttackStyle } from './anim';
 
@@ -746,11 +747,16 @@ class Kit {
       g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(b.si, 4));
       g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(b.sw, 4));
       g.setIndex(b.ix);
+      // Remodelled in Blender (enemies and great foes): the Blender surface on the same bones.
+      const blend = building && s !== GLOW ? blendCreature(humanoidKey(building), String(s), this.bones) : null;
+      const geo = blend ? blendGeometry(blend, g) : g;
+      if (blend) g.dispose();
       // Poses reach well outside the bind pose; cull against a generous sphere.
-      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), radius);
-      const mesh = new THREE.SkinnedMesh(g, surfaceMaterial(s));
+      geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), radius);
+      const mesh = new THREE.SkinnedMesh(geo, surfaceMaterial(s));
+      mesh.name = String(s);
       mesh.bind(skeleton, IDENTITY);
-      mesh.boundingSphere = g.boundingSphere.clone();
+      mesh.boundingSphere = geo.boundingSphere.clone();
       mesh.castShadow = s !== GLOW;
       mesh.userData.keep = true;
       root.add(mesh);
@@ -785,10 +791,21 @@ export function buildHumanoid(look: HumanoidLook, cached = true): Rig {
 // own joints and skeleton), which is far cheaper than building.
 const templates = new Map<string, Rig>();
 
+/** The look being built as a template (its Blender remodel, if any, is found by it). */
+let building: string | null = null;
+
+/** Every template built so far, by look (the Blender pipeline dumps these). */
+export const humanoidTemplates = (): [string, Rig][] => [...templates.entries()];
+
 function instance(key: string, scale: number, build: () => Rig): Rig {
   let t = templates.get(key);
   if (!t) {
-    t = build();
+    building = key;
+    try {
+      t = build();
+    } finally {
+      building = null;
+    }
     t.root.traverse((o) => {
       // Shared for the whole session: a dying monster must not free it.
       if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose = () => {};
