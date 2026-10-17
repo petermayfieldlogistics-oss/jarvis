@@ -11,34 +11,46 @@ import creaturesUrl from '../assets/creatures.bin?url';
 const models = new Map<string, THREE.Object3D>();
 let loading: Promise<void> | null = null;
 
-/** A creature surface remodelled in Blender (blender/creatures.py), ready to bind to the game's own skeleton. */
+/**
+ * A creature surface modelled in Blender (blender/beasts.py, blender/creatures.py),
+ * ready to bind to the game's own skeleton. 'pal' surfaces carry colour slots
+ * the creature's own colour fills in; 'src' ones take each vertex's colour
+ * from a vertex of the surface the game built.
+ */
 export interface BlendSurface {
+  mode: 'pal' | 'src';
   pos: Float32Array;
   nrm: Int8Array;
-  ao: Uint8Array;
-  /** The vertex of the game's own surface whose colour this vertex takes. */
-  src: Uint16Array | Uint32Array;
   si: Uint8Array;
   sw: Uint8Array;
   idx: Uint16Array | Uint32Array;
+  /** 'pal': colour slot, shade (occlusion and markings), fixed colour. */
+  slot?: Uint8Array;
+  shade?: Uint8Array;
+  rgb?: Uint8Array;
+  /** 'src': occlusion and the game-built vertex whose colour this one takes. */
+  ao?: Uint8Array;
+  src?: Uint16Array | Uint32Array;
 }
 
-interface BlendCreature {
+export interface BlendCreature {
   bones: number;
   bind: number[][];
+  /** The game's own surfaces this model replaces (dropped even where it brings none of its own). */
+  replace: string[];
   surfaces: Map<string, BlendSurface>;
 }
 
 const creatures = new Map<string, BlendCreature>();
 
-/** Reads creatures.bin: 'MBC2', a JSON header, then each surface's arrays in turn. */
+type SurfaceHead = { surf: string; mode?: 'pal' | 'src'; verts: number; tris: number; big: boolean; bytes: number; box: number[] };
+
+/** Reads creatures.bin: 'MBC3', a JSON header, then each surface's arrays in turn. */
 function readCreatures(buf: ArrayBuffer) {
   const dv = new DataView(buf);
-  if (dv.getUint32(0, true) !== 0x3243424d) throw new Error('not a creatures file');
+  if (dv.getUint32(0, true) !== 0x3343424d) throw new Error('not a creatures file');
   const hl = dv.getUint32(4, true);
-  const heads = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hl))) as {
-    kind: string; bones: number; bind: number[][]; surfaces: { surf: string; verts: number; tris: number; big: boolean; bytes: number; box: number[] }[];
-  }[];
+  const heads = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hl))) as { kind: string; bones: number; bind: number[][]; replace?: string[]; surfaces: SurfaceHead[] }[];
   let off = 8 + hl;
   const take = (n: number) => buf.slice(off, (off += n));
   for (const h of heads) {
@@ -46,45 +58,51 @@ function readCreatures(buf: ArrayBuffer) {
     for (const s of h.surfaces) {
       const nv = s.verts;
       const wide = s.big ? 4 : 2;
+      const start = off;
       // Positions come quantized to 16 bits within the surface's box.
       const q = new Uint16Array(take(nv * 6));
       const pos = new Float32Array(nv * 3);
       const [x0, y0, z0, x1, y1, z1] = s.box;
       const lo = [x0, y0, z0], span = [x1 - x0, y1 - y0, z1 - z0];
       for (let i = 0; i < nv * 3; i++) pos[i] = lo[i % 3] + (q[i] / 65535) * span[i % 3];
-      surfaces.set(s.surf, {
-        pos,
-        nrm: new Int8Array(take(nv * 3)),
-        ao: new Uint8Array(take(nv)),
-        src: s.big ? new Uint32Array(take(nv * wide)) : new Uint16Array(take(nv * wide)),
-        si: new Uint8Array(take(nv * 4)),
-        sw: new Uint8Array(take(nv * 4)),
-        idx: s.big ? new Uint32Array(take(s.tris * 3 * wide)) : new Uint16Array(take(s.tris * 3 * wide)),
-      });
+      const nrm = new Int8Array(take(nv * 3));
+      const mode = s.mode ?? 'src';
+      const extra = mode === 'pal'
+        ? { slot: new Uint8Array(take(nv)), shade: new Uint8Array(take(nv)), rgb: new Uint8Array(take(nv * 3)) }
+        : { ao: new Uint8Array(take(nv)), src: s.big ? new Uint32Array(take(nv * wide)) : new Uint16Array(take(nv * wide)) };
+      const si = new Uint8Array(take(nv * 4));
+      const sw = new Uint8Array(take(nv * 4));
+      const idx = s.big ? new Uint32Array(take(s.tris * 3 * wide)) : new Uint16Array(take(s.tris * 3 * wide));
+      off = start + s.bytes;
+      surfaces.set(s.surf, { mode, pos, nrm, si, sw, idx, ...extra });
     }
-    creatures.set(h.kind, { bones: h.bones, bind: h.bind, surfaces });
+    creatures.set(h.kind, { bones: h.bones, bind: h.bind, replace: h.replace ?? [...surfaces.keys()], surfaces });
   }
 }
 
 /**
- * A creature surface remodelled in Blender, if there is one for this body and
- * it was made over this very skeleton (same bones, same bind pose).
+ * The Blender model for a body, if there is one and it was made over this
+ * very skeleton (same bones, same bind pose).
  */
-export function blendCreature(kind: string, surf: string, bones: THREE.Object3D[]): BlendSurface | null {
+export function blendBody(kind: string, bones: THREE.Object3D[]): BlendCreature | null {
   const c = creatures.get(kind);
-  const s = c?.surfaces.get(surf);
-  if (!c || !s) return null;
+  if (!c) return null;
   const v = new THREE.Vector3();
   const same = c.bones === bones.length && c.bind.every((w, i) => bones[i].getWorldPosition(v).distanceTo(new THREE.Vector3(...w)) <= 0.01);
   if (!same) {
-    // Remodelled over a skeleton that has since changed: the body as built in code.
-    blendMisses.add(`${kind}/${surf}`);
+    // Modelled over a skeleton that has since changed: the body as built in code.
+    blendMisses.add(kind);
     return null;
   }
-  return s;
+  return c;
 }
 
-/** Bodies whose Blender remodel no longer fits their skeleton (shown by tests and the dev console). */
+/** One surface of a body's Blender model (see blendBody). */
+export function blendCreature(kind: string, surf: string, bones: THREE.Object3D[]): BlendSurface | null {
+  return blendBody(kind, bones)?.surfaces.get(surf) ?? null;
+}
+
+/** Bodies whose Blender model no longer fits their skeleton (shown by tests and the dev console). */
 export const blendMisses = new Set<string>();
 
 /** Loads every Blender model (at most once). Never rejects: what fails to load is simply left out. */
@@ -127,18 +145,47 @@ export function blendModel(name: string): THREE.Object3D | null {
   return m ? m.clone() : null;
 }
 
-/** A Blender surface as a skinned geometry, coloured from the game's own surface (so every colour of a creature works) and shaded by its baked occlusion. */
-export function blendGeometry(b: BlendSurface, own: THREE.BufferGeometry): THREE.BufferGeometry {
+const _base = new THREE.Color();
+const _c = new THREE.Color();
+
+/**
+ * A Blender surface as a skinned geometry. A 'pal' surface is coloured from
+ * the creature's colour (its own, a pale belly colour, a dark marking
+ * colour, or a fixed one) times its baked shade; a 'src' surface takes its
+ * colours from the game-built surface `own`.
+ */
+export function blendGeometry(b: BlendSurface, own: THREE.BufferGeometry | null, colour = 0x808080, glow = false): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
-  const n = b.ao.length;
-  const from = own.attributes.color;
-  const cs = from.itemSize;
-  const col = new Float32Array(n * cs);
-  for (let i = 0; i < n; i++) {
-    const k = b.ao[i] / 255;
-    const s = b.src[i];
-    for (let c = 0; c < 3; c++) col[i * cs + c] = from.getComponent(s, c) * k;
-    if (cs === 4) col[i * cs + 3] = from.getComponent(s, 3);
+  const n = b.pos.length / 3;
+  let col: Float32Array;
+  let cs = 3;
+  if (b.mode === 'pal') {
+    col = new Float32Array(n * 3);
+    _base.setHex(colour);
+    const light = _base.clone().lerp(new THREE.Color(0xeadcc4), 0.6);
+    const dark = _base.clone().multiplyScalar(0.42);
+    for (let i = 0; i < n; i++) {
+      const slot = b.slot![i];
+      if (slot === 0) _c.copy(_base);
+      else if (slot === 1) _c.copy(light);
+      else if (slot === 2) _c.copy(dark);
+      else _c.setRGB(b.rgb![i * 3] / 255, b.rgb![i * 3 + 1] / 255, b.rgb![i * 3 + 2] / 255, THREE.SRGBColorSpace);
+      // Glow is pure colour (it lights itself); the rest is shaded.
+      if (!glow) _c.multiplyScalar(b.shade![i] / 255);
+      col[i * 3] = _c.r;
+      col[i * 3 + 1] = _c.g;
+      col[i * 3 + 2] = _c.b;
+    }
+  } else {
+    const from = own!.attributes.color;
+    cs = from.itemSize;
+    col = new Float32Array(n * cs);
+    for (let i = 0; i < n; i++) {
+      const k = b.ao![i] / 255;
+      const s = b.src![i];
+      for (let c = 0; c < 3; c++) col[i * cs + c] = from.getComponent(s, c) * k;
+      if (cs === 4) col[i * cs + 3] = from.getComponent(s, 3);
+    }
   }
   const nrm = new Float32Array(n * 3);
   for (let i = 0; i < n * 3; i++) nrm[i] = b.nrm[i] / 127;

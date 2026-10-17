@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { glowSprite } from './models';
-import { blendCreature, blendGeometry } from './assets';
+import { blendBody, blendGeometry } from './assets';
 import { BREATH_SPAN, breathSweep, FLIGHT, LANDS, type AnimState, type AttackStyle } from './anim';
 
 /** A jointed leg or arm: `up` at the hip/shoulder, `mid` at the knee/elbow, `low` at the ankle/wrist. */
@@ -211,21 +211,27 @@ class Skin {
    * material so it can pulse. Where the body was remodelled in Blender, that
    * surface is swapped for the Blender one (bound to the same bones).
    */
-  build(ownGlow = false, kind?: string): THREE.MeshStandardMaterial | undefined {
+  build(ownGlow = false, kind?: string, colour = 0x808080): THREE.MeshStandardMaterial | undefined {
     const root = this.root;
     root.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones as unknown as THREE.Bone[]);
     let glow: THREE.MeshStandardMaterial | undefined;
+    // The surfaces as built in code, then the Blender model's in place of those it replaces.
+    const surfaces = new Map<Surface, THREE.BufferGeometry>();
     for (const [surf, list] of this.geos) {
-      let geo = mergeGeometries(list, false);
+      const geo = mergeGeometries(list, false);
       list.forEach((g) => g.dispose());
-      if (!geo) continue;
-      const blend = kind ? blendCreature(kind, surf, this.bones) : null;
-      if (blend) {
-        const made = blendGeometry(blend, geo);
-        geo.dispose();
-        geo = made;
+      if (geo) surfaces.set(surf, geo);
+    }
+    const blend = kind ? blendBody(kind, this.bones) : null;
+    if (blend) {
+      for (const surf of blend.replace) {
+        surfaces.get(surf as Surface)?.dispose();
+        surfaces.delete(surf as Surface);
       }
+      for (const [surf, b] of blend.surfaces) surfaces.set(surf as Surface, blendGeometry(b, null, colour, surf === 'glow'));
+    }
+    for (const [surf, geo] of surfaces) {
       let material = surfaceMaterial(surf);
       if (surf === 'glow' && ownGlow) material = glow = glowMaterial();
       const mesh = new THREE.SkinnedMesh(geo, material);
@@ -553,8 +559,8 @@ function bellyShade(pts: V3[], backC: number, bellyC: number, belly: (c: V3, out
   };
 }
 
-function finish(sk: Skin, kind: string, body: THREE.Group, head: THREE.Group, j: CreatureJoints, height: number, scale: number, ownGlow = false): CreatureRig {
-  j.glow = sk.build(ownGlow, kind);
+function finish(sk: Skin, kind: string, body: THREE.Group, head: THREE.Group, j: CreatureJoints, height: number, scale: number, ownGlow = false, colour?: number): CreatureRig {
+  j.glow = sk.build(ownGlow, kind, colour);
   sk.root.scale.setScalar(scale);
   const legs = (j.limbs ?? []).map((l) => l.up);
   const extra: THREE.Object3D[] = [...(j.tail ?? []), ...(j.wings ?? []).map((w) => w.root), ...(j.pincers ?? []).map((p) => p.arm)];
@@ -779,7 +785,7 @@ function buildCanine(color: number, hound: boolean): CreatureRig {
     }
   }
   const j: CreatureJoints = { chest, hips, neck: [n0, n1], jaw, ears, tail, limbs, legLen: legY, girth: 0.17 };
-  return finish(sk, hound ? 'hound' : 'wolf', body, head, j, 1.3 + H * 0.05, 1);
+  return finish(sk, hound ? 'hound' : 'wolf', body, head, j, 1.3 + H * 0.05, 1, false, color);
 }
 
 function buildBoar(color: number): CreatureRig {
@@ -843,7 +849,7 @@ function buildBoar(color: number): CreatureRig {
   const tail = chain(sk, hips, [V(0, ty + 0.04, -0.62), V(0, ty - 0.06, -0.7), V(0, ty - 0.2, -0.72)], [0.02, 0.016, 0], 'fur', tint(color, 0.6), 4);
   sk.add('fur', 0x1a120c, spike(V(0, ty - 0.17, -0.72), V(0, ty - 0.3, -0.73), 0.035, 4), tail[tail.length - 1]);
   const j: CreatureJoints = { chest, hips, neck: [n0], jaw, ears, tail, limbs, legLen: ty, girth: 0.25 };
-  return finish(sk, 'boar', body, head, j, 1.05, 1);
+  return finish(sk, 'boar', body, head, j, 1.05, 1, false, color);
 }
 
 function buildStag(color: number, scale: number): CreatureRig {
@@ -953,7 +959,7 @@ function buildStag(color: number, scale: number): CreatureRig {
     wisps.push(w);
   }
   const j: CreatureJoints = { chest, hips, neck: [n0, n1], jaw, ears, tail, limbs, wisps, legLen: ty, girth: 0.21 };
-  return finish(sk, 'stag', body, head, j, 2.2, scale, true);
+  return finish(sk, 'stag', body, head, j, 2.2, scale, true, color);
 }
 
 function buildDrake(color: number): CreatureRig {
@@ -1057,7 +1063,7 @@ function buildDrake(color: number): CreatureRig {
     wings.push({ root, fore, hand, fingers, side: s, fold });
   }
   const j: CreatureJoints = { chest, hips, neck, jaw, tail, limbs, wings, legLen: ty, girth: 0.26 };
-  return finish(sk, 'drake', body, head, j, 1.45, 1);
+  return finish(sk, 'drake', body, head, j, 1.45, 1, false, color);
 }
 
 /** Every vertex goes to the nearest joint of `bones`. */
@@ -1215,7 +1221,7 @@ function buildScorpion(color: number): CreatureRig {
     }
   }
   const j: CreatureJoints = { tail, pincers, limbs, legLen: ty };
-  return finish(sk, 'insect', body, head, j, 0.9, 1);
+  return finish(sk, 'insect', body, head, j, 0.9, 1, false, color);
 }
 
 // --------------------------------------------------------------- floaters --
@@ -1295,7 +1301,7 @@ function buildWraith(color: number): CreatureRig {
   glow.position.set(0, 0.0, 0.1);
   head.add(glow);
   const j: CreatureJoints = { chest, arms, strands, wisps: [glow] };
-  return finish(sk, 'wraith', body, head, j, 2.2, 1);
+  return finish(sk, 'wraith', body, head, j, 2.2, 1, false, color);
 }
 function buildEye(color: number): CreatureRig {
   const sk = new Skin();
@@ -1344,7 +1350,7 @@ function buildEye(color: number): CreatureRig {
     strands.push(chain(sk, body, pts, [0.09, 0.07, 0.05, 0.03, 0], 'fur', flesh, 6));
   }
   const j: CreatureJoints = { lids, iris, pupil, strands };
-  return finish(sk, 'eye', body, head, j, 2.2, 1);
+  return finish(sk, 'eye', body, head, j, 2.2, 1, false, color);
 }
 
 function buildWitch(color: number, scale: number): CreatureRig {
@@ -1427,7 +1433,7 @@ function buildWitch(color: number, scale: number): CreatureRig {
   orb.position.set(0, 1.22, -0.02);
   right.add(orb);
   const j: CreatureJoints = { chest, arms, strands: [...strands, ...hair], wisps: [flame, orb] };
-  return finish(sk, 'witch', body, head, j, 2.4, scale, true);
+  return finish(sk, 'witch', body, head, j, 2.4, scale, true, color);
 }
 
 // -------------------------------------------------------------------- imp --
@@ -1500,7 +1506,7 @@ function buildImpRig(color: number): CreatureRig {
     wings.push({ root, fore, hand, fingers, side: s, fold });
   }
   const j: CreatureJoints = { chest, jaw, arms, limbs, tail, wings };
-  return finish(sk, 'imp', body, head, j, 1.37, 1);
+  return finish(sk, 'imp', body, head, j, 1.37, 1, false, color);
 }
 
 // ------------------------------------------------------------------- crab --
@@ -1595,7 +1601,7 @@ export function buildCrab(color: number, scale: number): CreatureRig {
     }
   }
   const j: CreatureJoints = { jaw, pincers, limbs, stalks, strands, legLen: ty };
-  return finish(sk, 'crab', body, head, j, 2, scale, true);
+  return finish(sk, 'crab', body, head, j, 2, scale, true, color);
 }
 
 // -------------------------------------------------------------- leviathan --
@@ -1720,7 +1726,7 @@ export function buildSerpent(color: number, scale = 1): CreatureRig {
   for (let i = 1; i < 5; i++) sk.add('fur', spineC, spike(tp[i].clone().add(V(0, 0, -0.85 + i * 0.12)), tp[i].clone().add(V(0, 0.3, -1.6 + i * 0.1)), 0.12, 4), tail[i]);
 
   const j: CreatureJoints = { neck, jaw, tail, coils, tailRoot, legLen: 1 };
-  return finish(sk, 'serpent', body, head, j, 10.6, scale, true);
+  return finish(sk, 'serpent', body, head, j, 10.6, scale, true, color);
 }
 
 // ----------------------------------------------------------- elder dragon --
@@ -1887,7 +1893,7 @@ export function buildDragon(color: number, scale: number): CreatureRig {
     sk.push('fur', spineC, spike(base, base.clone().add(V(0, len, -len * 0.6)), 0.05 * (1 - u) + 0.02, 4), nearest(spineBones));
   }
   const j: CreatureJoints = { chest, hips, neck, jaw, tail, limbs, wings, legLen: ty, girth: 0.48 };
-  return finish(sk, 'dragon', body, head, j, 3.05, scale, true);
+  return finish(sk, 'dragon', body, head, j, 3.05, scale, true, color);
 }
 
 // ------------------------------------------------------- queen of the sea --
@@ -1995,7 +2001,7 @@ export function buildSiren(color: number, scale: number): CreatureRig {
     wisps.push(w);
   }
   const j: CreatureJoints = { chest, arms, tail, strands: hair, wisps };
-  return finish(sk, 'siren', body, head, j, 3.0, scale, true);
+  return finish(sk, 'siren', body, head, j, 3.0, scale, true, color);
 }
 
 // ----------------------------------------------------------------- reaper --
@@ -2080,7 +2086,7 @@ export function buildReaper(color: number, scale: number): CreatureRig {
   halo.position.copy(V(0, 2.1, -0.3)).sub(body.userData.w as V3);
   body.add(halo);
   const j: CreatureJoints = { chest, arms, strands, wisps, halo };
-  return finish(sk, 'reaper', body, head, j, 3.4, scale, true);
+  return finish(sk, 'reaper', body, head, j, 3.4, scale, true, color);
 }
 
 // ----------------------------------------------------------------- spider --
@@ -2145,7 +2151,7 @@ function buildSpiderRig(color: number): CreatureRig {
     }
   }
   const j: CreatureJoints = { limbs, fangs, abdomen, legLen: ty };
-  return finish(sk, 'spider', body, head, j, 0.75, 1);
+  return finish(sk, 'spider', body, head, j, 0.75, 1, false, color);
 }
 
 // ---------------------------------------------------------------- animator --

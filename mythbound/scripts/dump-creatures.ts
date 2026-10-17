@@ -70,8 +70,24 @@ for (const [kind, build] of Object.entries(KINDS)) {
   });
   const list = bones as THREE.Object3D[] | null;
   if (!list) continue;
+  // Which bone is which: the joints the animator drives, by name (creatures only).
+  const at = (o?: THREE.Object3D) => (o ? list.indexOf(o) : -1);
+  const j = (rig as Rig).j;
+  const names = j
+    ? {
+      body: at((rig as Rig).body), head: at((rig as Rig).head), chest: at(j.chest), hips: at(j.hips), jaw: at(j.jaw),
+      neck: j.neck?.map(at), ears: j.ears?.map(at), tail: j.tail?.map(at), lids: j.lids?.map(at), stalks: j.stalks?.map(at),
+      coils: j.coils?.map(at), tailRoot: at(j.tailRoot), fangs: j.fangs?.map(at), abdomen: at(j.abdomen), iris: at(j.iris), pupil: at(j.pupil),
+      limbs: j.limbs?.map((l) => ({ up: at(l.up), mid: at(l.mid), low: at(l.low), side: l.side, front: l.front, foot: l.ik?.foot?.toArray() })),
+      arms: j.arms?.map((l) => ({ up: at(l.up), mid: at(l.mid), low: at(l.low), side: l.side })),
+      wings: j.wings?.map((w) => ({ root: at(w.root), fore: at(w.fore), hand: at(w.hand), fingers: w.fingers.map(at), side: w.side })),
+      pincers: j.pincers?.map((p) => ({ arm: at(p.arm), fore: at(p.fore), hand: at(p.hand), finger: at(p.finger), side: p.side })),
+      strands: j.strands?.map((c) => c.map(at)), legLen: j.legLen, girth: j.girth,
+    }
+    : null;
   const data = {
     kind,
+    names,
     // Bind-pose positions in the creature's own space (its root is unscaled and unmoved here).
     bones: list.map((b) => ({ parent: list.indexOf(b.parent as THREE.Object3D), w: round(b.getWorldPosition(new THREE.Vector3()).toArray()) })),
     surfaces,
