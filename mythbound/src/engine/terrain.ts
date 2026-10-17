@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import soilUrl from '../assets/ground-soil.webp?url';
+import grassUrl from '../assets/ground-grass.webp?url';
+import rockUrl from '../assets/ground-rock.webp?url';
+import sandUrl from '../assets/ground-sand.webp?url';
 import { fbm, lerp, noise2, smoothstep, tileableNoise } from './noise';
 import { CINDER_CONES, ISLAND, ISLES, LAVA_POOLS, OASES, PASS, SHRINES, TOWN, TRIALS, VOLCANO, WORLD_HALF, ZONES, type ZoneId } from '../data/world';
 
@@ -109,9 +113,27 @@ function outerHeight(x: number, z: number, h0: number): number {
   return lerp(h0, hs / sum, w);
 }
 
+/**
+ * Rolling hills over the heartland: warped so they wander rather than repeat, soft
+ * ridgelines between them and small knolls on their flanks. Never below zero, so no new lakes.
+ */
+function hills(x: number, z: number): number {
+  const wx = x + 45 * noise2(x / 230 + 7.1, z / 230), wz = z + 45 * noise2(x / 230, z / 230 - 3.3);
+  const roll = Math.pow(smoothstep(-0.35, 0.75, fbm(wx / 120, wz / 120, 4)), 1.3);
+  const crest = Math.pow(ridged(wx / 190 + 4, wz / 190, 3), 2.2);
+  return 15 * roll + 10 * crest + 1.6 * (fbm(x / 24, z / 24, 3) + 0.6);
+}
+
 /** Terrain height before places are flattened. */
 function rawHeight(x: number, z: number): number {
   let h = 4 + 5 * fbm(x / 140, z / 140, 4) + 1.5 * fbm(x / 35, z / 35, 2);
+
+  // The hills settle down near the town, the shore, the marsh and the volcano.
+  const calm = smoothstep(TOWN.radius + 10, TOWN.radius + 90, dist(x, z, TOWN))
+    * (1 - smoothstep(60, 125, z) * smoothstep(-200, -140, x))
+    * (1 - smoothstep(-100, -150, x) * smoothstep(70, 120, z))
+    * smoothstep(VOLCANO.radius * 0.55, VOLCANO.radius * 1.15, dist(x, z, VOLCANO));
+  if (calm > 0) h += calm * hills(x, z);
 
   const forest = smoothstep(-90, -170, x) * (1 - smoothstep(110, 160, z));
   h += forest * (8 * fbm(x / 70 + 5, z / 70, 3) + 5);
@@ -277,8 +299,18 @@ vWNrm = normalize(mat3(modelMatrix) * objectNormal);
 `;
 const TERRAIN_FRAG_PARS = /* glsl */ `
 uniform sampler2D uDetail;
+uniform sampler2D uSoil, uGrass, uRock, uSand;
+uniform float uGround;
 varying vec3 vWPos;
 varying vec3 vWNrm;
+// A ground layer at two scales, one turned, mixed by a slow noise so the tile never shows its repeat.
+vec4 gTap(sampler2D t, vec2 uv, vec2 uv2, float k) {
+#ifdef TERRAIN_HQ
+  return mix(texture2D(t, uv), texture2D(t, uv2), k);
+#else
+  return texture2D(t, uv);
+#endif
+}
 `;
 // World-space detail: noise breaks up the albedo, steep ground gets rock
 // strata, wet sand darkens and shines at the waterline.
@@ -298,7 +330,35 @@ vec4 tR = texture2D(uDetail, (abs(tN.x) > abs(tN.z) ? vWPos.zy : vWPos.xy) * vec
 #endif
 tD1 = mix(tD1, tR, tRock);
 float tVar = (tD1.b - 0.5) * 0.42 + (tD2.b - 0.5) * 0.34 + (tD0.b - 0.5) * 0.22;
-vec3 tCol = diffuseColor.rgb * (1.0 + tVar);
+// The ground's own surface: soil, grass, rock and sand, chosen by the zone's colour, the slope
+// and the shore, and blended by height so grass grows up between stones rather than fading.
+vec3 gC = diffuseColor.rgb;
+float gGreen = smoothstep(0.38, 0.46, gC.g / (gC.r + gC.g + gC.b + 1e-4));
+float gLum = dot(gC, vec3(0.3, 0.59, 0.11));
+float gSandW = max(1.0 - smoothstep(0.4, 1.8, vWPos.y), smoothstep(0.24, 0.32, gLum) * step(gC.b * 1.6, gC.r));
+gSandW *= step(-3.0, vWPos.y) * (1.0 - tRock);
+float gGrassW = gGreen * (1.0 - gSandW) * (1.0 - tRock) * smoothstep(0.2, 0.5, tD2.a + tD1.b * 0.35);
+vec4 gW = vec4(max(0.0, 1.0 - tRock - gSandW - gGrassW), gGrassW, tRock, gSandW);
+vec2 gUv = vWPos.xz / 4.0;
+vec2 gUv2 = mat2(0.8, -0.6, 0.6, 0.8) * vWPos.xz / 6.1 + 0.31;
+float gK = smoothstep(0.3, 0.7, tD2.b);
+vec4 gS = gTap(uSoil, gUv, gUv2, gK);
+vec4 gG = gTap(uGrass, gUv, gUv2, gK);
+vec4 gA = gTap(uSand, gUv, gUv2, gK);
+#ifdef TERRAIN_HQ
+vec4 gR = mix(texture2D(uRock, gUv), mix(texture2D(uRock, vWPos.xy / 3.6), texture2D(uRock, vWPos.zy / 3.6), tSide), smoothstep(0.25, 0.6, 1.0 - tN.y));
+#else
+vec4 gR = texture2D(uRock, (abs(tN.x) > abs(tN.z) ? vWPos.zy : vWPos.xy) / 3.6);
+#endif
+vec4 gHt = vec4(gS.a, gG.a, gR.a, gA.a) + gW * 1.6;
+vec4 gB = max(gHt - (max(max(gHt.x, gHt.y), max(gHt.z, gHt.w)) - 0.3), 0.0) * step(0.002, gW);
+gB /= dot(gB, vec4(1.0)) + 1e-5;
+float gFar = smoothstep(30.0, 170.0, distance(vWPos, cameraPosition));
+vec3 gAlb = mix((gS.rgb * gB.x + gG.rgb * gB.y + gR.rgb * gB.z + gA.rgb * gB.w) * 2.0, vec3(1.0), gFar * 0.5);
+float gH = dot(vec4(gS.a, gG.a, gR.a, gA.a), gB);
+// Bump only where a texel covers more than a pixel (finer detail would only sparkle).
+float gLod = clamp(1.6 - length(fwidth(gUv)) * 512.0, 0.0, 1.0);
+vec3 tCol = diffuseColor.rgb * (1.0 + tVar * mix(1.0, 0.6, uGround)) * mix(vec3(1.0), gAlb, uGround);
 // Dry and lush tufts on open ground.
 tCol = mix(tCol, tCol * vec3(1.14, 1.06, 0.8), smoothstep(0.5, 0.85, tD2.a) * (1.0 - tRock) * 0.7);
 tCol = mix(tCol, tCol * vec3(0.86, 1.04, 0.86), smoothstep(0.55, 0.9, tD1.a) * (1.0 - tRock) * 0.5);
@@ -325,6 +385,7 @@ tCol = mix(tCol, tCob, tRoad);
 diffuseColor.rgb = tCol;
 `;
 const TERRAIN_ROUGH = /* glsl */ `
+roughnessFactor = mix(roughnessFactor, dot(gB, vec4(0.97, 0.93, 0.84, 0.9)), uGround);
 roughnessFactor = mix(roughnessFactor, 0.32, tWet * 0.85);
 roughnessFactor = mix(roughnessFactor, 0.7, tRoad * tStone);
 `;
@@ -335,6 +396,12 @@ const TERRAIN_NORMAL = /* glsl */ `
   tG += tCf * tCf * tCf * 6.0 * tRoad;
   vec3 tP = normalize(tN + vec3(-tG.x, 0.0, -tG.y) * 0.55);
   normal = normalize((viewMatrix * vec4(tP, 0.0)).xyz);
+  // Bump from the ground layers' heights (pebbles, blades, cracks, ripples), fading with distance.
+  vec3 gSx = dFdx(-vViewPosition), gSy = dFdy(-vViewPosition);
+  vec3 gR1 = cross(gSy, normal), gR2 = cross(normal, gSx);
+  float gDet = dot(gSx, gR1);
+  vec3 gGrad = sign(gDet) * (dFdx(gH) * gR1 + dFdy(gH) * gR2) * 1.4 * uGround * gLod;
+  normal = normalize(abs(gDet) * normal - gGrad);
 }
 `;
 
@@ -344,6 +411,25 @@ export const TILES = Math.round((WORLD_HALF * 2) / TILE);
 
 const materials = new Map<boolean, THREE.MeshStandardMaterial>();
 
+let groundTex: { uniforms: Record<string, THREE.IUniform> } | null = null;
+/** The four ground layers (see scripts/ground-textures.py); the ground goes plain until all have loaded. */
+function groundTextures() {
+  if (groundTex) return groundTex;
+  const uniforms: Record<string, THREE.IUniform> = { uGround: { value: 0 } };
+  const loader = new THREE.TextureLoader();
+  let left = 4;
+  for (const [name, url] of [['uSoil', soilUrl], ['uGrass', grassUrl], ['uRock', rockUrl], ['uSand', sandUrl]] as const) {
+    const tex = loader.load(url, () => {
+      if (--left === 0) uniforms.uGround.value = 1;
+    });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 8;
+    uniforms[name] = { value: tex };
+  }
+  groundTex = { uniforms };
+  return groundTex;
+}
+
 /** The ground's material, shared by every tile (with the detail shader). */
 export function terrainMaterial(hq: boolean): THREE.MeshStandardMaterial {
   let mat = materials.get(hq);
@@ -352,8 +438,10 @@ export function terrainMaterial(hq: boolean): THREE.MeshStandardMaterial {
   mat.defines = { TOWN_POS: `vec2(${TOWN.x.toFixed(1)}, ${TOWN.z.toFixed(1)})`, TOWN_R: TOWN.radius.toFixed(1) };
   if (hq) mat.defines.TERRAIN_HQ = '';
   const detail = detailTexture();
+  const ground = groundTextures();
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uDetail = { value: detail };
+    Object.assign(shader.uniforms, ground.uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${TERRAIN_VERT_PARS}`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n${TERRAIN_VERT}`);
