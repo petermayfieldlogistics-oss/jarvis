@@ -1191,19 +1191,19 @@ def stag(bt):
     P = lambda i: Vector(B[i])
     # ---- the body: a deep chest, a lean waist, high haunches
     body = [(0, 1.33, -0.76), (0, 1.32, -0.64), (0, 1.3, -0.44), (0, 1.27, -0.18), (0, 1.27, 0.1), (0, 1.27, 0.33), (0, 1.36, 0.5), (0, 1.44, 0.57)]
-    F.loft(bt, [G(*q) for q in body], [0.05, 0.13, 0.17, 0.145, 0.17, 0.185, 0.15, 0.1], [0.06, 0.16, 0.2, 0.165, 0.215, 0.24, 0.19, 0.12], [hips, chest], BARK, sides=10)
+    F.loft(bt, [G(*q) for q in body], [0.06, 0.16, 0.21, 0.18, 0.205, 0.22, 0.18, 0.12], [0.07, 0.19, 0.24, 0.2, 0.25, 0.28, 0.22, 0.14], [hips, chest], BARK, sides=10)
     # A paler belly and throat, and the haunches and shoulders standing out.
-    F.loft(bt, [G(0, 1.13, -0.3), G(0, 1.1, 0.0), G(0, 1.1, 0.3)], [0.1, 0.11, 0.12], [0.05, 0.06, 0.07], [hips, chest], BELLY, sides=8)
+    F.loft(bt, [G(0, 1.08, -0.3), G(0, 1.05, 0.0), G(0, 1.05, 0.3)], [0.12, 0.13, 0.14], [0.06, 0.07, 0.08], [hips, chest], BELLY, sides=8)
     for sd in (-1, 1):
-        F.loft(bt, [G(sd * 0.11, 1.42, -0.62), G(sd * 0.13, 1.27, -0.47), G(sd * 0.13, 1.08, -0.38)], [0.06, 0.1, 0.07], [0.08, 0.12, 0.08], [hips], BARK2, sides=8)
-        F.loft(bt, [G(sd * 0.12, 1.44, 0.32), G(sd * 0.14, 1.28, 0.4), G(sd * 0.13, 1.08, 0.38)], [0.06, 0.09, 0.065], [0.08, 0.1, 0.07], [chest], BARK2, sides=8)
+        F.loft(bt, [G(sd * 0.13, 1.44, -0.62), G(sd * 0.155, 1.27, -0.47), G(sd * 0.15, 1.06, -0.38)], [0.075, 0.12, 0.085], [0.1, 0.15, 0.1], [hips], BARK2, sides=8)
+        F.loft(bt, [G(sd * 0.14, 1.46, 0.32), G(sd * 0.165, 1.28, 0.4), G(sd * 0.15, 1.06, 0.38)], [0.075, 0.11, 0.08], [0.1, 0.125, 0.085], [chest], BARK2, sides=8)
         # Runes of green light on the flanks.
         for k in range(3):
             z = -0.25 + k * 0.22
-            a = G(sd * 0.168, 1.32 - k * 0.02, z)
+            a = G(sd * 0.2, 1.32 - k * 0.02, z)
             F.blade(bt, a, a + G(sd * 0.01, -0.13, 0.05), 0.016, [hips, chest], GREEN, thick=0.005, surf='glow', glow=True, side=G(0, 0, 1))
     # ---- the neck and mane
-    F.loft(bt, [G(0, 1.38, 0.5), P(nk[0]), P(nk[1]), P(head) + G(0, -0.02, -0.02)], [0.13, 0.115, 0.09, 0.07], [0.16, 0.14, 0.1, 0.08], [chest] + nk + [head], BARK, sides=9)
+    F.loft(bt, [G(0, 1.38, 0.5), P(nk[0]), P(nk[1]), P(head) + G(0, -0.02, -0.02)], [0.155, 0.135, 0.105, 0.08], [0.19, 0.165, 0.12, 0.09], [chest] + nk + [head], BARK, sides=9)
     for i in range(11):
         t = i / 10
         a = G(0, 1.5, 0.44).lerp(P(head) + G(0, 0.05, -0.06), t)
@@ -1243,16 +1243,16 @@ def stag(bt):
         up, mid, low, side, front = limb['up'], limb['mid'], limb['low'], limb['side'], limb['front']
         U, M, L = P(up), P(mid), P(low)
         Ft = G(*limb['foot'])
-        top = 0.11 if front else 0.135
-        F.prism(bt, U + G(0, 0.06, 0), M, top, 0.06, [up, mid], BARK, sides=8, surf='fur')
-        F.prism(bt, M, L, 0.056, 0.04, [mid, low], BARK, sides=7, surf='fur')
-        F.prism(bt, L, Ft + G(0, 0.06, 0), 0.04, 0.034, [low], BARK2, sides=6, surf='fur')
-        F.gem(bt, M, 0.05, [mid], BARK2, surf='fur', glow=False, stretch=1.1)
+        top = 0.13 if front else 0.16
+        F.prism(bt, U + G(0, 0.06, 0), M, top, 0.072, [up, mid], BARK, sides=8, surf='fur')
+        F.prism(bt, M, L, 0.066, 0.048, [mid, low], BARK, sides=7, surf='fur')
+        F.prism(bt, L, Ft + G(0, 0.06, 0), 0.048, 0.042, [low], BARK2, sides=6, surf='fur')
+        F.gem(bt, M, 0.062, [mid], BARK2, surf='fur', glow=False, stretch=1.1)
         for k in range(4):
             a = (k / 4) * math.tau
             F.blade(bt, Ft + G(math.sin(a) * 0.03, 0.14, math.cos(a) * 0.03), Ft + G(math.sin(a) * 0.045, 0.05, math.cos(a) * 0.045), 0.035, [low], 0x221c15, thick=0.008)
         for sd in (-1, 1):
-            F.plate(bt, Ft + G(sd * 0.016, 0.025, 0.015), (0.03, 0.06, 0.07), [low], HOOF, bevel=0.35, taper=0.8, surf='shell')
+            F.plate(bt, Ft + G(sd * 0.016, 0.025, 0.015), (0.036, 0.065, 0.08), [low], HOOF, bevel=0.35, taper=0.8, surf='shell')
     # ---- a short tail, a flick of dark fur
     tl = n['tail']
     F.blade(bt, P(tl[0]), P(tl[1]) + G(0, -0.12, -0.06), 0.09, tl, 0x221c15, thick=0.015, side=G(1, 0, 0))
