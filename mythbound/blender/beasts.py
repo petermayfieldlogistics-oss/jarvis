@@ -646,141 +646,6 @@ def wraith(bt):
     return bt.build(0.0075, 7000, ('CLOUDS', 0.04, 0.006), surface='ghost'), ['ghost', 'fur', 'glow']
 
 
-@builder('witch', 0x2a2440)
-def witch(bt):
-    """The Shade of Hecate: three faces under a spiked crown, a high collar, a gown dissolving into tatters, staff and torch."""
-    n, B = bt.n, bt.B
-    body, chest, head = n['body'], n['chest'], n['head']
-    Bo, C, Hd = B[body], B[chest], B[head]
-    gown = dict(fade=(0.2, 2.0, 0.4), mottle=0.15, stiff=3.5)
-    gold, skin = 0xc8a858, 0xb8b0a0
-    strands = n['strands']
-    skirt, hair = strands[:12], strands[12:]
-    # Bodice, a cinched waist with a gold belt, and a skirt flaring to the hem.
-    bt.blob(gv(C, 0, 0.24, 0.0), 0.24, 0.08, 0.13, bones=[chest], **gown)
-    bt.capsule(gv(C, 0, 0.24, 0), gv(C, 0, -0.05, 0.01), 0.14, 0.13, bones=[chest], **gown)
-    for sd in (-1, 1):
-        bt.blob(gv(C, sd * 0.065, 0.06, 0.08), 0.07, 0.07, 0.06, bones=[chest], **gown)
-    bt.capsule(gv(C, 0, -0.05, 0.01), gv(C, 0, -0.27, 0.0), 0.13, 0.12, bones=[chest], **gown)
-    bt.tube([gv(C, 0, -0.27, 0), gv(C, 0, -0.23, 0)], 0.135, [chest], surface='fur', rgb=gold, n=16)
-    bt.capsule(gv(C, 0, -0.27, 0), gv(Bo, 0, 0.1, 0), 0.12, 0.3, bones=[chest, body], **gown)
-    bt.capsule(gv(Bo, 0, 0.1, 0), gv(Bo, 0, -0.18, 0), 0.3, 0.38, bones=[body], **gown)
-    for st in skirt:
-        R = B[st[0]]
-        bt.capsule(Vector((R.x * 0.75, R.y * 0.75, Bo.z + 0.05)), R + Vector((0, 0, 0.02)), 0.07, 0.07, bones=[body, st[0]], **gown)
-    tatters(bt, skirt, 0.15, 'fur', (0.0, 1.0, 0.45))
-    # The collar: dark spines fanning up behind the head.
-    for i in range(7):
-        a = (i / 6 - 0.5) * 2.6 + math.pi
-        b = gv(C, math.sin(a) * 0.14, 0.3, math.cos(a) * 0.1 - 0.02)
-        bt.tube([b, b + G(math.sin(a) * 0.08, 0.15, math.cos(a) * 0.08), b + G(math.sin(a) * 0.16, 0.3, math.cos(a) * 0.14 - 0.06)], lambda t: 0.045 * (1 - t) + 0.003, [chest], surface='fur', slot=DARK, n=6, squash=0.3, wide=G(math.cos(a), 0, -math.sin(a)))
-    # Three faces: the maiden ahead, the mother and the crone to either side, on a veiled head.
-    bt.blob(Hd, 0.14, 0.16, 0.14, bones=[head], slot=FIXED, rgb=0x18141e, stiff=3.0)
-    for a, c in ((0.0, 0xe8e0d0), (2.1, skin), (-2.1, 0x8a8070)):
-        d = G(math.sin(a), 0, math.cos(a))
-        side = G(math.cos(a), 0, -math.sin(a))
-        fc = Hd + d * 0.08
-        bt.blob(fc, 0.085, 0.12, 0.07, rot=(0, a, 0), bones=[head], slot=FIXED, rgb=c, stiff=3.0)
-        bt.blob(fc + d * 0.065 + G(0, -0.01, 0), 0.016, 0.03, 0.02, rot=(0, a, 0), bones=[head], slot=FIXED, rgb=c, stiff=3.0)
-        for sd in (-1, 1):
-            e = fc + d * 0.065 + side * sd * 0.037 + G(0, 0.03, 0)
-            bt.hard.append(('fur', _ball(e, 0.02, (1, 1, 0.7)), Part([head], slot=FIXED, rgb=0x050308)))
-            bt.eye(e + d * 0.008, 0.009, [head], rgb=0xb070ff)
-        bt.hard.append(('fur', _ball(fc + d * 0.068 + G(0, -0.055, 0), 0.022, (1, 0.35, 0.5)), Part([head], slot=FIXED, rgb=0x3a1420)))
-    # The crown: a gold band with spikes, every third set with a burning gem.
-    hy = Hd.z
-    bt.tube([gv(Hd, 0, 0.1, 0), gv(Hd, 0, 0.135, 0)], 0.142, [head], surface='shell', rgb=gold, n=18)
-    for i in range(9):
-        a = (i / 9) * math.tau
-        b = gv(Hd, math.sin(a) * 0.135, 0.12, math.cos(a) * 0.135)
-        tall = 0.2 if i % 3 == 0 else 0.12
-        bt.cone(b, b + G(math.sin(a) * 0.04, tall, math.cos(a) * 0.04), 0.026, [head], surface='shell', rgb=gold)
-        if i % 3 == 0:
-            bt.eye(b + G(math.sin(a) * 0.012, 0.035, math.cos(a) * 0.012), 0.02, [head], rgb=0xb070ff)
-    # A veil of dark hair down the back, on its own strands.
-    for st in hair:
-        pts = [B[k] for k in st]
-        tip = pts[-1] + (pts[-1] - pts[-2]) * 1.15
-        bt.tube(curve([pts[0], pts[1], tip], 3), lambda t: 0.07 * (1 - 0.7 * t), st, surface='fur', rgb=0x16121a, n=7, squash=0.35)
-    # Long sleeves and pale hands.
-    for arm in n['arms']:
-        sleeve_arm(bt, arm, 0.06, 0.13, skin, robe=gown)
-    # The staff in the right hand: a dark shaft, a gold crescent cradling a violet orb.
-    right, left = n['arms'][0], n['arms'][1]
-    W = B[right['low']]
-    rl = right['low']
-    bt.tube([W + G(0, -1.1, 0.04), W + G(0, 0.2, 0), W + G(0, 1.05, -0.02)], lambda t: 0.032, [rl], surface='fur', rgb=0x221830, n=8)
-    top = W + G(0, 1.12, -0.02)
-    bt.tube(curve([top + G(-0.17, 0.12, 0), top + G(-0.1, -0.08, 0), top + G(0, -0.14, 0), top + G(0.1, -0.08, 0), top + G(0.17, 0.12, 0)], 3), lambda t: 0.01 + 0.025 * math.sin(math.pi * t), [rl], surface='shell', rgb=gold, n=7)
-    bt.eye(top + G(0, 0.06, 0), 0.075, [rl], rgb=0xb080ff)
-    # The torch in the left: a wrapped haft and a tongue of violet flame.
-    Wl = B[left['low']]
-    ll = left['low']
-    bt.tube([Wl + G(0, -0.14, 0.04), Wl + G(0, 0.28, 0.06)], lambda t: 0.022 + 0.01 * t, [ll], surface='fur', rgb=0x2a1c12, n=7)
-    bt.tube(curve([Wl + G(0, 0.28, 0.06), Wl + G(0.02, 0.4, 0.06), Wl + G(-0.01, 0.56, 0.05)], 3), lambda t: 0.06 * (1 - t) ** 0.8 + 0.002, [ll], surface='glow', slot=GLOW, rgb=0x9060ff, n=8)
-    return bt.build(0.008, 9000, ('CLOUDS', 0.04, 0.004), surface='fur'), ['fur', 'glow', 'shell']
-
-
-@builder('reaper', 0x15131a)
-def reaper(bt):
-    """The Reaper: a towering hooded void with cold eyes, a ragged mantle, bony hands, a great scythe and a soul lantern."""
-    n, B = bt.n, bt.B
-    body, chest, head = n['body'], n['chest'], n['head']
-    Bo, C, Hd = B[body], B[chest], B[head]
-    robe = dict(fade=(0.3, 2.9, 0.4), mottle=0.2, stiff=3.5)
-    bone, soul, iron = 0xd8d0b8, 0x70ffb0, 0x3a3a40
-    strands = n['strands']
-    skirt, mantle = strands[:12], strands[12:]
-    # Broad shoulders, a long robe flaring to the hem.
-    bt.blob(gv(C, 0, 0.24, -0.02), 0.4, 0.12, 0.24, bones=[chest], **robe)
-    bt.capsule(gv(C, 0, 0.24, 0), gv(C, 0, -0.1, 0), 0.24, 0.24, bones=[chest], **robe)
-    bt.capsule(gv(C, 0, -0.1, 0), gv(Bo, 0, 0.0, 0), 0.24, 0.32, bones=[chest, body], **robe)
-    bt.capsule(gv(Bo, 0, 0.0, 0), gv(Bo, 0, -0.38, 0), 0.32, 0.44, bones=[body], **robe)
-    for st in skirt:
-        R = B[st[0]]
-        bt.capsule(Vector((R.x * 0.75, R.y * 0.75, Bo.z - 0.25)), R + Vector((0, 0, 0.02)), 0.08, 0.08, bones=[body, st[0]], **robe)
-    tatters(bt, skirt, 0.16, 'ghost', (0.0, 1.6, 0.35))
-    tatters(bt, mantle, 0.13, 'ghost', (1.4, 3.0, 0.4))
-    # The hood: deep and peaked, a void within, two cold eyes, a glimpse of jaw.
-    bt.blob(gv(Hd, 0, 0.06, -0.04), 0.24, 0.25, 0.26, bones=[head], **robe)
-    bt.capsule(gv(Hd, 0, 0.14, -0.14), gv(Hd, 0, 0.14, -0.5), 0.12, 0.03, bones=[head], **robe)
-    bt.blob(gv(Hd, 0, 0.0, 0.18), 0.15, 0.17, 0.16, bones=[head], neg=True)
-    bt.hard.append(('fur', _ball(gv(Hd, 0, 0.0, -0.02), 0.19, (1, 1.05, 0.85)), Part([head], slot=FIXED, rgb=0x020203)))
-    for sd in (-1, 1):
-        bt.eye(gv(Hd, sd * 0.065, 0.03, 0.12), 0.03, [head], rgb=0x90ffc0, squash=0.6)
-    bt.tube([gv(Hd, 0, -0.12, 0.06), gv(Hd, 0, -0.15, 0.12)], lambda t: 0.06 - 0.015 * t, [head], surface='fur', rgb=0x7a7464, n=8, squash=0.4, wide=Vector((1, 0, 0)))
-    # Sleeves and skeletal hands.
-    for arm in n['arms']:
-        sleeve_arm(bt, arm, 0.07, 0.16, bone, robe=robe)
-    # The scythe: a long black haft bound with iron, a great curved blade with a ghostly edge.
-    rl = n['arms'][0]['low']
-    W = B[rl]
-    bt.tube([W + G(0.02, -1.5, -0.14), W, W + G(-0.03, 2.1, 0.12)], lambda t: 0.036, [rl], surface='fur', rgb=0x241a14, n=8)
-    for y in (-1.2, -0.4, 0.6, 1.5):
-        bt.tube([W + G(0, y, y * 0.06), W + G(0, y + 0.08, y * 0.06)], 0.046, [rl], surface='shell', rgb=0x4a3a2a, n=8)
-    T0 = W + G(-0.03, 2.12, 0.12)
-    bt.tube([T0 + G(0, -0.12, 0), T0 + G(0, 0.08, 0)], 0.055, [rl], surface='shell', rgb=0x5a5a62, n=10)
-    bt.cone(T0 + G(0, 0.02, -0.02), T0 + G(0, 0.18, -0.36), 0.04, [rl], surface='shell', rgb=0x5a5a62)
-    spine = curve([T0 + G(0, 0.04, 0.02), T0 + G(0, 0.3, 0.7), T0 + G(0, 0.1, 1.4), T0 + G(0, -0.34, 1.85)], 4)
-    wid = lambda t: 0.19 * (1 - t) ** 0.7 + 0.004
-    # The blade is flat in the swing's plane: its width hangs below the spine.
-    edge = [p + G(0, -wid(i / (len(spine) - 1)) * 0.95, 0) for i, p in enumerate(spine)]
-    bm_pts = [a.lerp(b, 0.5) for a, b in zip(spine, edge)]
-    bt.tube(bm_pts, lambda t: wid(t) * 0.5, [rl], surface='shell', rgb=0xa8b0b8, n=8, squash=0.08, wide=Vector((0, 0, 1)))
-    bt.tube(edge, lambda t: 0.012 * (1 - t) + 0.002, [rl], surface='glow', slot=GLOW, rgb=soul, n=4)
-    # A soul lantern swinging at the left hip.
-    lp = G(0.4, 1.5, 0.14)
-    bt.tube([G(0.34, 1.95, 0.08), lp + G(0, 0.16, 0)], 0.008, [body], surface='shell', rgb=iron, n=4)
-    for dy in (0.13, -0.13):
-        bt.tube([lp + G(0, dy - 0.01, 0), lp + G(0, dy + 0.01, 0)], 0.062, [body], surface='shell', rgb=iron, n=10)
-    bt.cone(lp + G(0, 0.13, 0), lp + G(0, 0.22, 0), 0.06, [body], surface='shell', rgb=iron)
-    for i in range(4):
-        a = (i / 4) * math.tau + 0.4
-        bt.tube([lp + G(math.sin(a) * 0.055, 0.13, math.cos(a) * 0.055), lp + G(math.sin(a) * 0.055, -0.13, math.cos(a) * 0.055)], 0.008, [body], surface='shell', rgb=iron, n=4)
-    bt.eye(lp, 0.05, [body], rgb=soul, squash=1.0)
-    return bt.build(0.011, 9000, ('CLOUDS', 0.06, 0.006), surface='ghost'), ['ghost', 'fur', 'glow', 'shell']
-
-
 def cap(c, r, theta, axis, thick=0.0, segs=24, rings=8):
     """A spherical cap round `axis` out to polar angle `theta` (a closed shell `thick` deep when thick > 0)."""
     import bmesh as _bm
@@ -2073,6 +1938,176 @@ def champion(bt):
     bt.ao_floor = 0.6
     return bt.build(0.01, 3000, surface='0'), ['0', '1', '2']
 # end:h-416c43fb
+
+
+def rag(bt, st, P, centre, width, rgb, reach=0.6, thick=0.01):
+    """A torn strip of cloth down a strand: it curves with the hem around `centre` and narrows to a ragged point."""
+    pts = [P(b) for b in st]
+    pts = pts + [pts[-1] + (pts[-1] - pts[-2]) * reach]
+    out = pts[0] - Vector(centre)
+    out.z = 0
+    side = Vector((-out.y, out.x, 0)).normalized() if out.length > 1e-4 else Vector((1, 0, 0))
+    n = len(pts)
+    F.ribbon(bt, pts, [width * (1 - 0.8 * i / (n - 1)) for i in range(n)], side, st, rgb, thick=thick)
+
+
+# forged:witch
+@builder('witch', 0x2a2440)
+def witch(bt):
+    """The Shade of Hecate: three masked faces under a crown of moons, a fan collar, a scalloped gown torn to tatters, crescent staff and violet torch."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    P = lambda i: Vector(B[i])
+    C, Hd = P(chest), P(head)
+    GOWN, GOWN2, TATTER, GOLD, MASK, CRONE, VIOLET, SKIN = 0x2c2440, 0x3a3054, 0x18121f, 0xd8b060, 0xe6e0d4, 0x8a8478, 0xb080ff, 0xb8b0c0
+    # ---- the gown: a flared bell, scalloped at the hem; a fitted bodice; a gold girdle
+    scal = lambda a, i: 1 + 0.06 * math.cos(a * 8) if i >= 3 else 1
+    F.hull(bt, [(gv(C, 0, -0.12, 0), 0.15, 0.13), (gv(C, 0, -0.32, 0), 0.2, 0.17), (gv(C, 0, -0.56, 0), 0.3, 0.26), (gv(C, 0, -0.76, 0), 0.4, 0.35), (gv(C, 0, -0.92, 0), 0.44, 0.39)], [chest, body], GOWN, sides=16, surf='fur', wave=scal)
+    for k in range(4):
+        a = k / 4 * math.tau + math.pi / 4
+        F.hull(bt, [(gv(C, 0, -0.3, 0), 0.205, 0.175), (gv(C, 0, -0.9, 0), 0.45, 0.4)], [chest, body], GOWN2, sides=16, surf='fur', arc=(a - 0.3, a + 0.3))
+    F.hull(bt, [(gv(C, 0, -0.14, 0), 0.15, 0.13), (gv(C, 0, 0.05, 0.01), 0.17, 0.14), (gv(C, 0, 0.2, 0), 0.15, 0.12), (gv(C, 0, 0.28, -0.01), 0.08, 0.07)], [chest], GOWN2, sides=14, surf='fur')
+    F.ring(bt, gv(C, 0, -0.14, 0), 0.155, [chest], GOLD, width=0.035, thick=0.012, segs=18, surf='shell')
+    F.gem(bt, gv(C, 0, -0.14, 0.17), 0.03, [chest], VIOLET)
+    for st in n['strands'][:12]:
+        rag(bt, st, P, P(body), 0.15, TATTER, reach=0.4, thick=0.008)
+    # A standing fan collar behind the head, gold-edged.
+    for k in range(11):
+        a = math.pi + (k - 5) * 0.26
+        b = gv(C, math.sin(a) * 0.1, 0.24, math.cos(a) * 0.08)
+        tip = b + G(math.sin(a) * 0.16, 0.3 - abs(k - 5) * 0.03, math.cos(a) * 0.12)
+        F.blade(bt, b, tip, 0.08, [chest], GOWN2 if k % 2 else TATTER, thick=0.012, side=G(math.cos(a), 0, -math.sin(a)))
+        F.spike(bt, tip - (tip - b) * 0.2, tip + (tip - b) * 0.08, 0.008, [chest], GOLD, surf='shell')
+    # ---- the head: a veil, three masks (maiden ahead, mother and crone to the sides), slits of violet light
+    F.hull(bt, [(gv(Hd, 0, -0.06, -0.01), 0.1, 0.1), (gv(Hd, 0, 0.05, -0.01), 0.125, 0.125), (gv(Hd, 0, 0.16, -0.02), 0.12, 0.12), (gv(Hd, 0, 0.22, -0.03), 0.06, 0.06)], [head], TATTER, sides=12, surf='fur')
+    for ang, col in ((0.0, MASK), (math.pi / 2, MASK), (-math.pi / 2, CRONE)):
+        f = G(math.sin(ang), 0, math.cos(ang))
+        s_ = G(math.cos(ang), 0, -math.sin(ang))
+        c = gv(Hd, 0, 0.06, 0) + f * 0.115
+        F.plate(bt, c, (0.11, 0.15, 0.03), [head], col, rot=(0.0, ang, 0), bevel=0.35, taper=0.8, surf='shell')
+        for sd in (-1, 1):
+            F.plate(bt, c + s_ * (sd * 0.025) + G(0, 0.025, 0) + f * 0.018, (0.03, 0.009, 0.01), [head], VIOLET, rot=(0, ang, -sd * 0.25), surf='glow', glow=True, bevel=0)
+        F.plate(bt, c + G(0, -0.04, 0) + f * 0.018, (0.035, 0.006, 0.01), [head], 0x1a1020, rot=(0, ang, 0), bevel=0, surf='fur')
+    # The crown: a gold band, spikes, three crescent moons of light.
+    F.ring(bt, gv(Hd, 0, 0.14, -0.01), 0.13, [head], GOLD, width=0.03, thick=0.012, segs=18, surf='shell')
+    for k in range(9):
+        a = k / 9 * math.tau
+        b = gv(Hd, math.sin(a) * 0.13, 0.15, math.cos(a) * 0.13 - 0.01)
+        F.spike(bt, b, b + G(math.sin(a) * 0.03, 0.09 + 0.04 * (k % 3 == 0), math.cos(a) * 0.03), 0.02, [head], GOLD, surf='shell')
+    for ang in (0.0, 2.1, -2.1):
+        c = gv(Hd, math.sin(ang) * 0.1, 0.3, math.cos(ang) * 0.1 - 0.01)
+        pts = [c + G(math.cos(ang) * math.sin(t) * 0.09, math.cos(t) * 0.09, -math.sin(ang) * math.sin(t) * 0.09) for t in [-2.2, -1.5, -0.8, 0.0, 0.8, 1.5, 2.2]]
+        F.chain(bt, pts, [0.004, 0.012, 0.018, 0.02, 0.018, 0.012, 0.004], [head], VIOLET, sides=5, surf='glow', glow=True)
+    for st in n['strands'][12:]:
+        pts = [P(b) for b in st]
+        F.ribbon(bt, pts + [pts[-1] + (pts[-1] - pts[-2]) * 0.8], 0.05, G(1, 0, 0), st, 0x120c16, thick=0.01)
+    # ---- arms: wide sleeves, pale clawed hands
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        U, M, L = P(up), P(mid), P(low)
+        F.loft(bt, [U, M, L.lerp(M, 0.1)], [0.07, 0.08, 0.13], [0.07, 0.08, 0.13], [up, mid, low], GOWN2, sides=8, surf='fur')
+        F.ring(bt, L.lerp(M, 0.1), 0.13, [low], GOLD, width=0.02, thick=0.008, axis=(0, 1, 0), segs=12, surf='shell')
+        for f in range(4):
+            k0 = L + G((f - 1.5) * 0.02, -0.03, 0.03)
+            F.chain(bt, [k0, k0 + G((f - 1.5) * 0.01, -0.08, 0.03), k0 + G((f - 1.5) * 0.012, -0.15, 0.08)], [0.012, 0.009, 0.002], [low], SKIN, sides=5, surf='shell')
+    # ---- the staff (right): a dark shaft, a gold crescent cradling a violet orb
+    right, left = n['arms'][0], n['arms'][1]
+    W, rl = P(right['low']), right['low']
+    F.prism(bt, W + G(0, -1.1, 0.04), W + G(0, 1.05, -0.02), 0.03, 0.03, [rl], 0x221830, sides=7, surf='fur')
+    for y in (-0.6, 0.0, 0.6):
+        F.ring(bt, W + G(0, y, 0.02 - y * 0.03), 0.034, [rl], GOLD, width=0.03, thick=0.008, segs=10, surf='shell')
+    top = W + G(0, 1.12, -0.02)
+    arc = [top + G(math.sin(t) * 0.2, -math.cos(t) * 0.16 + 0.04, 0) for t in [-1.9, -1.3, -0.65, 0.0, 0.65, 1.3, 1.9]]
+    F.chain(bt, arc, [0.006, 0.02, 0.028, 0.03, 0.028, 0.02, 0.006], [rl], GOLD, sides=6, surf='shell')
+    F.gem(bt, top + G(0, 0.06, 0), 0.075, [rl], VIOLET, stretch=1.0)
+    # ---- the torch (left): a wrapped haft and a tongue of violet flame
+    Wl, ll = P(left['low']), left['low']
+    F.prism(bt, Wl + G(0, -0.14, 0.04), Wl + G(0, 0.28, 0.06), 0.022, 0.032, [ll], 0x2a1c12, sides=6, surf='fur')
+    F.ring(bt, Wl + G(0, 0.26, 0.06), 0.04, [ll], GOLD, width=0.04, thick=0.01, segs=10, surf='shell')
+    for k in range(5):
+        a = k / 5 * math.tau
+        b = Wl + G(math.sin(a) * 0.025, 0.3, 0.06 + math.cos(a) * 0.025)
+        F.blade(bt, b, b + G(math.sin(a) * 0.02, 0.2 + 0.06 * (k % 2), math.cos(a) * 0.02), 0.07, [ll], VIOLET if k % 2 else 0x6a40d0, thick=0.02, surf='glow', glow=True)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+# end:witch
+
+
+# forged:reaper
+@builder('reaper', 0x15131a)
+def reaper(bt):
+    """The Reaper: a towering hooded void with cold green eyes, a ragged robe, a mantle of ribs, bony hands, a great scythe and a soul lantern."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    P = lambda i: Vector(B[i])
+    C, Hd = P(chest), P(head)
+    ROBE, ROBE2, RAG, BONE, VOID, SOUL, IRON, WOOD = 0x17151c, 0x221e28, 0x0e0c12, 0xd0c6aa, 0x020203, 0x70ffb0, 0x3a3a40, 0x241a14
+    # ---- the robe: a long bell to the ground, torn into rags below
+    F.hull(bt, [(gv(C, 0, 0.1, 0), 0.22, 0.18), (gv(C, 0, -0.3, 0), 0.27, 0.22), (gv(C, 0, -0.8, 0), 0.38, 0.32), (gv(C, 0, -1.2, 0), 0.48, 0.42), (gv(C, 0, -1.45, 0), 0.52, 0.46)], [chest, body], ROBE, sides=14, surf='fur', wave=lambda a, i: 1 + 0.07 * math.cos(a * 7) if i >= 3 else 1)
+    for k in range(6):
+        a = k / 6 * math.tau
+        F.hull(bt, [(gv(C, 0, -0.2, 0), 0.26, 0.215), (gv(C, 0, -1.43, 0), 0.53, 0.47)], [chest, body], ROBE2, sides=14, surf='fur', arc=(a - 0.18, a + 0.18))
+    for st in n['strands']:
+        rag(bt, st, P, P(n['body']), 0.17, RAG, reach=0.45)
+    # ---- a mantle of ribs over the shoulders, a rope of bone at the waist
+    F.hull(bt, [(gv(C, 0, 0.2, 0), 0.3, 0.24), (gv(C, 0, 0.36, -0.01), 0.24, 0.2), (gv(C, 0, 0.44, -0.02), 0.13, 0.12)], [chest], ROBE2, sides=12, surf='fur')
+    for k in range(9):
+        a = math.pi + (k - 4) * 0.36
+        b = gv(C, math.sin(a) * 0.16, 0.38, math.cos(a) * 0.13)
+        pts = [b, b + G(math.sin(a) * 0.15, -0.08, math.cos(a) * 0.12), b + G(math.sin(a) * 0.24, -0.26, math.cos(a) * 0.18)]
+        F.chain(bt, pts, [0.022, 0.02, 0.006], [chest], BONE, sides=5, surf='shell')
+    for k in range(7):
+        a = (k - 3) * 0.32
+        b = gv(C, math.sin(a) * 0.2, 0.0, math.cos(a) * 0.17)
+        F.gem(bt, b, 0.04, [chest], BONE if k % 2 else 0xa89c80, surf='shell', glow=False)
+    # ---- the hood: tall and peaked, a void inside, two cold eyes
+    F.hull(bt, [(gv(Hd, 0, -0.18, -0.03), 0.16, 0.16), (gv(Hd, 0, -0.02, -0.02), 0.17, 0.18), (gv(Hd, 0, 0.14, -0.04), 0.15, 0.16), (gv(Hd, 0, 0.28, -0.09), 0.09, 0.1), (gv(Hd, 0, 0.38, -0.18), 0.02, 0.02)], [head], ROBE2, sides=12, surf='fur', arc=(0.75, math.tau - 0.75))
+    F.hull(bt, [(gv(Hd, 0, -0.14, 0.0), 0.12, 0.12), (gv(Hd, 0, 0.12, -0.02), 0.12, 0.12)], [head], VOID, sides=10, surf='fur')
+    for sd in (-1, 1):
+        F.gem(bt, gv(Hd, sd * 0.045, 0.02, 0.11), 0.022, [head], SOUL, stretch=0.6)
+    F.plate(bt, gv(Hd, 0, -0.1, 0.1), (0.1, 0.05, 0.05), [head], BONE, bevel=0.35, taper=0.8, surf='shell')
+    for k in range(5):
+        F.spike(bt, gv(Hd, (k - 2) * 0.018, -0.08, 0.125), gv(Hd, (k - 2) * 0.018, -0.12, 0.125), 0.007, [head], 0xe8e0c8, surf='shell')
+    # ---- sleeves and long bony hands
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        U, M, L = P(up), P(mid), P(low)
+        F.loft(bt, [U, M, L.lerp(M, 0.12)], [0.09, 0.1, 0.17], [0.09, 0.1, 0.17], [up, mid, low], ROBE, sides=8, surf='fur')
+        for st in range(3):
+            q = L.lerp(M, 0.12) + G((st - 1) * 0.08, -0.04, 0)
+            F.ribbon(bt, [q, q + G(0, -0.16, 0), q + G(0.01, -0.3, -0.02)], 0.07, G(1, 0, 0), [low], RAG, thick=0.008)
+        F.plate(bt, L + G(0, -0.02, 0.02), (0.06, 0.06, 0.04), [low], BONE, bevel=0.35, surf='shell')
+        for f in range(4):
+            k0 = L + G((f - 1.5) * 0.022, -0.04, 0.03)
+            F.chain(bt, [k0, k0 + G((f - 1.5) * 0.012, -0.1, 0.05), k0 + G((f - 1.5) * 0.014, -0.18, 0.11)], [0.012, 0.009, 0.002], [low], BONE, sides=5, surf='shell')
+    # ---- the scythe: a long black haft bound in iron, a great curved blade with a ghostly edge
+    rl = n['arms'][0]['low']
+    W = P(rl)
+    F.prism(bt, W + G(0.02, -1.5, -0.14), W + G(-0.03, 2.1, 0.12), 0.036, 0.036, [rl], WOOD, sides=7, surf='fur')
+    for y in (-1.2, -0.4, 0.6, 1.5):
+        F.ring(bt, W + G(0, y, y * 0.06), 0.04, [rl], IRON, width=0.07, thick=0.012, segs=10, surf='shell')
+    T0 = W + G(-0.03, 2.12, 0.12)
+    F.plate(bt, T0, (0.11, 0.2, 0.11), [rl], IRON, bevel=0.3, surf='shell')
+    F.spike(bt, T0 + G(0, 0.02, -0.04), T0 + G(0, 0.18, -0.36), 0.035, [rl], IRON, surf='shell')
+    spine = curve([T0 + G(0, 0.04, 0.04), T0 + G(0, 0.3, 0.7), T0 + G(0, 0.1, 1.4), T0 + G(0, -0.34, 1.85)], 4)
+    wid = [0.2 * (1 - i / (len(spine) - 1)) ** 0.7 + 0.006 for i in range(len(spine))]
+    mid = [p + G(0, -w * 0.5, 0) for p, w in zip(spine, wid)]
+    F.ribbon(bt, mid, wid, G(0, 1, 0), [rl], 0xa8b0b8, thick=0.012, surf='shell')
+    edge = [p + G(0, -w, 0) for p, w in zip(spine, wid)]
+    F.chain(bt, edge, [0.012 * (1 - i / (len(edge) - 1)) + 0.003 for i in range(len(edge))], [rl], SOUL, sides=4, surf='glow', glow=True)
+    # ---- the soul lantern at the left hip
+    lp = G(0.42, 1.45, 0.16)
+    F.prism(bt, G(0.34, 1.95, 0.08), lp + G(0, 0.16, 0), 0.008, 0.008, [body], IRON, sides=4, surf='shell')
+    F.plate(bt, lp + G(0, 0.13, 0), (0.14, 0.03, 0.14), [body], IRON, bevel=0.3, surf='shell')
+    F.plate(bt, lp + G(0, -0.13, 0), (0.14, 0.03, 0.14), [body], IRON, bevel=0.3, surf='shell')
+    F.spike(bt, lp + G(0, 0.14, 0), lp + G(0, 0.24, 0), 0.06, [body], IRON, sides=4, surf='shell')
+    for i in range(4):
+        a = (i / 4) * math.tau + math.pi / 4
+        F.prism(bt, lp + G(math.sin(a) * 0.065, 0.13, math.cos(a) * 0.065), lp + G(math.sin(a) * 0.065, -0.13, math.cos(a) * 0.065), 0.009, 0.009, [body], IRON, sides=4, surf='shell')
+    F.gem(bt, lp, 0.06, [body], SOUL, stretch=1.3)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+# end:reaper
 
 
 # -------------------------------------------------------------------- main --
