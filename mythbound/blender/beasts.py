@@ -23,6 +23,7 @@ import bpy  # noqa: E402,I001
 import bmesh  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
+import forge as F  # noqa: E402
 from kit import DARK, FIXED, GLOW, LIGHT, MAIN, Beast, G, Part, lerp, look, pack  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -251,7 +252,8 @@ def curve(pts, n=8):
     return out
 
 
-@builder('stag', 0x4a4232)
+# (Cernunna is forged now: see the great foes below.)
+
 def stag(bt):
     """Cernunna: a tall spirit stag with a bone-white skull for a face, a shaggy mane and vast glowing antlers."""
     n, B = bt.n, bt.B
@@ -1851,6 +1853,239 @@ def drowned(bt):
         p = bt.surface(gv(C, math.sin(a) * 0.5, 0.12 - (k % 4) * 0.08, math.cos(a) * 0.5), G(-math.sin(a), 0, -math.cos(a)))
         bt.hard.append(('0', _ball(p, 0.016, (1, 1, 0.6)), Part([chest], slot=FIXED, rgb=0xa8b0a2)))
     return bt.build(0.007, 5000, ('CLOUDS', 0.03, 0.004), surface='0'), ['0', '1', '2']
+
+# ------------------------------------------------------------- great foes --
+# Forged, not sculpted: crisp flat-shaded plate, blade and horn (forge.py).
+
+
+class Body:
+    """A humanoid's joints by name (Blender positions), left and right."""
+
+    def __init__(self, bt):
+        n, B = bt.n, bt.B
+        self.bt, self.n, self.B = bt, n, B
+        self.hips, self.spine, self.chest, self.head = n['hips'], n['spine'], n['chest'], n['head']
+        self.Hp, self.Sp, self.C, self.Hd = B[self.hips], B[self.spine], B[self.chest], B[self.head]
+        self.sides = []
+        for side in ('L', 'R'):
+            j = {k: n[k + side] for k in ('arm', 'fore', 'hand', 'leg', 'shin', 'foot')}
+            self.sides.append((1 if B[j['arm']].x > 0 else -1, j))
+
+    def P(self, j):
+        return self.B[j]
+
+
+@builder('h-662e96e4', 0x1a1426)
+def erebus(bt):
+    """Erebus, god of darkness: black plate with violet light in its seams, a horned helm over a void, wings of night."""
+    p = Body(bt)
+    C, Hp, Sp, Hd = p.C, p.Hp, p.Sp, p.Hd
+    ch, hip, sp, hd = p.chest, p.hips, p.spine, p.head
+    PL, PD, EDGE, TRIM, CLOTH, VOID = 0x2c2735, 0x16131c, 0x4a4060, 0xa070ff, 0x1d1527, 0x030205
+    # ---- torso: a keeled breastplate, ribbed belly lames, the void in the chest
+    keel = lambda a, i: 1 + 0.07 * max(0.0, math.cos(a)) ** 6 if 1 <= i <= 3 else 1
+    F.hull(bt, [(gv(C, 0, -0.17, 0.0), 0.16, 0.115), (gv(C, 0, -0.08, 0.012), 0.19, 0.13), (gv(C, 0, 0.03, 0.02), 0.215, 0.145), (gv(C, 0, 0.13, 0.012), 0.225, 0.142), (gv(C, 0, 0.21, -0.008), 0.18, 0.12), (gv(C, 0, 0.255, -0.012), 0.1, 0.085)], [ch], PL, sides=14, wave=keel)
+    for k in range(3):
+        y = 0.06 - k * 0.07
+        F.hull(bt, [(gv(Sp, 0, y + 0.035, 0.008), 0.152 + 0.006 * k, 0.11), (gv(Sp, 0, y - 0.03, 0.01), 0.16 + 0.006 * k, 0.116)], [sp, hip] if k == 2 else [sp], PD if k % 2 else PL, sides=14)
+    core = gv(C, 0, 0.04, 0.165)
+    F.gem(bt, core, 0.055, [ch], VOID, surf='0', glow=False, stretch=1.2)
+    F.ring(bt, core, 0.075, [ch], TRIM, width=0.016, thick=0.014, axis=(0, 0, 1), glow=True, surf='2')
+    for k in range(6):
+        a = k / 6 * math.tau + 0.3
+        F.blade(bt, core + G(math.sin(a) * 0.08, math.cos(a) * 0.08, -0.01), core + G(math.sin(a) * 0.19, math.cos(a) * 0.17, -0.035), 0.012, [ch], TRIM, thick=0.004, surf='2', glow=True, side=G(0, 0, 1))
+    # The gorget: a high collar, spiked behind.
+    F.hull(bt, [(gv(C, 0, 0.23, -0.005), 0.15, 0.13), (gv(C, 0, 0.33, -0.01), 0.125, 0.12)], [ch, hd], PD, sides=12, arc=(-2.6, 2.6))
+    for k in range(7):
+        a = math.pi + (k - 3) * 0.32
+        b = gv(C, math.sin(a) * 0.13, 0.27, math.cos(a) * 0.12)
+        F.spike(bt, b, b + G(math.sin(a) * 0.08, 0.2 + 0.05 * (3 - abs(k - 3)), math.cos(a) * 0.1), 0.022, [ch], EDGE)
+    # ---- shoulders: three lames each, spiked, with violet light along the top one
+    for sd, j in p.sides:
+        A, Fo, W = p.P(j['arm']), p.P(j['fore']), p.P(j['hand'])
+        arm, fore, hand = j['arm'], j['fore'], j['hand']
+        for k in range(3):
+            F.dome(bt, gv(A, sd * (0.02 + 0.012 * k), 0.05 - 0.065 * k, 0), 0.17 - 0.022 * k, [arm, ch] if k == 0 else [arm], PL if k % 2 == 0 else PD, axis=(sd * 0.55, 1, 0), theta=1.25, thick=0.014, squash=(1.05, 0.85, 1.1))
+        F.ring(bt, gv(A, sd * 0.02, 0.05, 0), 0.16, [arm, ch], TRIM, width=0.012, thick=0.01, axis=(sd * 0.55, 1, 0), glow=True, surf='2', arc=(0.6, math.tau - 0.6))
+        for v in (-0.07, 0.0, 0.07):
+            b = gv(A, sd * 0.07, 0.17, v)
+            F.spike(bt, b, b + G(sd * 0.16, 0.3 - abs(v) * 1.2, v * 1.6), 0.03, [arm], EDGE)
+            F.gem(bt, b + G(sd * 0.16, 0.3 - abs(v) * 1.2, v * 1.6), 0.012, [arm], TRIM)
+        # Mail under the plate, a rerebrace, a spiked couter, a flared vambrace, a clawed gauntlet.
+        F.prism(bt, gv(A, 0, -0.04, 0), Fo, 0.068, 0.058, [arm, fore], PD, sides=8, surf='0')
+        F.hull(bt, [(gv(A, 0, -0.08, 0), 0.075, 0.075), (A.lerp(Fo, 0.75), 0.068, 0.068)], [arm], PL, sides=8, arc=(-2.2, 2.2))
+        F.dome(bt, gv(Fo, 0, 0.0, -0.01), 0.07, [fore], PL, axis=(0, 0.2, -1), theta=1.3, thick=0.01)
+        F.spike(bt, gv(Fo, 0, 0.0, -0.06), gv(Fo, 0, 0.04, -0.2), 0.025, [fore], EDGE)
+        F.hull(bt, [(Fo.lerp(W, 0.1), 0.058, 0.058), (Fo.lerp(W, 0.6), 0.064, 0.064), (Fo.lerp(W, 0.95), 0.082, 0.082)], [fore], PL, sides=8)
+        F.ring(bt, Fo.lerp(W, 0.92), 0.085, [fore], TRIM, width=0.012, thick=0.008, glow=True, surf='2')
+        F.plate(bt, gv(W, 0, -0.05, 0.02), (0.075, 0.09, 0.05), [hand], PD, bevel=0.3)
+        for f in range(4):
+            x = (f - 1.5) * 0.017
+            k0 = gv(W, x, -0.09, 0.035)
+            k1 = k0 + G(0, -0.06, 0.025)
+            F.prism(bt, k0, k1, 0.011, 0.009, [hand], PD, sides=5)
+            F.spike(bt, k1, k1 + G(0, -0.045, 0.03), 0.009, [hand], EDGE)
+        F.prism(bt, gv(W, -sd * 0.03, -0.05, 0.04), gv(W, -sd * 0.05, -0.1, 0.07), 0.012, 0.009, [hand], PD, sides=5)
+    # ---- hips: faulds in rows, tassets, tattered cloth to the shin
+    for k in range(3):
+        y = 0.04 - k * 0.065
+        F.hull(bt, [(gv(Hp, 0, y + 0.035, 0.01), 0.175 + 0.012 * k, 0.13 + 0.008 * k), (gv(Hp, 0, y - 0.035, 0.012), 0.188 + 0.012 * k, 0.138 + 0.008 * k)], [hip], PL if k % 2 == 0 else PD, sides=14, arc=(-2.3, 2.3))
+    for sd, j in p.sides:
+        L, S, Ft = p.P(j['leg']), p.P(j['shin']), p.P(j['foot'])
+        leg, shin, foot = j['leg'], j['shin'], j['foot']
+        F.plate(bt, gv(L, sd * 0.05, -0.15, 0.04), (0.15, 0.2, 0.018), [leg], PL, rot=(-0.12, 0, sd * 0.12), bevel=0.4, taper=1.15)
+        F.plate(bt, gv(L, sd * 0.06, -0.27, 0.05), (0.13, 0.12, 0.016), [leg], PD, rot=(-0.12, 0, sd * 0.12), bevel=0.4)
+        # Under the plate a dark padded leg; a cuisse, a spiked poleyn, a ridged greave, a pointed sabaton.
+        F.prism(bt, gv(L, 0, 0.02, 0), S, 0.09, 0.07, [hip, leg], CLOTH, sides=8, surf='0')
+        F.hull(bt, [(L.lerp(S, 0.35), 0.088, 0.085), (L.lerp(S, 0.9), 0.072, 0.07)], [leg], PL, sides=8, arc=(-1.7, 1.7))
+        F.dome(bt, gv(S, 0, 0.0, 0.035), 0.065, [leg, shin], PL, axis=(0, 0.25, 1), theta=1.3, thick=0.01)
+        F.spike(bt, gv(S, 0, 0.0, 0.09), gv(S, 0, 0.06, 0.2), 0.022, [shin], EDGE)
+        ridge = lambda a, i: 1 + 0.18 * max(0.0, math.cos(a)) ** 10
+        F.hull(bt, [(gv(S, 0, -0.04, 0), 0.07, 0.072), (S.lerp(Ft, 0.5), 0.064, 0.066), (gv(Ft, 0, 0.02, 0), 0.06, 0.062)], [shin], PL, sides=10, wave=ridge)
+        F.plate(bt, gv(Ft, 0, -0.03, 0.055), (0.11, 0.1, 0.23), [foot], PD, bevel=0.35, taper=0.7)
+        F.spike(bt, gv(Ft, 0, -0.05, 0.16), gv(Ft, 0, -0.07, 0.28), 0.03, [foot], EDGE)
+        F.ring(bt, gv(Ft, 0, 0.03, 0), 0.066, [shin], TRIM, width=0.01, thick=0.008, glow=True, surf='2')
+    strips = [(-0.13, 0.15, 1), (-0.04, 0.17, 1), (0.05, 0.16, 1), (0.13, 0.14, 1), (-0.14, 0.15, -1), (-0.05, 0.17, -1), (0.04, 0.18, -1), (0.14, 0.15, -1)]
+    for x, w, face in strips:
+        leg = p.sides[0][1]['leg'] if (x > 0) == (p.sides[0][0] > 0) else p.sides[1][1]['leg']
+        top = gv(Hp, x, -0.06, face * 0.15)
+        drop = 0.42 + 0.08 * math.sin(x * 40)
+        F.ribbon(bt, [top, top + G(0, -drop * 0.5, face * 0.03), top + G(0, -drop, face * 0.06)], [w, w * 0.95, w * 0.6], G(1, 0, 0), [hip, leg], CLOTH)
+    # ---- the helm: horned, a black visor over a void, two violet eyes, a crown of shadow
+    F.hull(bt, [(gv(Hd, 0, 0.02, 0.0), 0.1, 0.11), (gv(Hd, 0, 0.12, 0.005), 0.125, 0.135), (gv(Hd, 0, 0.22, 0.0), 0.13, 0.14), (gv(Hd, 0, 0.3, -0.01), 0.105, 0.115), (gv(Hd, 0, 0.35, -0.02), 0.04, 0.05)], [hd], PD, sides=12, wave=lambda a, i: 1 + 0.08 * max(0.0, math.cos(a)) ** 8 if i in (1, 2) else 1)
+    F.plate(bt, gv(Hd, 0, 0.15, 0.135), (0.17, 0.055, 0.02), [hd], VOID, bevel=0.3, surf='0', rot=(0.1, 0, 0))
+    for sd in (-1, 1):
+        F.gem(bt, gv(Hd, sd * 0.042, 0.155, 0.148), 0.018, [hd], 0xd0a0ff, stretch=0.55)
+        F.chain(bt, [gv(Hd, sd * 0.105, 0.22, -0.01), gv(Hd, sd * 0.2, 0.3, -0.06), gv(Hd, sd * 0.25, 0.43, -0.17), gv(Hd, sd * 0.22, 0.56, -0.33), gv(Hd, sd * 0.16, 0.62, -0.45)], [0.04, 0.032, 0.022, 0.012, 0.004], [hd], PD, sides=6)
+    for k in range(9):
+        a = (k - 4) * 0.36
+        tall = 0.13 + 0.09 * (1 - abs(k - 4) / 4)
+        b = gv(Hd, math.sin(a) * 0.11, 0.3, math.cos(a) * 0.11 - 0.015)
+        F.blade(bt, b, b + G(math.sin(a) * 0.05, tall, math.cos(a) * 0.04), 0.035, [hd], TRIM if k % 2 == 0 else 0x6a40b0, thick=0.01, surf='2', glow=True)
+    # ---- the cape: tattered strips down the cape chain
+    cape = [p.n['cape']]
+    while bt.child(cape[-1]) is not None:
+        cape.append(bt.child(cape[-1]))
+    cp = [p.B[k] for k in cape]
+    for i in range(7):
+        x = (i - 3) * 0.075
+        drop = 1.0 - 0.12 * ((i * 7) % 3)
+        pts = [c + G(x * (1 + 0.25 * t), 0, -0.012 * abs(i - 3)) for t, c in enumerate(cp)]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * (0.55 * drop)
+        F.ribbon(bt, pts + [tip], [0.085] * len(pts) + [0.03], G(1, 0, 0), cape, 0x120d1a)
+    # ---- wings of night: a jointed spar and long black feathers, violet at the edge
+    for root, tip in ((20, 21), (22, 23)):
+        R, T = Vector(bt.B[root]), Vector(bt.B[tip])
+        sdw = 1 if T.x > R.x else -1
+        elbow = R.lerp(T, 0.45) + G(0, 0.12, -0.05)
+        F.chain(bt, [R, elbow, T, T + (T - elbow).normalized() * 0.25], [0.035, 0.03, 0.02, 0.006], [root, tip], PD, sides=6)
+        tipx = T + (T - elbow).normalized() * 0.2
+        # Secondaries hang from the inner spar; primaries fan out from the outer one, longest at the tip.
+        for i in range(7):
+            t = i / 6
+            base = R.lerp(elbow, 0.15 + 0.85 * t)
+            L = 0.52 + 0.12 * t
+            F.blade(bt, base, base + G(sdw * 0.04 * t, -L, -0.05), 0.15, [root, tip], 0x1b1724 if i % 2 else 0x221c2c, thick=0.014, side=G(sdw, 0, 0.25), belly=0.55)
+        for i in range(8):
+            t = i / 7
+            base = elbow.lerp(tipx, t)
+            phi = 0.15 + 1.05 * t
+            L = 0.66 + 0.34 * t
+            d = G(sdw * math.sin(phi), -math.cos(phi), -0.12)
+            F.blade(bt, base, base + d * L, 0.15 - 0.03 * t, [root, tip], 0x221c2c if i % 2 else 0x1b1724, thick=0.014, side=G(math.cos(phi) * sdw, math.sin(phi), 0.2), belly=0.55)
+            if i % 2 == 1:
+                e = base + d * L
+                F.blade(bt, e - d * 0.14, e + d * 0.02, 0.05, [root, tip], TRIM, thick=0.008, surf='2', glow=True, side=G(math.cos(phi) * sdw, math.sin(phi), 0.2))
+        # Coverts over the bones of the wing.
+        for i in range(9):
+            t = i / 8
+            base = R.lerp(elbow, t * 2) if t < 0.5 else elbow.lerp(tipx, (t - 0.5) * 2)
+            F.blade(bt, base + G(0, 0.03, 0.01), base + G(sdw * 0.06 * t, -0.3 - 0.06 * t, -0.02), 0.13, [root, tip], PL, thick=0.016, side=G(sdw, 0, 0.25), belly=0.5)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 4000, surface='0'), ['0', '1', '2']
+
+
+CREATURE_SURFACES = ['fur', 'shell', 'glow', 'scale', 'membrane', 'ghost']
+
+
+@builder('stag', 0x4a4232)
+def stag(bt):
+    """Cernunna, the Antlered Shade: a gaunt spirit stag of dark bark, a bone skull for a face, vast antlers hung with moss."""
+    n, B = bt.n, bt.B
+    hips, chest, head, jaw = n['hips'], n['chest'], n['head'], n['jaw']
+    nk = n['neck']
+    BARK, BARK2, BELLY, BONE, HOOF, MOSS, GREEN = 0x3b3328, 0x2c261e, 0x5a4e3c, 0xe2d8bf, 0x161210, 0x3e5c2a, 0x6affc0
+    P = lambda i: Vector(B[i])
+    # ---- the body: a deep chest, a lean waist, high haunches
+    body = [(0, 1.33, -0.76), (0, 1.32, -0.64), (0, 1.3, -0.44), (0, 1.27, -0.18), (0, 1.27, 0.1), (0, 1.27, 0.33), (0, 1.36, 0.5), (0, 1.44, 0.57)]
+    F.loft(bt, [G(*q) for q in body], [0.05, 0.13, 0.17, 0.145, 0.17, 0.185, 0.15, 0.1], [0.06, 0.16, 0.2, 0.165, 0.215, 0.24, 0.19, 0.12], [hips, chest], BARK, sides=10)
+    # A paler belly and throat, and the haunches and shoulders standing out.
+    F.loft(bt, [G(0, 1.13, -0.3), G(0, 1.1, 0.0), G(0, 1.1, 0.3)], [0.1, 0.11, 0.12], [0.05, 0.06, 0.07], [hips, chest], BELLY, sides=8)
+    for sd in (-1, 1):
+        F.loft(bt, [G(sd * 0.11, 1.42, -0.62), G(sd * 0.13, 1.27, -0.47), G(sd * 0.13, 1.08, -0.38)], [0.06, 0.1, 0.07], [0.08, 0.12, 0.08], [hips], BARK2, sides=8)
+        F.loft(bt, [G(sd * 0.12, 1.44, 0.32), G(sd * 0.14, 1.28, 0.4), G(sd * 0.13, 1.08, 0.38)], [0.06, 0.09, 0.065], [0.08, 0.1, 0.07], [chest], BARK2, sides=8)
+        # Runes of green light on the flanks.
+        for k in range(3):
+            z = -0.25 + k * 0.22
+            a = G(sd * 0.168, 1.32 - k * 0.02, z)
+            F.blade(bt, a, a + G(sd * 0.01, -0.13, 0.05), 0.016, [hips, chest], GREEN, thick=0.005, surf='glow', glow=True, side=G(0, 0, 1))
+    # ---- the neck and mane
+    F.loft(bt, [G(0, 1.38, 0.5), P(nk[0]), P(nk[1]), P(head) + G(0, -0.02, -0.02)], [0.13, 0.115, 0.09, 0.07], [0.16, 0.14, 0.1, 0.08], [chest] + nk + [head], BARK, sides=9)
+    for i in range(11):
+        t = i / 10
+        a = G(0, 1.5, 0.44).lerp(P(head) + G(0, 0.05, -0.06), t)
+        for sd in (-1, 1):
+            L = 0.2 - 0.08 * t + 0.04 * ((i * 5 + (sd > 0)) % 3)
+            F.blade(bt, a + G(sd * 0.04, 0.02, 0), a + G(sd * (0.08 + 0.05 * ((i + (sd > 0)) % 2)), -0.1, -L), 0.09, [chest] + nk if t < 0.5 else nk + [head], 0x221c15 if (i + (sd > 0)) % 2 else BARK2, thick=0.014, side=G(0, 1, 0.3))
+    for i in range(10):
+        t = i / 9
+        a = G(0, 1.18, 0.5).lerp(P(nk[1]) + G(0, -0.08, 0.02), t)
+        F.blade(bt, a, a + G(((i % 3) - 1) * 0.04, -0.3 + 0.12 * t, -0.02), 0.07, [chest] + nk, 0x221c15 if i % 2 else BARK2, thick=0.01, side=G(1, 0, 0))
+    # ---- the skull: bone-white, long and narrow, deep sockets, eyes of green fire
+    Hd = P(head)
+    F.loft(bt, [Hd + G(0, 0.04, -0.07), Hd + G(0, 0.04, 0.02), Hd + G(0, 0.01, 0.13), Hd + G(0, -0.04, 0.25), Hd + G(0, -0.08, 0.33)], [0.085, 0.1, 0.082, 0.056, 0.034], [0.09, 0.095, 0.072, 0.05, 0.032], [head], BONE, sides=8, surf='shell')
+    F.loft(bt, [P(jaw) + G(0, -0.04, -0.02), P(jaw) + G(0, -0.06, 0.12), P(jaw) + G(0, -0.075, 0.19)], [0.05, 0.035, 0.022], [0.025, 0.02, 0.015], [jaw], BONE, sides=6, surf='shell')
+    for sd in (-1, 1):
+        F.gem(bt, Hd + G(sd * 0.06, 0.04, 0.06), 0.034, [head], 0x0a0806, surf='shell', glow=False, stretch=0.8)
+        F.gem(bt, Hd + G(sd * 0.072, 0.04, 0.07), 0.016, [head], GREEN)
+        F.gem(bt, Hd + G(sd * 0.018, -0.05, 0.27), 0.012, [head], 0x0a0806, surf='shell', glow=False)
+        # Ears: long leaves, laid back.
+        F.blade(bt, P(n['ears'][0 if sd < 0 else 1]), P(n['ears'][0 if sd < 0 else 1]) + G(sd * 0.14, 0.04, -0.06), 0.06, [n['ears'][0 if sd < 0 else 1]], BARK2, thick=0.012, side=G(0, 1, 0))
+        # ---- antlers: a great beam sweeping back and out, tines forward and up, moss trailing, the tips alight
+        beam = [Hd + G(sd * 0.05, 0.08, 0.0), Hd + G(sd * 0.13, 0.18, -0.04), Hd + G(sd * 0.24, 0.36, -0.1), Hd + G(sd * 0.31, 0.56, -0.18), Hd + G(sd * 0.35, 0.78, -0.24), Hd + G(sd * 0.31, 0.98, -0.28)]
+        F.chain(bt, beam, [0.034, 0.03, 0.025, 0.02, 0.014, 0.006], [head], BONE, sides=6, surf='shell')
+        tines = [(1, (sd * 0.04, 0.16, 0.16)), (2, (sd * 0.1, 0.2, 0.12)), (2, (-sd * 0.02, 0.22, 0.1)), (3, (sd * 0.14, 0.18, 0.04)), (3, (-sd * 0.04, 0.24, 0.08)), (4, (sd * 0.12, 0.16, -0.02)), (4, (-sd * 0.05, 0.2, 0.05))]
+        for k, (bi, (dx, dy, dz)) in enumerate(tines):
+            b0 = beam[bi].lerp(beam[bi + 1], 0.35 if k % 2 else 0.7)
+            b1 = b0 + G(dx * 0.6, dy * 0.6, dz * 0.6)
+            b2 = b0 + G(dx, dy, dz)
+            F.chain(bt, [b0, b1, b2], [0.016, 0.011, 0.003], [head], BONE, sides=5, surf='shell')
+            F.gem(bt, b2, 0.012, [head], GREEN, surf='glow', stretch=1.8)
+        for k in range(5):
+            b0 = beam[1 + k % 4].lerp(beam[2 + k % 4], 0.5)
+            L = 0.16 + 0.08 * (k % 3)
+            F.ribbon(bt, [b0, b0 + G(0, -L * 0.5, 0.01), b0 + G(sd * 0.01, -L, 0.02)], [0.03, 0.025, 0.01], G(1, 0, 0), [head], MOSS)
+    # ---- legs: long and jointed, a tuft at each fetlock, cloven hooves
+    for limb in n['limbs']:
+        up, mid, low, side, front = limb['up'], limb['mid'], limb['low'], limb['side'], limb['front']
+        U, M, L = P(up), P(mid), P(low)
+        Ft = G(*limb['foot'])
+        top = 0.11 if front else 0.135
+        F.prism(bt, U + G(0, 0.06, 0), M, top, 0.06, [up, mid], BARK, sides=8, surf='fur')
+        F.prism(bt, M, L, 0.056, 0.04, [mid, low], BARK, sides=7, surf='fur')
+        F.prism(bt, L, Ft + G(0, 0.06, 0), 0.04, 0.034, [low], BARK2, sides=6, surf='fur')
+        F.gem(bt, M, 0.05, [mid], BARK2, surf='fur', glow=False, stretch=1.1)
+        for k in range(4):
+            a = (k / 4) * math.tau
+            F.blade(bt, Ft + G(math.sin(a) * 0.03, 0.14, math.cos(a) * 0.03), Ft + G(math.sin(a) * 0.045, 0.05, math.cos(a) * 0.045), 0.035, [low], 0x221c15, thick=0.008)
+        for sd in (-1, 1):
+            F.plate(bt, Ft + G(sd * 0.016, 0.025, 0.015), (0.03, 0.06, 0.07), [low], HOOF, bevel=0.35, taper=0.8, surf='shell')
+    # ---- a short tail, a flick of dark fur
+    tl = n['tail']
+    F.blade(bt, P(tl[0]), P(tl[1]) + G(0, -0.12, -0.06), 0.09, tl, 0x221c15, thick=0.015, side=G(1, 0, 0))
+    bt.ao_floor = 0.55
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+
 
 # -------------------------------------------------------------------- main --
 
