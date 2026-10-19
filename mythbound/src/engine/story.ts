@@ -249,7 +249,7 @@ export class Story {
               'elders',
               'Is there anything greater than the trials?',
               'The Elder Foes',
-              `Older than the gods' weapons are three beasts the scrolls call the Elder Foes, and each guards a relic of great power.\n\n• The Leviathan coils around the Serpent's Shoal, east along the coast. ${RELICS['leviathan-pearl'].name}: ${RELICS['leviathan-pearl'].boon}\n• The Queen of the Sea holds her Drowned Court on the headland west of the docks. ${RELICS['tide-crown'].name}: ${RELICS['tide-crown'].boon}\n• Beyond Molten Peak, on the mountain's northern shoulder, the Elder Dragon roosts. ${RELICS['dragon-heart'].name}: ${RELICS['dragon-heart'].boon}\n\nNo boat is needed: the shoal and the court are joined to the beach. But be strong, level 11 at least. They are on your map.`,
+              `Older than the gods' weapons are three beasts the scrolls call the Elder Foes, and each guards a relic of great power.\n\n• The Leviathan coils around the Serpent's Shoal, east along the coast. ${RELICS['leviathan-pearl'].name}: ${RELICS['leviathan-pearl'].boon}\n• The Queen of the Sea holds her Drowned Court on the headland west of the docks. ${RELICS['tide-crown'].name}: ${RELICS['tide-crown'].boon}\n• Beyond Molten Peak, on the mountain's northern shoulder, the Elder Dragon roosts. ${RELICS['dragon-heart'].name}: ${RELICS['dragon-heart'].boon}\n\nNo boat is needed: the shoal and the court are joined to the beach. But be strong: level 30 at the very least, and the Dragon wants 46. They are on your map.`,
               'The elder foes are slain.',
               'Elder foes',
               'orrin',

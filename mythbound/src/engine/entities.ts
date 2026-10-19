@@ -1,3 +1,4 @@
+import { BOSS_PACE, foeDamageMul } from '../rules/pacing';
 import * as THREE from 'three';
 import { ENEMIES, type Affinity, type BossAttack, type BossDef, type EnemyDef, type EnemyId } from '../data/world';
 import type { CreatureKind, DamageElement } from '../data/defs';
@@ -1003,7 +1004,7 @@ export class Enemy extends Actor {
   }
 
   damage() {
-    return Math.round(this.def.damage * (1 + this.levelBonus * 0.12));
+    return Math.round(this.def.damage * foeDamageMul(this.levelBonus));
   }
 
   private tickStatus(dt: number, g: Game) {
@@ -1438,7 +1439,7 @@ export class Boss extends Enemy {
       this.stageTime = 0;
     } else if (this.stage === 'recover' && this.stageTime >= r) {
       this.attack = null;
-      this.cooldown = (0.5 + Math.random() * 0.7) * (this.phase === 2 ? 0.6 : 1);
+      this.cooldown = (0.5 + Math.random() * 0.7) * (this.phase === 2 ? 0.6 : 1) * BOSS_PACE;
       if (this.phase === 2 && this.roarDur !== 1.2) this.startRoar(1.2);
       return [0, 0, 0];
     }

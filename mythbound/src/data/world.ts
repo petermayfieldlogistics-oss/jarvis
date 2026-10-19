@@ -32,20 +32,20 @@ export interface ZoneDef {
 
 export const ZONES: Record<ZoneId, ZoneDef> = {
   town: { id: 'town', name: 'Hearthhold', fog: 0xb8a27a, ground: 0x6b5d45, rock: 0x6a645a, level: 1 },
-  plains: { id: 'plains', name: 'The Golden Reach', fog: 0xc2a46a, ground: 0x7a7038, rock: 0x6d675c, level: 1 },
-  forest: { id: 'forest', name: 'Whisperwood', fog: 0x6f7a62, ground: 0x34432a, rock: 0x4d5148, level: 3 },
-  desert: { id: 'desert', name: 'The Ashen Dunes', fog: 0xc79a62, ground: 0xb08a58, rock: 0x8c6a48, level: 6 },
-  volcano: { id: 'volcano', name: 'Molten Peak', fog: 0x9a5a3e, ground: 0x46382f, rock: 0x54423a, level: 9 },
-  coast: { id: 'coast', name: 'The Sunken Coast', fog: 0x8296a0, ground: 0xb8a882, rock: 0x6c6e6a, level: 5 },
-  swamp: { id: 'swamp', name: 'The Weeping Mire', fog: 0x4f5a44, ground: 0x2f3324, rock: 0x3b3d33, level: 8 },
-  crossroads: { id: 'crossroads', name: "Hecate's Crossroads", fog: 0x4a4466, ground: 0x3a3842, rock: 0x4a4752, level: 10 },
-  badlands: { id: 'badlands', name: 'The Field of Mars', fog: 0x9c6e4e, ground: 0x6b4b36, rock: 0x5e4636, level: 11 },
-  peaks: { id: 'peaks', name: 'The Frostspine', fog: 0xb4c2d2, ground: 0x6e7660, rock: 0x6a6e76, level: 14 },
-  cinder: { id: 'cinder', name: 'The Cinderwaste', fog: 0x7a4838, ground: 0x2e2624, rock: 0x3c302c, level: 15 },
-  dunes: { id: 'dunes', name: 'The Sea of Sand', fog: 0xd8b07a, ground: 0xc9a266, rock: 0xa07a50, level: 12 },
-  elderwood: { id: 'elderwood', name: 'The Elderwood', fog: 0x56664c, ground: 0x2a3820, rock: 0x45504a, level: 12 },
-  jungle: { id: 'jungle', name: 'The Verdant Tangle', fog: 0x6a8a5c, ground: 0x34521f, rock: 0x4a5a40, level: 13 },
-  ocean: { id: 'ocean', name: 'The Wine-Dark Sea', fog: 0x7890aa, ground: 0xcdbb8e, rock: 0x6e7270, level: 14 },
+  plains: { id: 'plains', name: 'The Golden Reach', fog: 0xc2a46a, ground: 0x7a7038, rock: 0x6d675c, level: 4 },
+  forest: { id: 'forest', name: 'Whisperwood', fog: 0x6f7a62, ground: 0x34432a, rock: 0x4d5148, level: 10 },
+  desert: { id: 'desert', name: 'The Ashen Dunes', fog: 0xc79a62, ground: 0xb08a58, rock: 0x8c6a48, level: 22 },
+  volcano: { id: 'volcano', name: 'Molten Peak', fog: 0x9a5a3e, ground: 0x46382f, rock: 0x54423a, level: 28 },
+  coast: { id: 'coast', name: 'The Sunken Coast', fog: 0x8296a0, ground: 0xb8a882, rock: 0x6c6e6a, level: 16 },
+  swamp: { id: 'swamp', name: 'The Weeping Mire', fog: 0x4f5a44, ground: 0x2f3324, rock: 0x3b3d33, level: 26 },
+  crossroads: { id: 'crossroads', name: "Hecate's Crossroads", fog: 0x4a4466, ground: 0x3a3842, rock: 0x4a4752, level: 40 },
+  badlands: { id: 'badlands', name: 'The Field of Mars', fog: 0x9c6e4e, ground: 0x6b4b36, rock: 0x5e4636, level: 34 },
+  peaks: { id: 'peaks', name: 'The Frostspine', fog: 0xb4c2d2, ground: 0x6e7660, rock: 0x6a6e76, level: 45 },
+  cinder: { id: 'cinder', name: 'The Cinderwaste', fog: 0x7a4838, ground: 0x2e2624, rock: 0x3c302c, level: 48 },
+  dunes: { id: 'dunes', name: 'The Sea of Sand', fog: 0xd8b07a, ground: 0xc9a266, rock: 0xa07a50, level: 30 },
+  elderwood: { id: 'elderwood', name: 'The Elderwood', fog: 0x56664c, ground: 0x2a3820, rock: 0x45504a, level: 38 },
+  jungle: { id: 'jungle', name: 'The Verdant Tangle', fog: 0x6a8a5c, ground: 0x34521f, rock: 0x4a5a40, level: 42 },
+  ocean: { id: 'ocean', name: 'The Wine-Dark Sea', fog: 0x7890aa, ground: 0xcdbb8e, rock: 0x6e7270, level: 36 },
 };
 
 export const TOWN = { x: 0, z: 20, radius: 62 };
@@ -170,60 +170,60 @@ export interface BossDef {
 
 export const BOSSES: Record<BossId, BossDef> = {
   cernunna: {
-    id: 'cernunna', name: 'Cernunna', title: 'the Antlered Shade', model: 'stag', hp: 700, damage: 18, level: 4, affinity: 'earth', dark: false,
-    xp: 400, gold: 200, scale: 2.6, color: 0x4a4232, speed: 9, attacks: ['charge', 'sweep', 'summon', 'volley'], summon: 'wolf', projectile: 'arrow', reward: 'bow-of-artemis',
+    id: 'cernunna', name: 'Cernunna', title: 'the Antlered Shade', model: 'stag', hp: 5200, damage: 62, level: 10, affinity: 'earth', dark: false,
+    xp: 2400, gold: 600, scale: 2.6, color: 0x4a4232, speed: 9, attacks: ['charge', 'sweep', 'summon', 'volley'], summon: 'wolf', projectile: 'arrow', reward: 'bow-of-artemis',
   },
   thalassor: {
-    id: 'thalassor', name: 'Thalassor', title: 'the Tide Tyrant', model: 'crab', hp: 950, damage: 20, level: 6, affinity: 'water', dark: false,
-    xp: 600, gold: 260, scale: 3, color: 0x3e5f66, speed: 5, attacks: ['slam', 'volley', 'ring', 'sweep'], summon: 'drowned', projectile: 'water', reward: 'trident-of-poseidon',
+    id: 'thalassor', name: 'Thalassor', title: 'the Tide Tyrant', model: 'crab', hp: 8800, damage: 90, level: 16, affinity: 'water', dark: false,
+    xp: 4200, gold: 900, scale: 3, color: 0x3e5f66, speed: 5, attacks: ['slam', 'volley', 'ring', 'sweep'], summon: 'drowned', projectile: 'water', reward: 'trident-of-poseidon',
   },
   zephyron: {
-    id: 'zephyron', name: 'Zephyron', title: 'the Storm Colossus', model: 'colossus', hp: 1100, damage: 22, level: 8, affinity: 'wind', dark: false,
-    xp: 800, gold: 320, scale: 3.4, color: 0x8a8070, speed: 5, attacks: ['strikes', 'sweep', 'slam', 'ring'], projectile: 'lightning', reward: 'master-bolt',
+    id: 'zephyron', name: 'Zephyron', title: 'the Storm Colossus', model: 'colossus', hp: 12500, damage: 116, level: 22, affinity: 'wind', dark: false,
+    xp: 6500, gold: 1300, scale: 3.4, color: 0x8a8070, speed: 5, attacks: ['strikes', 'sweep', 'slam', 'ring'], projectile: 'lightning', reward: 'master-bolt',
   },
   ignaroth: {
-    id: 'ignaroth', name: 'Ignaroth', title: 'the Molten Forge', model: 'golem', hp: 1400, damage: 26, level: 10, affinity: 'fire', dark: false,
-    xp: 1000, gold: 400, scale: 3.6, color: 0x2a1c18, speed: 4.5, attacks: ['slam', 'volley', 'ring', 'leap'], summon: 'fire-imp', projectile: 'fireball', reward: 'hammer-of-hephaestus',
+    id: 'ignaroth', name: 'Ignaroth', title: 'the Molten Forge', model: 'golem', hp: 17000, damage: 146, level: 28, affinity: 'fire', dark: false,
+    xp: 9500, gold: 1800, scale: 3.6, color: 0x2a1c18, speed: 4.5, attacks: ['slam', 'volley', 'ring', 'leap'], summon: 'fire-imp', projectile: 'fireball', reward: 'hammer-of-hephaestus',
   },
   champion: {
-    id: 'champion', name: 'Aresios', title: 'Champion of Mars', model: 'champion', hp: 1500, damage: 28, level: 12, affinity: 'fire', dark: false,
-    xp: 1200, gold: 450, scale: 1.9, color: 0x6a2018, speed: 8, attacks: ['combo', 'leap', 'charge', 'sweep'], summon: 'mars-legionary', projectile: 'fireball', reward: 'sword-of-mars',
+    id: 'champion', name: 'Aresios', title: 'Champion of Mars', model: 'champion', hp: 20500, damage: 172, level: 34, affinity: 'fire', dark: false,
+    xp: 13000, gold: 2400, scale: 1.9, color: 0x6a2018, speed: 8, attacks: ['combo', 'leap', 'charge', 'sweep'], summon: 'mars-legionary', projectile: 'fireball', reward: 'sword-of-mars',
   },
   'hecate-shade': {
-    id: 'hecate-shade', name: 'Shade of Hecate', title: 'Queen of the Crossroads', model: 'witch', hp: 1300, damage: 25, level: 13, affinity: 'dark', dark: true,
-    xp: 1300, gold: 500, scale: 2.2, color: 0x2a2440, speed: 6, attacks: ['teleport', 'volley', 'ring', 'summon'], summon: 'wraith', projectile: 'orb', reward: 'staff-of-hecate',
+    id: 'hecate-shade', name: 'Shade of Hecate', title: 'Queen of the Crossroads', model: 'witch', hp: 23000, damage: 196, level: 40, affinity: 'dark', dark: true,
+    xp: 17000, gold: 3000, scale: 2.2, color: 0x2a2440, speed: 6, attacks: ['teleport', 'volley', 'ring', 'summon'], summon: 'wraith', projectile: 'orb', reward: 'staff-of-hecate',
   },
   // The elder foes: beyond the six trials, each guards a relic.
   leviathan: {
-    id: 'leviathan', name: 'The Leviathan', title: 'Coil of the Abyss', model: 'serpent', hp: 2600, damage: 30, level: 12, affinity: 'water', dark: false,
-    xp: 1800, gold: 700, scale: 1.4, color: 0x24525e, speed: 0, attacks: ['strike', 'tail', 'breath', 'wave', 'volley', 'dive'], projectile: 'water', reward: 'leviathan-pearl',
+    id: 'leviathan', name: 'The Leviathan', title: 'Coil of the Abyss', model: 'serpent', hp: 24000, damage: 160, level: 30, affinity: 'water', dark: false,
+    xp: 11000, gold: 2200, scale: 1.4, color: 0x24525e, speed: 0, attacks: ['strike', 'tail', 'breath', 'wave', 'volley', 'dive'], projectile: 'water', reward: 'leviathan-pearl',
     rage: 'The Leviathan thrashes, and the sea boils!',
   },
   'sea-queen': {
-    id: 'sea-queen', name: 'Queen Nerissa', title: 'Queen of the Sea', model: 'siren', hp: 2200, damage: 28, level: 12, affinity: 'water', dark: false,
-    xp: 1600, gold: 650, scale: 1.3, color: 0x2f8a96, speed: 6.5, attacks: ['volley', 'whirlpool', 'trident', 'summon', 'teleport', 'ring', 'geyser'], summon: 'drowned', projectile: 'water', reward: 'tide-crown',
+    id: 'sea-queen', name: 'Queen Nerissa', title: 'Queen of the Sea', model: 'siren', hp: 28000, damage: 185, level: 36, affinity: 'water', dark: false,
+    xp: 15000, gold: 2800, scale: 1.3, color: 0x2f8a96, speed: 6.5, attacks: ['volley', 'whirlpool', 'trident', 'summon', 'teleport', 'ring', 'geyser'], summon: 'drowned', projectile: 'water', reward: 'tide-crown',
     rage: 'The sea rises for its Queen!',
   },
   'elder-dragon': {
-    id: 'elder-dragon', name: 'Pyrrhax', title: 'the Elder Dragon', model: 'dragon', hp: 3200, damage: 34, level: 15, affinity: 'fire', dark: false,
-    xp: 2400, gold: 900, scale: 2.3, color: 0x5a1a12, speed: 5.5, attacks: ['bite', 'claw', 'breath', 'gust', 'ring', 'flight'], projectile: 'fireball', reward: 'dragon-heart',
+    id: 'elder-dragon', name: 'Pyrrhax', title: 'the Elder Dragon', model: 'dragon', hp: 38000, damage: 235, level: 46, affinity: 'fire', dark: false,
+    xp: 24000, gold: 4200, scale: 2.3, color: 0x5a1a12, speed: 5.5, attacks: ['bite', 'claw', 'breath', 'gust', 'ring', 'flight'], projectile: 'fireball', reward: 'dragon-heart',
     rage: 'Pyrrhax roars, and the mountain answers with fire!',
   },
   // The hunted: no trial, they haunt their lairs.
   reaper: {
-    id: 'reaper', name: 'The Reaper', title: 'Harvester of the Mire', model: 'reaper', hp: 820, damage: 22, level: 9, affinity: 'dark', dark: true,
-    xp: 650, gold: 220, scale: 1, color: 0x15131a, speed: 6, attacks: ['reap', 'teleport', 'drain', 'summon'], summon: 'skeleton', projectile: 'orb', reward: 'reapers-edge', mini: true,
+    id: 'reaper', name: 'The Reaper', title: 'Harvester of the Mire', model: 'reaper', hp: 11000, damage: 120, level: 26, affinity: 'dark', dark: true,
+    xp: 6000, gold: 1200, scale: 1, color: 0x15131a, speed: 6, attacks: ['reap', 'teleport', 'drain', 'summon'], summon: 'skeleton', projectile: 'orb', reward: 'reapers-edge', mini: true,
     rage: "The Reaper's lantern flares. It hungers.",
   },
   'giant-spider': {
-    id: 'giant-spider', name: 'Broodmother', title: 'the Giant Spider', model: 'spider', hp: 520, damage: 15, level: 5, affinity: 'earth', dark: false,
-    xp: 380, gold: 140, scale: 2.3, color: 0x2a221c, speed: 7.5, attacks: ['bite', 'leap', 'web', 'summon'], summon: 'spiderling', projectile: 'arrow', reward: 'venomfang', mini: true,
+    id: 'giant-spider', name: 'Broodmother', title: 'the Giant Spider', model: 'spider', hp: 6200, damage: 66, level: 14, affinity: 'earth', dark: false,
+    xp: 2800, gold: 700, scale: 2.3, color: 0x2a221c, speed: 7.5, attacks: ['bite', 'leap', 'web', 'summon'], summon: 'spiderling', projectile: 'arrow', reward: 'venomfang', mini: true,
     rage: 'Broodmother shrieks, and the hollow crawls with her young!',
   },
   // Erebus, the god of darkness, who slew Helios: the last foe.
   erebus: {
-    id: 'erebus', name: 'Erebus', title: 'God of Darkness', model: 'erebus', hp: 3400, damage: 34, level: 15, affinity: 'dark', dark: true,
-    xp: 4000, gold: 1500, scale: 2.8, color: 0x1a1426, speed: 7.5, attacks: ['combo', 'teleport', 'volley', 'leap', 'ring', 'summon', 'sweep'], summon: 'wraith', projectile: 'orb', reward: 'sun-crown',
+    id: 'erebus', name: 'Erebus', title: 'God of Darkness', model: 'erebus', hp: 52000, damage: 270, level: 50, affinity: 'dark', dark: true,
+    xp: 40000, gold: 8000, scale: 2.8, color: 0x1a1426, speed: 7.5, attacks: ['combo', 'teleport', 'volley', 'leap', 'ring', 'summon', 'sweep'], summon: 'wraith', projectile: 'orb', reward: 'sun-crown',
     rage: 'The ghost of Helios rises from the hill!',
   },
 };
@@ -246,18 +246,18 @@ export interface TrialDef {
 }
 
 export const TRIALS: TrialDef[] = [
-  { id: 'hunt', name: 'Trial of the Hunt', x: -300, z: 10, radius: 28, boss: 'cernunna', level: 4, intro: 'Antlers scrape the dark between the trees.' },
-  { id: 'tides', name: 'Trial of Tides', x: ISLAND.x, z: ISLAND.z, radius: 28, boss: 'thalassor', level: 6, intro: 'The sea pulls back. Something vast rises.' },
-  { id: 'storms', name: 'Trial of Storms', x: 305, z: 40, radius: 30, boss: 'zephyron', level: 8, intro: 'The sky darkens. A colossus of sand and thunder wakes.' },
-  { id: 'forge', name: 'Trial of the Forge', x: VOLCANO.x, z: VOLCANO.z, radius: 26, boss: 'ignaroth', level: 10, intro: 'The mountain’s heart beats like a hammer.' },
-  { id: 'war', name: 'Trial of War', x: 300, z: -260, radius: 30, boss: 'champion', level: 12, intro: 'The crowd of ghosts roars for blood.' },
-  { id: 'crossroads', name: 'Trial of the Crossroads', x: -300, z: -265, radius: 28, boss: 'hecate-shade', level: 13, intro: 'Three roads. Three faces. One queen.' },
+  { id: 'hunt', name: 'Trial of the Hunt', x: -300, z: 10, radius: 28, boss: 'cernunna', level: 10, intro: 'Antlers scrape the dark between the trees.' },
+  { id: 'tides', name: 'Trial of Tides', x: ISLAND.x, z: ISLAND.z, radius: 28, boss: 'thalassor', level: 16, intro: 'The sea pulls back. Something vast rises.' },
+  { id: 'storms', name: 'Trial of Storms', x: 305, z: 40, radius: 30, boss: 'zephyron', level: 22, intro: 'The sky darkens. A colossus of sand and thunder wakes.' },
+  { id: 'forge', name: 'Trial of the Forge', x: VOLCANO.x, z: VOLCANO.z, radius: 26, boss: 'ignaroth', level: 28, intro: 'The mountain’s heart beats like a hammer.' },
+  { id: 'war', name: 'Trial of War', x: 300, z: -260, radius: 30, boss: 'champion', level: 34, intro: 'The crowd of ghosts roars for blood.' },
+  { id: 'crossroads', name: 'Trial of the Crossroads', x: -300, z: -265, radius: 28, boss: 'hecate-shade', level: 40, intro: 'Three roads. Three faces. One queen.' },
   // The elder foes. Both sea lairs are headlands joined to the beach: no boat needed.
-  { id: 'deep', name: "Serpent's Shoal", x: 230, z: 192, radius: 24, boss: 'leviathan', level: 11, intro: 'The tide pulls back. Coils as wide as towers rise from the sea.', elder: true },
-  { id: 'court', name: 'Drowned Court', x: -40, z: 184, radius: 24, boss: 'sea-queen', level: 12, intro: 'A song rises from the waves. The Queen of the Sea holds court.', elder: true },
-  { id: 'roost', name: "Dragon's Roost", x: 0, z: -398, radius: 28, boss: 'elder-dragon', level: 14, intro: 'Ash falls like snow. Something vast unfolds its wings.', elder: true },
+  { id: 'deep', name: "Serpent's Shoal", x: 230, z: 192, radius: 24, boss: 'leviathan', level: 30, intro: 'The tide pulls back. Coils as wide as towers rise from the sea.', elder: true },
+  { id: 'court', name: 'Drowned Court', x: -40, z: 184, radius: 24, boss: 'sea-queen', level: 36, intro: 'A song rises from the waves. The Queen of the Sea holds court.', elder: true },
+  { id: 'roost', name: "Dragon's Roost", x: 0, z: -398, radius: 28, boss: 'elder-dragon', level: 46, intro: 'Ash falls like snow. Something vast unfolds its wings.', elder: true },
   // The last trial: on the hill where Helios fell, Erebus comes down out of the dark.
-  { id: 'eclipse', name: 'The Eclipse', x: -140, z: -110, radius: 30, boss: 'erebus', level: 15, intro: 'The six fragments blaze. The sky splits, and the god of darkness descends.', final: true },
+  { id: 'eclipse', name: 'The Eclipse', x: -140, z: -110, radius: 30, boss: 'erebus', level: 50, intro: 'The six fragments blaze. The sky splits, and the god of darkness descends.', final: true },
 ];
 
 /** The six weapon trials; the elder lairs are fought the same way but are not part of that quest. */
