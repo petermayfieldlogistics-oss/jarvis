@@ -15,7 +15,7 @@ import math
 import bmesh
 from mathutils import Euler, Matrix, Vector
 
-from kit import FIXED, GLOW, G, Part
+from kit import DARK, FIXED, GLOW, LIGHT, MAIN, G, Part
 
 
 def _flat(bm):
@@ -35,11 +35,16 @@ def _place(bm, c, rot=(0, 0, 0)):
     return bm
 
 
+# Colours that follow the game's own tint of the creature (a kind shared by foes of several colours).
+TINT = {'main': MAIN, 'light': LIGHT, 'dark': DARK}
+
+
 def put(bt, bm, bones, rgb, surf='0', glow=False, **kw):
     # A creature's surfaces have names of their own (matte fur, hard shell, glow).
     if not (bt.n or {}).get('humanoid'):
         surf = {'0': 'fur', '1': 'shell', '2': 'glow'}.get(surf, surf)
-    bt.hard.append((surf, _flat(bm), Part(bones, slot=GLOW if glow else FIXED, rgb=rgb, **kw)))
+    slot = GLOW if glow else TINT.get(rgb, FIXED)
+    bt.hard.append((surf, _flat(bm), Part(bones, slot=slot, rgb=0xffffff if rgb in TINT else rgb, **kw)))
 
 
 def gp(p, dx=0.0, dy=0.0, dz=0.0):

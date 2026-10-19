@@ -483,63 +483,6 @@ def scorpion(bt):
     return bt.build(0.006, 9000, ('CLOUDS', 0.03, 0.0015), surface='shell'), ['shell', 'glow', 'fur']
 
 
-@builder('spider', 0x2a221c)
-def spider(bt):
-    """A great hairy spider: a domed head with eight red eyes, venom fangs, a vast marked abdomen and high-kneed legs."""
-    n, B = bt.n, bt.B
-    head, abdomen, fangs = n['head'], n['abdomen'], n['fangs']
-    Hd = B[head]
-    hair = dict(belly=-0.4, under=DARK, mottle=0.35)
-    # Head and thorax: a domed plate, hairy round its rim.
-    bt.blob(gv(Hd, 0, 0.02, 0.0), 0.22, 0.13, 0.27, bones=[head], **hair)
-    bt.blob(gv(Hd, 0, 0.09, -0.02), 0.15, 0.07, 0.2, bones=[head], slot=DARK)
-    bt.blob(gv(Hd, 0, 0.06, 0.17), 0.11, 0.08, 0.09, bones=[head], **hair)
-    for sd in (-1, 1):
-        for x, y, r in ((0.035, 0.06, 0.032), (0.09, 0.05, 0.022), (0.05, 0.11, 0.018), (0.12, 0.09, 0.016)):
-            p = bt.surface(gv(Hd, sd * x, y, 0.8), G(0, 0, -1))
-            bt.eye(p + G(0, 0, r * 0.6), r * 1.2, [head], rgb=0xff2a10)
-        # Palps.
-        jointed(bt, [gv(Hd, sd * 0.1, -0.04, 0.2), gv(Hd, sd * 0.16, 0.02, 0.3), gv(Hd, sd * 0.13, -0.1, 0.38)], [0.025, 0.02, 0.012], [head, head], slot=MAIN, surface='fur')
-    for f in fangs:
-        F = B[f]
-        sd = 1 if F.x > 0 else -1
-        bt.blob(gv(F, 0, -0.01, 0.01), 0.05, 0.07, 0.05, bones=[f], **hair)
-        fang = curve([gv(F, 0, -0.06, 0.03), gv(F, sd * 0.01, -0.15, 0.08), gv(F, -sd * 0.04, -0.19, 0.05)], 3)
-        bt.tube(fang, lambda t: 0.024 * (1 - t) + 0.002, [f], rgb=0x1a1410, n=7)
-        bt.eye(fang[-1], 0.011, [f], rgb=0x9aff40)
-    # The abdomen: a great round sac, bristling, with a glowing hourglass and side spots.
-    A = gv(B[abdomen], 0, 0.12, -0.36)
-    bt.blob(A, 0.34, 0.3, 0.42, bones=[abdomen], **hair)
-    bt.capsule(gv(Hd, 0, 0.0, -0.18), A, 0.08, 0.15, bones=[head, abdomen], **hair)
-    top = bt.surface(A + G(0, 1, 0.05), Vector((0, 0, -1)))
-    bt.blob(top + G(0, -0.01, 0.07), 0.07, 0.02, 0.1, bones=[abdomen], slot=GLOW, rgb=0xff3a18)
-    bt.blob(top + G(0, -0.02, -0.13), 0.1, 0.02, 0.08, bones=[abdomen], slot=GLOW, rgb=0xff3a18)
-    for sd in (-1, 1):
-        for i in range(3):
-            p = bt.surface(A + G(sd * 0.6, 0.18 - i * 0.06, -0.05 - i * 0.12), G(-sd, 0, 0))
-            bt.eye(p, 0.03 - i * 0.004, [abdomen], rgb=0xff3a18, squash=0.6)
-    for i in range(26):
-        a = i * 2.39996
-        u = 0.1 + 0.8 * ((i + 0.5) / 26)
-        d = G(math.cos(a) * math.sin(u * math.pi), math.cos(u * math.pi) * 0.3 + 0.45, -math.sin(a) * math.sin(u * math.pi) * 0.6 - 0.45).normalized()
-        p = bt.surface(A + d * 0.8, -d)
-        bt.cone(p - d * 0.01, p + d * 0.07, 0.01, [abdomen], slot=DARK)
-    for sd in (-1, 1):
-        bt.cone(A + G(sd * 0.04, -0.05, -0.38), A + G(sd * 0.05, -0.08, -0.48), 0.025, [abdomen], slot=DARK)
-    # Legs: high knees, long shins, a bristle or two on each.
-    for leg in n['limbs']:
-        up, mid, low = leg['up'], leg['mid'], leg['low']
-        U, K, Fo, T = B[up], B[mid], B[low], G(*leg['foot'])
-        jointed(bt, [U, K, Fo, T], [0.05, 0.042, 0.028, 0.006], [up, mid, low], slot=MAIN, surface='fur', n=8)
-        sd = leg['side']
-        for f in (0.3, 0.6):
-            p = U.lerp(K, f)
-            bt.cone(p, p + G(sd * 0.02, 0.07, 0), 0.01, [up], slot=DARK)
-            q = K.lerp(Fo, f)
-            bt.cone(q, q + G(sd * 0.05, 0.03, 0), 0.008, [mid], slot=DARK)
-    return bt.build(0.0065, 9000, ('CLOUDS', 0.02, 0.004), surface='fur'), ['fur', 'shell', 'glow']
-
-
 # ------------------------------------------------------------- robed spirits --
 
 
@@ -2422,6 +2365,83 @@ def dragon(bt):
     return bt.build(0.012, 4000, surface='fur'), ['fur', 'shell', 'glow', 'scale', 'ghost']
 # end:dragon
 # end:dragon
+
+
+# end:spider
+
+
+# forged:spider
+# forged:spider
+@builder('spider', 0x2a221c)
+def spider(bt):
+    """
+    The Broodmother (and her spiderlings and tangle spiders, in their own
+    colours), cut in crisp facets: a plated head with eight burning eyes,
+    venom-tipped fangs, a great armoured abdomen with a glowing hourglass,
+    and eight high-kneed legs, banded and bristled.
+    """
+    n, B = bt.n, bt.B
+    head, fangs, abdomen = n['head'], n['fangs'], n['abdomen']
+    P = lambda i: Vector(B[i])
+    Hd = P(head)
+    MARK, EYE, VENOM, FANG = 0xff3a18, 0xff2a10, 0x9aff40, 0x1a1410
+    # ---- the head: a faceted dome, a ridged carapace, eight eyes, palps
+    F.hull(bt, [(gv(Hd, 0, -0.09, -0.2), 0.12, 0.1), (gv(Hd, 0, -0.1, -0.05), 0.21, 0.22), (gv(Hd, 0, -0.06, 0.12), 0.19, 0.18), (gv(Hd, 0, 0.02, 0.22), 0.12, 0.1)], [head], 'main', sides=10, surf='fur')
+    F.hull(bt, [(gv(Hd, 0, 0.0, -0.15), 0.16, 0.13), (gv(Hd, 0, 0.08, -0.02), 0.17, 0.2), (gv(Hd, 0, 0.1, 0.12), 0.12, 0.13), (gv(Hd, 0, 0.08, 0.2), 0.06, 0.05)], [head], 'dark', sides=10, surf='shell')
+    F.plate(bt, gv(Hd, 0, 0.13, 0.0), (0.05, 0.04, 0.3), [head], 'main', bevel=0.4, taper=0.5, surf='shell')
+    for sd in (-1, 1):
+        for x, y, z, r in ((0.045, 0.08, 0.2, 0.032), (0.1, 0.06, 0.17, 0.022), (0.06, 0.12, 0.15, 0.018), (0.13, 0.09, 0.1, 0.016)):
+            F.gem(bt, gv(Hd, sd * x, y, z), r, [head], EYE, stretch=0.9)
+        F.chain(bt, [gv(Hd, sd * 0.1, -0.04, 0.2), gv(Hd, sd * 0.16, 0.02, 0.3), gv(Hd, sd * 0.13, -0.1, 0.38)], [0.025, 0.02, 0.008], [head], 'main', sides=5, surf='fur')
+    for f in fangs:
+        Fg = P(f)
+        sd = 1 if Fg.x > 0 else -1
+        F.plate(bt, gv(Fg, 0, -0.02, 0.0), (0.08, 0.1, 0.08), [f], 'main', bevel=0.4, taper=0.7, surf='fur')
+        F.chain(bt, [gv(Fg, 0, -0.06, 0.03), gv(Fg, sd * 0.01, -0.15, 0.08), gv(Fg, -sd * 0.04, -0.2, 0.05)], [0.025, 0.016, 0.002], [f], FANG, sides=5, surf='shell')
+        F.gem(bt, gv(Fg, -sd * 0.035, -0.19, 0.055), 0.012, [f], VENOM)
+    # ---- the abdomen: a great faceted sac, plated along the back, an hourglass of fire, spots down the flanks
+    A = gv(P(abdomen), 0, 0.12, -0.36)
+    F.prism(bt, gv(Hd, 0, -0.02, -0.18), A + G(0, -0.05, 0.3), 0.08, 0.12, [head, abdomen], 'dark', sides=6, surf='fur')
+    F.loft(bt, [A + G(0, -0.04, 0.42), A + G(0, 0.0, 0.3), A + G(0, 0.02, 0.06), A + G(0, 0.0, -0.2), A + G(0, -0.04, -0.38), A + G(0, -0.07, -0.47)], [0.12, 0.27, 0.35, 0.32, 0.18, 0.04], [0.1, 0.24, 0.31, 0.29, 0.16, 0.04], [abdomen], 'main', sides=12, surf='fur', roll=math.pi / 12)
+    for k in range(5):
+        z = 0.26 - k * 0.15
+        rr = [0.24, 0.31, 0.31, 0.27, 0.18][k]
+        F.plate(bt, A + G(0, rr * 0.97, z), (0.2 - abs(k - 2) * 0.03, 0.05, 0.13), [abdomen], 'dark', rot=(0.25 - k * 0.12, 0, 0), bevel=0.4, taper=0.7, surf='shell')
+    top = A + G(0, 0.33, 0.0)
+    for dz in (1, -1):
+        F.blade(bt, top + G(0, 0.0, 0.0), top + G(0, -0.01, dz * 0.13), 0.13, [abdomen], MARK, thick=0.012, surf='glow', glow=True, side=G(1, 0, 0), belly=0.92)
+    for sd in (-1, 1):
+        for i in range(3):
+            F.gem(bt, A + G(sd * (0.33 - i * 0.02), 0.08 - i * 0.05, 0.05 - i * 0.14), 0.035 - i * 0.005, [abdomen], MARK, stretch=0.6)
+        F.spike(bt, A + G(sd * 0.04, -0.05, -0.42), A + G(sd * 0.05, -0.08, -0.53), 0.025, [abdomen], 'dark')
+    for i in range(22):
+        a = i * 2.39996
+        u = 0.12 + 0.5 * ((i + 0.5) / 22)
+        dx, dy, dz = math.cos(a) * math.sin(u * math.pi), math.cos(u * math.pi), math.sin(a) * math.sin(u * math.pi)
+        p = A + G(dx * 0.33, 0.01 + dy * 0.3, -0.04 + dz * 0.42)
+        F.spike(bt, p - G(dx, dy, dz) * 0.02, p + G(dx, dy, dz) * 0.07, 0.012, [abdomen], 'dark', sides=3)
+    # ---- legs: high knees, long shins, banded, bristled, a hooked claw
+    for leg in n['limbs']:
+        up, mid, low = leg['up'], leg['mid'], leg['low']
+        U, K, Fo, T = P(up), P(mid), P(low), G(*leg['foot'])
+        sd = leg['side']
+        F.prism(bt, U, K, 0.05, 0.045, [up], 'main', sides=6, surf='fur')
+        F.prism(bt, K, Fo, 0.045, 0.03, [mid], 'main', sides=6, surf='fur')
+        F.prism(bt, Fo, T, 0.03, 0.006, [low], 'dark', sides=5, surf='fur')
+        F.gem(bt, K, 0.058, [up, mid], 'dark', surf='shell', glow=False)
+        F.gem(bt, Fo, 0.04, [mid, low], 'dark', surf='shell', glow=False)
+        for t in (0.35, 0.7):
+            F.prism(bt, U.lerp(K, t), U.lerp(K, t + 0.06), 0.053, 0.05, [up], 'dark', sides=6, surf='shell')
+            F.prism(bt, K.lerp(Fo, t), K.lerp(Fo, t + 0.06), 0.044, 0.04, [mid], 'dark', sides=6, surf='shell')
+        for f in (0.3, 0.6):
+            p = U.lerp(K, f)
+            F.spike(bt, p, p + G(sd * 0.02, 0.08, 0), 0.01, [up], 'dark', sides=3)
+            q = K.lerp(Fo, f)
+            F.spike(bt, q, q + G(sd * 0.06, 0.03, 0), 0.008, [mid], 'dark', sides=3)
+    bt.ao_floor = 0.6
+    return bt.build(0.0065, 3000, surface='fur'), CREATURE_SURFACES
+# end:spider
+# end:spider
 
 
 # -------------------------------------------------------------------- main --
