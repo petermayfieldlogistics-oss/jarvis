@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { ANCIENT_GLYPH, LEGEND_SHARD, RUNES, SPELLS, WEAPONS, runeItem, type ComboElement, type DamageElement, type RuneId, type TeamComboDef } from '../data/defs';
+import { SunPowers } from './sun';
+import { skyMinute } from '../rules/sun';
 import { BOSSES, ENEMIES, EYES_RUINS, ITEMS, NPCS, ORE_NODES, QUESTS, SHRINES, TRIALS, ZONES, type BossDef, type BossId, type EnemyId, type QuestId, type TrialDef, type ZoneId } from '../data/world';
 import { addXp, artsDue, dracoFlightHours, killHeal, killRestore, killXp, learnSpell, levelRewards, maxHp, rank, type Character } from '../rules/character';
 import { satchelCount } from '../rules/food';
@@ -135,6 +137,8 @@ export class Game {
   menu: Menu;
   wardrobe: Wardrobe;
   story: Story;
+  /** Sun fragments, the Sun Tree's powers, Helios and the ending (engine/sun.ts). */
+  sun!: SunPowers;
   player!: Player;
   enemies: Enemy[] = [];
   allies: Ally[] = [];
@@ -243,6 +247,7 @@ export class Game {
     this.fx = new Fx(this.scene, this.camera, this.hud.numberLayer, q === 'low');
     this.armory = new Armory(this.scene);
     this.story = new Story(this);
+    this.sun = new SunPowers(this);
     this.spawner = new Spawner(this);
     this.lairs = new Lairs(this);
     this.sfx = new SharedFx(this);
@@ -268,6 +273,7 @@ export class Game {
     if (this.player) this.scene.remove(this.player.rig.root);
     this.player = new Player(c);
     this.scene.add(this.player.rig.root);
+    this.sun?.sync();
     const p = this.state.pos;
     const shrine = SHRINES.find((s) => s.id === this.state.lastShrine) ?? SHRINES[0];
     // A saved spot is put back on the ground (the land may have changed under it since: the old edge mountains are gone);
@@ -537,7 +543,7 @@ export class Game {
   hitEnemyWithWeapon(e: Enemy, base: number, kind: 'melee' | 'bow' | 'thrown', element: DamageElement, o: { fromBehind?: boolean; fury?: FuryState; draw?: number; finisher?: boolean; ambush?: boolean }) {
     const c = this.player.c;
     const r = outgoingDamage(c, {
-      base: base * this.player.songDamage(),
+      base: base * this.player.songDamage() * this.sun.damageMul(),
       kind,
       element,
       targetDark: e.dark,
@@ -561,6 +567,7 @@ export class Game {
     this.damageEnemy(e, r.amount, element, { source: 'player', tags: r.tags });
     if (kind === 'bow' && c.skills['hunters-mark']) e.status.marked = 8;
     this.legendHit(e, r.amount);
+    this.sun.onHit(e);
   }
 
   /** What the weapon in hand does on a hit: Reaper's Edge reaps, and its legend perks. */
@@ -987,6 +994,8 @@ export class Game {
       }
     }
     let dmg = incomingDamage(p.c, amount, element, { blocking, stoneSkin: p.stoneSkin > 0, invulnerable: p.aegis > 0, ironSkin: p.ironSkin > 0, unbreakable: p.unbreakable > 0 });
+    // Dawnward, and the fire Helios lends against Erebus.
+    dmg *= this.sun.guardMul(source instanceof Enemy && source.dark);
     // A Ward of Dawn soaks up what it can.
     if (p.ward > 0 && dmg > 0) {
       const soak = Math.min(p.ward, dmg);
@@ -1027,7 +1036,7 @@ export class Game {
     if (p.hp <= 0) {
       // A duel's yield, or a fall in the arena: PvP takes it from here.
       if (this.pvp.spare()) return;
-      if (!p.notDeadYet(this)) this.playerDied();
+      if (!p.notDeadYet(this) && !this.sun.phoenix()) this.playerDied();
     }
   }
 
@@ -1144,7 +1153,8 @@ export class Game {
       this.audio.play('roar');
       this.audio.setMood(1, BOSSES[t.boss].dark);
     } else this.hud.toast(`The fog rises over the ${t.name}.`);
-    if (inside && !t.elder && this.state.quests.trials.state === 'none') this.state.quests.trials.state = 'active';
+    if (t.final && this.boss) this.sun.eclipseBegins(this.boss);
+    if (inside && !t.elder && !t.final && this.state.quests.trials.state === 'none') this.state.quests.trials.state = 'active';
   }
 
   endTrial(won: boolean) {
@@ -1161,6 +1171,7 @@ export class Game {
     clearHazards();
     this.audio.setMood(0, false);
     if (!won) this.hud.setBoss(null);
+    if (t.final) this.sun.fightOver();
   }
 
   private completeTrial(boss: BossDef) {
@@ -1170,11 +1181,20 @@ export class Game {
     const first = !this.state.trialsDone.includes(t.id);
     if (first) this.state.trialsDone.push(t.id);
     this.hud.setBoss(null);
+    if (t.final) {
+      // Erebus: no relic left on the hill; the crown, the ending and the dawn (engine/sun.ts).
+      this.endTrial(true);
+      if (first) this.sun.erebusFell();
+      else setTimeout(() => this.hud.banner('GREAT FOE FELLED', 'victory', `${boss.name}, ${boss.title}`), 1200);
+      this.save();
+      return;
+    }
     setTimeout(() => {
       this.hud.banner('GREAT FOE FELLED', 'victory', `${boss.name}, ${boss.title}`);
       this.audio.play('victory');
     }, 1200);
     this.endTrial(true);
+    if (first && !t.elder) this.sun.fragmentWon();
     if (first) {
       this.state.unclaimed.push(boss.reward);
       this.placeLegendary(boss.reward);
@@ -1281,13 +1301,15 @@ export class Game {
   get gameMinutes() {
     return this.state.gameMinutes;
   }
+  /** The time the sky shows: held in night until the sun is reborn (rules/sun.ts), paling toward dawn with each fragment. */
   get dayMinutes() {
-    return ((this.state.gameMinutes % 1440) + 1440) % 1440;
+    const real = ((this.state.gameMinutes % 1440) + 1440) % 1440;
+    return this.player ? skyMinute(real, this.player.c) : real;
   }
 
   passTime(toMinute: number) {
     if (this.coop.isGuest) return this.hud.toast('In co-op the host’s world keeps the time.');
-    const day = this.dayMinutes;
+    const day = ((this.state.gameMinutes % 1440) + 1440) % 1440;
     let delta = toMinute - day;
     if (delta <= 0) delta += 1440;
     this.state.gameMinutes += delta;
@@ -1448,6 +1470,7 @@ export class Game {
     if (this.coop.isHost) for (const r of this.coop.remotes.values()) if (r.ready) ((others[n] ??= { x: 0, z: 0 }).x = r.pos.x), (others[n++].z = r.pos.z);
     others.length = n;
     this.world.update(dt, t, this.dayMinutes, this.player.pos, this.zone, this.player.c.roleId === 'darkslayer' || fedNightVision(this.player.c), this.fog);
+    this.sun.update(dt);
     this.fx.update(gdt);
     this.hud.update(dt);
     input.endFrame();

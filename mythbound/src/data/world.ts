@@ -136,7 +136,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
 
 // ------------------------------------------------------------------ bosses --
 
-export type BossId = 'cernunna' | 'thalassor' | 'zephyron' | 'ignaroth' | 'champion' | 'hecate-shade' | 'leviathan' | 'sea-queen' | 'elder-dragon' | 'reaper' | 'giant-spider';
+export type BossId = 'cernunna' | 'thalassor' | 'zephyron' | 'ignaroth' | 'champion' | 'hecate-shade' | 'leviathan' | 'sea-queen' | 'elder-dragon' | 'reaper' | 'giant-spider' | 'erebus';
 export type BossAttack =
   | 'sweep' | 'charge' | 'slam' | 'volley' | 'strikes' | 'summon' | 'teleport' | 'leap' | 'ring' | 'combo'
   // The elder foes' and the hunted foes' own moves (engine/bosses.ts).
@@ -146,7 +146,7 @@ export interface BossDef {
   id: BossId;
   name: string;
   title: string;
-  model: 'stag' | 'crab' | 'colossus' | 'golem' | 'champion' | 'witch' | 'serpent' | 'dragon' | 'siren' | 'reaper' | 'spider';
+  model: 'stag' | 'crab' | 'colossus' | 'golem' | 'champion' | 'witch' | 'serpent' | 'dragon' | 'siren' | 'reaper' | 'spider' | 'erebus';
   hp: number;
   damage: number;
   level: number;
@@ -220,6 +220,12 @@ export const BOSSES: Record<BossId, BossDef> = {
     xp: 380, gold: 140, scale: 2.3, color: 0x2a221c, speed: 7.5, attacks: ['bite', 'leap', 'web', 'summon'], summon: 'spiderling', projectile: 'arrow', reward: 'venomfang', mini: true,
     rage: 'Broodmother shrieks, and the hollow crawls with her young!',
   },
+  // Erebus, the god of darkness, who slew Helios: the last foe.
+  erebus: {
+    id: 'erebus', name: 'Erebus', title: 'God of Darkness', model: 'erebus', hp: 3400, damage: 34, level: 15, affinity: 'dark', dark: true,
+    xp: 4000, gold: 1500, scale: 2.8, color: 0x1a1426, speed: 7.5, attacks: ['combo', 'teleport', 'volley', 'leap', 'ring', 'summon', 'sweep'], summon: 'wraith', projectile: 'orb', reward: 'sun-crown',
+    rage: 'The ghost of Helios rises from the hill!',
+  },
 };
 
 // ------------------------------------------------------------------ places --
@@ -235,6 +241,8 @@ export interface TrialDef {
   intro: string;
   /** An elder foe's lair: fought like a trial but not one of the six (it guards a relic). */
   elder?: boolean;
+  /** The Eclipse: Erebus's own trial, open once the six sun fragments are found. */
+  final?: boolean;
 }
 
 export const TRIALS: TrialDef[] = [
@@ -248,10 +256,13 @@ export const TRIALS: TrialDef[] = [
   { id: 'deep', name: "Serpent's Shoal", x: 230, z: 192, radius: 24, boss: 'leviathan', level: 11, intro: 'The tide pulls back. Coils as wide as towers rise from the sea.', elder: true },
   { id: 'court', name: 'Drowned Court', x: -40, z: 184, radius: 24, boss: 'sea-queen', level: 12, intro: 'A song rises from the waves. The Queen of the Sea holds court.', elder: true },
   { id: 'roost', name: "Dragon's Roost", x: 0, z: -398, radius: 28, boss: 'elder-dragon', level: 14, intro: 'Ash falls like snow. Something vast unfolds its wings.', elder: true },
+  // The last trial: on the hill where Helios fell, Erebus comes down out of the dark.
+  { id: 'eclipse', name: 'The Eclipse', x: -140, z: -110, radius: 30, boss: 'erebus', level: 15, intro: 'The six fragments blaze. The sky splits, and the god of darkness descends.', final: true },
 ];
 
 /** The six weapon trials; the elder lairs are fought the same way but are not part of that quest. */
-export const WEAPON_TRIALS = TRIALS.filter((t) => !t.elder);
+export const WEAPON_TRIALS = TRIALS.filter((t) => !t.elder && !t.final);
+export const ECLIPSE_TRIAL = TRIALS.find((t) => t.final)!;
 export const ELDER_TRIALS = TRIALS.filter((t) => t.elder);
 
 export interface LairDef {
@@ -576,7 +587,7 @@ export const FISHING_SPOTS = [{ x: 30, z: 158 }, { x: -110, z: 158 }, { x: 160, 
 
 // ------------------------------------------------------------------ quests --
 
-export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts' | 'harvest';
+export type QuestId = 'trials' | 'ore' | 'fish' | 'dead' | 'bounty' | 'tomes' | 'pages' | 'elders' | 'hunts' | 'harvest' | 'eclipse';
 
 export interface QuestDef {
   id: QuestId;
@@ -589,8 +600,8 @@ export interface QuestDef {
 
 export const QUESTS: Record<QuestId, QuestDef> = {
   trials: {
-    id: 'trials', name: 'The Six Trials', giver: 'orrin', goal: 6,
-    description: 'Conquer the six trials and claim the weapons of the old gods.',
+    id: 'trials', name: 'The Six Sun Fragments', giver: 'orrin', goal: 6,
+    description: 'Conquer the six trials and win back the fragments of the sun Erebus shattered (and the weapons of the old gods sealed with them).',
     reward: { gold: 2000, xp: 3000 },
   },
   ore: {
@@ -638,6 +649,12 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     description: 'Plant, water and bring in four harvests from the seed beds in Wren’s field.',
     reward: { gold: 80, xp: 150, item: 'seed-pumpkin' },
   },
+  // Opens by itself once the six fragments are found (engine/sun.ts).
+  eclipse: {
+    id: 'eclipse', name: 'The Eclipse', giver: 'orrin', goal: 1,
+    description: 'Climb the hill where Helios fell and face Erebus, the god of darkness.',
+    reward: {},
+  },
 };
 
 // ------------------------------------------------------------------- items --
@@ -647,6 +664,7 @@ export const ITEMS: Record<string, GoodsItem> = {
   'golden-fish': { name: 'Golden Fish', description: 'Restores 90 HP.', heal: 90 },
   'ember-ore': { name: 'Ember Ore', description: 'Glowing ore from Molten Peak. Used to upgrade weapons.' },
   'free-upgrade': { name: "Brann's Token", description: 'One free weapon upgrade at any anvil.' },
+  'sun-fragment': { name: 'Sun Fragment', description: 'A shard of the sun Erebus shattered when he slew Helios. Each one wakes a branch of the Sun Tree.' },
   'legend-shard': { name: 'Legend Shard', description: 'A splinter of a great foe\'s power, won on Heroic or harder. Sets legend perks into legendary weapons at an anvil.' },
   ...Object.fromEntries(Object.values(RELICS).map((r) => [r.id, { name: r.name, description: `Relic. ${r.boon}` }])),
   // Uninscribed runes, waiting for an anvil.

@@ -325,6 +325,8 @@ export class Player {
   private surgeAura: { stop(): void } | null = null;
   private wardAura: { stop(): void } | null = null;
   rig: Rig;
+  /** The sun's strength on the hero's spells (engine/sun.ts sets it). */
+  sunMul: (() => number) | null = null;
   anim = newAnim();
   boat: THREE.Object3D | null = null;
   private weaponMesh: THREE.Object3D | null = null;
@@ -2608,7 +2610,7 @@ export class Player {
   }
 
   private spellDamage(power: number, element: DamageElement) {
-    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1) * this.empower * fedMul(this.c, 'damage');
+    return power * spellPowerMultiplier(this.c, element) * (1 + 0.06 * (this.c.level - 1)) * (this.surge > 0 ? SURGE.power : 1) * this.empower * fedMul(this.c, 'damage') * (this.sunMul?.() ?? 1);
   }
 
   // -------------------------------------------------------------- beams --
@@ -3087,6 +3089,18 @@ export class Player {
         g.addAlly(new Ally('imp', this.pos.x + 1, this.pos.z - 1, c.level, 30));
         g.sfx.emit(this.center(), { color: 0xff5010, count: 40, speed: 4, life: 0.6 });
         break;
+      case 'solar-flare': {
+        // The Sun Tree's flare: sunlight bursts out of the hero.
+        g.sfx.pillar(this.pos.clone(), 0xffd27a, 2.2);
+        g.sfx.ring(this.center(), 8, 0xffd27a, 0.6);
+        g.sfx.emit(this.center(), { color: 0xffe0a0, count: 70, speed: 9, life: 0.7 });
+        for (const e of [...g.enemies]) {
+          if (!e.alive || e.pos.distanceTo(this.pos) > 8 + e.radius) continue;
+          g.damageEnemy(e, power, 'light', { source: 'spell' });
+          if (e.alive) e.status.blind = Math.max(e.status.blind, 3);
+        }
+        break;
+      }
       case 'holy-smite':
         if (!target) return g.hud.toast('No target.');
         g.sfx.magicCircle(target.pos, SCHOOL_COLOR.light, 1.8, 0.9);

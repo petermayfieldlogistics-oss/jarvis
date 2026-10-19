@@ -1,5 +1,6 @@
 // Conversations and everything the hero can interact with.
 
+import { eclipseOpen, fragmentsOf, FRAGMENTS } from '../rules/sun';
 import { ANCIENT_GLYPH, CLASSES, PERKS, RACES, RELICS, ROLES, RUNES, SPELLS, WEAPONS, type PerkId, type ClassId, type RaceId, type RuneId, type ShopId, type SpellId } from '../data/defs';
 import { BOSSES, ELDER_TRIALS, ITEMS, LAIRS, LORE, PAGES, plotCentre, QUESTS, SHRINES, TOMES, TRIALS, WEAPON_TRIALS, type QuestId } from '../data/world';
 import { isRelic, rewardName } from './bosses';
@@ -36,7 +37,7 @@ const CHRONICLER_CLASS: Partial<Record<ClassId, string>> = {
 
 /** Orrin's welcome, by class (and by path, for the newer ones). */
 function orrinWelcome(c: Character): string {
-  const tail = 'The scrolls speak of six weapons of the old gods, sealed in six trials across the land. Whoever claims them must be worthy, or the weapons will not answer.';
+  const tail = 'You will have seen there is no sun. Erebus, the god of darkness, slew Helios on the hill north of the forest, and the sun broke as he fell: six fragments, sealed in six trials across the land beside the weapons of the old gods. Win them back. Each one wakes a branch of the Sun Tree in you, and the night grows a little paler. With all six, you could face Erebus himself.';
   switch (c.subclassId) {
     case 'darkmage':
       return `A Dark Mage. I can smell the candle smoke and grave dirt on you. Mind what you bargain for. ${tail}`;
@@ -1550,6 +1551,22 @@ export class Story {
     const g = this.g;
     const t = TRIALS.find((x) => x.id === id)!;
     const boss = BOSSES[t.boss];
+    if (t.final && !eclipseOpen(this.c)) {
+      return this.open({
+        title: t.name,
+        subtitle: `${fragmentsOf(this.c)} / ${FRAGMENTS} sun fragments`,
+        text: 'Cold stones ring the hill where Helios fell, and the dark here is deeper than anywhere else. Nothing answers yet: the Eclipse opens only to one who carries all six fragments of the sun.',
+        options: [{ label: 'Leave' }],
+      });
+    }
+    if (t.final && !g.state.trialsDone.includes(id)) {
+      return this.open({
+        title: t.name,
+        subtitle: `Recommended level ${t.level}`,
+        text: `The six fragments in your pack blaze like coals. Above the hill the dark is moving.\n\nErebus, ${boss.title}, will come down to meet you. Once you begin, there is no leaving until one of you falls.`,
+        options: [{ label: 'Call him down', action: () => g.startTrial(t) }, { label: 'Not yet' }],
+      });
+    }
     if (g.state.trialsDone.includes(id)) {
       // Conquered: fight it again, on any tier beaten so far or the next one up.
       const open = tierOpen(g.bossBest(t.boss));
@@ -1628,8 +1645,8 @@ export class Story {
       title: 'Hearthhold',
       subtitle: 'The Golden Reach',
       text: this.chronicle(
-        `${c.name} wakes beside the shrine of Hearthhold. Far to the north, beyond the smoking peak, the Giant still holds the world in its palm.\n\n` +
-          'Orrin, Keeper of the Archive (west side of the square), knows of the six trials. The townsfolk all have work for a hero.\n\n' +
+        `${c.name} wakes beside the shrine of Hearthhold, under a sky with no sun. Erebus, the god of darkness, slew Helios, god of the sun, and the land has known nothing but night since.\n\n` +
+          'Orrin, Keeper of the Archive (west side of the square), knows where the six fragments of the shattered sun are sealed. Each one you win back wakes a branch of your Sun Tree (in the menu). The townsfolk all have work for a hero.\n\n' +
           (c.raceId === 'angelic'
             ? `Your wings are ready: ${touch ? 'tap ⤒' : 'press Space'} again in the air to beat them, and hold it to glide.\n\n`
             : c.raceId === 'zombie'

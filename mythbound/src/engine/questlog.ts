@@ -1,7 +1,7 @@
 // The quest log behind the HUD's quest bar and the Quests tab: what each active
 // quest asks for next, and where to go when a place is known.
 
-import { ELDER_TRIALS, ENEMIES, FIELD, FISHING_SPOTS, LAIRS, NPCS, ORE_NODES, QUESTS, SPAWNS, WEAPON_TRIALS, ZONES, type QuestId } from '../data/world';
+import { ECLIPSE_TRIAL, ELDER_TRIALS, ENEMIES, FIELD, FISHING_SPOTS, LAIRS, NPCS, ORE_NODES, QUESTS, SPAWNS, WEAPON_TRIALS, ZONES, type QuestId } from '../data/world';
 import type { WorldState } from './state';
 import { zoneAt } from './terrain';
 
@@ -25,7 +25,7 @@ export interface QuestLine {
 }
 
 const LABEL: Record<QuestId, string> = {
-  trials: 'The Six Trials',
+  trials: 'The Six Sun Fragments',
   ore: 'Ember Ore',
   fish: 'A Good Catch',
   dead: 'Restless Dead',
@@ -35,10 +35,11 @@ const LABEL: Record<QuestId, string> = {
   elders: 'The Elder Foes',
   hunts: 'Monster Hunts',
   harvest: "Wren's Field",
+  eclipse: 'The Eclipse',
 };
 
 const OBJECTIVE: Record<QuestId, string> = {
-  trials: 'Conquer the next trial',
+  trials: 'Win the next sun fragment',
   ore: 'Mine Ember Ore at Molten Peak',
   fish: 'Fish along the coast',
   dead: 'Defeat dark creatures',
@@ -48,6 +49,7 @@ const OBJECTIVE: Record<QuestId, string> = {
   elders: 'Face the next elder foe',
   hunts: 'Hunt the monster in its lair',
   harvest: 'Plant, water and harvest',
+  eclipse: 'Face Erebus where Helios fell',
 };
 
 // Camps where a quest's monsters live, named after their region.
@@ -91,6 +93,8 @@ function targetFor(id: QuestId, state: WorldState, x: number, z: number): QuestT
       return nearest(BANDIT_CAMPS, x, z);
     case 'harvest':
       return { x: FIELD.x, z: FIELD.z, name: "Wren's field" };
+    case 'eclipse':
+      return { x: ECLIPSE_TRIAL.x, z: ECLIPSE_TRIAL.z, name: ECLIPSE_TRIAL.name };
     default:
       return null;
   }
@@ -126,7 +130,8 @@ export function trackedId(state: WorldState, lines: QuestLine[]): QuestId | null
 
 /** With nothing active: who to talk to for the next quest (null when every quest is taken). */
 export function nextQuestHint(state: WorldState): QuestLine | null {
-  const id = (Object.keys(QUESTS) as QuestId[]).find((q) => state.quests[q]?.state === 'none');
+  // (The Eclipse is given by the sun itself, not asked for.)
+  const id = (Object.keys(QUESTS) as QuestId[]).find((q) => q !== 'eclipse' && state.quests[q]?.state === 'none');
   if (!id) return null;
   const g = giver(id);
   return { id, label: 'Find work', progress: 0, goal: 0, ready: false, objective: `Talk to ${g?.name ?? 'the townsfolk'}`, target: g };

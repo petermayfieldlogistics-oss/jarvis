@@ -1,3 +1,4 @@
+import { FRAGMENTS, fragmentsOf, isSunGod, SUN_GOD, SUN_TREE } from '../rules/sun';
 import { CLASSES, COMBOS, LEGEND_SHARD, PERKS, RACES, ROLES, RUNES, SPELLS, SUBCLASSES, TEAM_COMBOS, TIER_POINTS, TREES, WEAPONS, type SpellId } from '../data/defs';
 import { ITEMS, LORE, PAGES, SHRINES, WEAPON_TRIALS, type QuestId } from '../data/world';
 import { dracoFlightHours, maxHp, maxMana, maxStamina, MAX_LEVEL, MAX_RENOWN, MILESTONES, rank, renownXp, treesFor, xpToNext } from '../rules/character';
@@ -18,16 +19,16 @@ import { heightAt } from '../engine/terrain';
 import type { Game } from '../engine/game';
 import { Journal } from './journal';
 
-type Tab = 'character' | 'equipment' | 'skills' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
+type Tab = 'character' | 'equipment' | 'skills' | 'sun' | 'spells' | 'quests' | 'map' | 'lore' | 'coop' | 'settings' | 'controls';
 
 const TABS: [Tab, string][] = [
-  ['character', 'Hero'], ['equipment', 'Inventory'], ['skills', 'Skills'], ['spells', 'Spells'], ['quests', 'Quests'],
+  ['character', 'Hero'], ['equipment', 'Inventory'], ['skills', 'Skills'], ['sun', 'Sun Tree'], ['spells', 'Spells'], ['quests', 'Quests'],
   ['map', 'Map'], ['lore', 'Lore'], ['coop', 'Co-op'], ['settings', 'Settings'], ['controls', 'Controls'],
 ];
 
 /** The big title over each page of the journal. */
 const TITLES: Record<Tab, string> = {
-  character: 'Hero', equipment: 'Inventory', skills: 'Skill Tree', spells: 'Spells & Arts', quests: 'Quest Select',
+  character: 'Hero', equipment: 'Inventory', skills: 'Skill Tree', sun: 'The Sun Tree', spells: 'Spells & Arts', quests: 'Quest Select',
   map: 'Area Map', lore: 'Lore', coop: 'Co-op', settings: 'Settings', controls: 'Controls',
 };
 
@@ -120,6 +121,7 @@ export class Menu {
       case 'character': return this.character();
       case 'equipment': return this.equipment();
       case 'skills': return this.skills();
+      case 'sun': return this.sunTree();
       case 'spells': return this.spells();
       case 'quests': return this.journal.questPage();
       case 'map': return this.journal.mapPage();
@@ -155,6 +157,7 @@ export class Menu {
         <div>Embers <b>${c.gold}</b></div>
         <div>Legend Shards <b>${c.items[LEGEND_SHARD] ?? 0}</b></div>
         <div>Trials <b>${WEAPON_TRIALS.filter((t) => this.g.state.trialsDone.includes(t.id)).length} / ${WEAPON_TRIALS.length}</b></div>
+        <div>Sun fragments <b>${fragmentsOf(c)} / ${FRAGMENTS}</b>${isSunGod(c) ? ' ☀' : ''}</div>
       </div>
       <div class="btnrow wardrow"><button data-act="wardrobe">Wardrobe</button><small>Clothes ${wr.garments}/${wr.ofGarments} · Colours ${wr.dyes}/${wr.ofDyes}</small></div>
       ${lines.length ? `<ul class="notes">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
@@ -251,6 +254,30 @@ export class Menu {
         <p class="hint">A point every level, and a bonus point every 5 levels. Deeper tiers open as you spend points in the tree, and cost more per rank.${ids.length > 1 ? ' Your class and subclass trees share your points.' : ''} The first reset is free.</p></div>
       <h3>Milestones</h3>
       <div class="miles">${MILESTONES.map((m) => `<div class="mile${c.level >= m.level ? ' on' : ''}"><b>★ ${m.level}</b><span>${esc(m.name)}<small>${esc(m.text)}</small></span></div>`).join('')}</div>
+    </div>`;
+  }
+
+  /** The Sun Tree: a branch woken by each sun fragment, the Sun God's crown at the top. */
+  private sunTree(): string {
+    const c = this.g.player.c;
+    const have = fragmentsOf(c);
+    const god = isSunGod(c);
+    const node = (icon: string, name: string, boon: string, on: boolean, need: string) => `
+      <div style="display:flex;gap:14px;align-items:center;padding:10px 14px;margin:0 auto;max-width:560px;border-radius:12px;border:1px solid ${on ? '#e8b850' : '#4a4234'};background:${on ? 'linear-gradient(90deg,rgba(255,190,80,.22),rgba(255,190,80,.05))' : 'rgba(0,0,0,.25)'};opacity:${on ? 1 : 0.6}">
+        <div style="font-size:26px;width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:50%;background:${on ? 'radial-gradient(circle,#ffe08a,#c07a20)' : '#2a2620'};box-shadow:${on ? '0 0 18px #ffb84a' : 'none'}">${on ? icon : '🔒'}</div>
+        <div style="text-align:left"><b style="color:${on ? '#ffd27a' : '#bbb'}">${esc(name)}</b><div style="font-size:13px;opacity:.85">${esc(boon)}</div><small style="opacity:.6">${on ? 'Awake' : need}</small></div>
+      </div>`;
+    const link = (on: boolean) => `<div style="width:4px;height:18px;margin:0 auto;background:${on ? '#e8b850' : '#3a342a'};box-shadow:${on ? '0 0 8px #ffb84a' : 'none'}"></div>`;
+    const rows: string[] = [node(SUN_GOD.icon, SUN_GOD.name, SUN_GOD.boon, god, have >= FRAGMENTS ? 'Defeat Erebus in the Eclipse' : `Needs all ${FRAGMENTS} fragments, then the Eclipse`)];
+    for (let i = SUN_TREE.length - 1; i >= 0; i--) {
+      const s = SUN_TREE[i];
+      rows.push(link(have >= s.fragment + 1 || (i === SUN_TREE.length - 1 && god)));
+      rows.push(node(s.icon, s.name, s.boon, have >= s.fragment, `Sun fragment ${s.fragment}`));
+    }
+    return `<div style="text-align:center">
+      <p style="opacity:.85;max-width:560px;margin:0 auto 12px">Erebus slew Helios and broke the sun. Each fragment you win back from the six trials wakes a branch of the Sun Tree.</p>
+      <div style="font-size:18px;margin-bottom:12px">☀ <b style="color:#ffd27a">${have} / ${FRAGMENTS}</b> sun fragments${god ? ' · <b style="color:#ffd27a">Sun God</b>' : ''}</div>
+      ${rows.join('')}
     </div>`;
   }
 
