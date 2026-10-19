@@ -1,4 +1,5 @@
 import { sunHpMul } from './sun';
+import { slowerPast10 } from './pacing';
 import { MAX_KNIVES, classWields } from './weapons';
 import { newSteed, normalizeSteed, type Steed } from './horse';
 import { fedMul, fedSwims, normalizeFed, type Fed } from './fed';
@@ -458,7 +459,7 @@ export function drawTimeMultiplier(c: Character): number {
  * 20 at level 10, with quests and trial bosses covering a good share.
  */
 export function xpToNext(level: number): number {
-  return Math.round((30 + 42 * level + 10.5 * level * level) / 5) * 5;
+  return Math.round(((30 + 42 * level + 10.5 * level * level) * slowerPast10(level)) / 5) * 5;
 }
 
 /** Experience for one Renown rank past the top level. */

@@ -6,6 +6,7 @@
 // hit; the looks that follow the animation (breath, foam, the spider's silk)
 // are worked out from the mirrored pose, so co-op guests see them too.
 
+import { BOSS_PACE } from '../rules/pacing';
 import * as THREE from 'three';
 import { BOSSES, LAIRS, TRIALS, type BossAttack, type BossDef, type BossId, type LairDef } from '../data/world';
 import { RELICS, type RelicId } from '../data/defs';
@@ -548,7 +549,7 @@ export class GreatBoss extends Boss {
       this.chain = false;
     } else if (this.stage === 'recover' && this.stageTime >= r) {
       this.attack = null;
-      this.cooldown = (0.5 + Math.random() * 0.7) * (this.phase === 2 ? 0.6 : 1);
+      this.cooldown = (0.5 + Math.random() * 0.7) * (this.phase === 2 ? 0.6 : 1) * BOSS_PACE;
       if (this.phase === 2 && this.roarDur !== 1.2) this.startRoar(1.2);
       return [0, 0, 0];
     }

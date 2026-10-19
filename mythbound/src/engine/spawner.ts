@@ -9,6 +9,13 @@ import { AMBIENT, ENEMIES, PATROLS, SHRINES, SPAWNS, TOWN, TRIALS, VOLCANO, ZONE
 import { Boss, type Enemy } from './entities';
 import type { Hero } from './hero';
 import { heightAt, inLava, zoneAt, WATER_LEVEL } from './terrain';
+import { foeHpMul } from '../rules/pacing';
+
+/** Monsters rise to the level of the region they live in (the town's surroundings stay gentle). */
+function regionBonus(x: number, z: number, id: EnemyId): number {
+  if (Math.hypot(x - TOWN.x, z - TOWN.z) < 170) return 0;
+  return Math.max(0, ZONES[zoneAt(x, z)].level - ENEMIES[id].level);
+}
 import type { Game } from './game';
 
 /** Camps appear within SHOW metres of the hero and are put away beyond HIDE. */
@@ -229,7 +236,7 @@ export class Spawner {
       } else [x, z] = this.spot(id, gr.x, gr.z, gr.radius);
       const e = g.spawnEnemy(id, x, z);
       e.spawnGroup = i;
-      this.applyBonus(e, gr.bonus);
+      this.applyBonus(e, Math.max(gr.bonus, regionBonus(gr.x, gr.z, id)));
       if (gr.patrol) {
         e.patrol = { anchor: gr.patrol.anchor, ox, oz };
         e.state = 'patrol';
@@ -309,7 +316,7 @@ export class Spawner {
   private applyBonus(e: Enemy, bonus: number) {
     if (bonus <= 0) return;
     e.levelBonus = bonus;
-    e.maxHp = e.hp = Math.round(e.def.hp * (1 + bonus * 0.12));
+    e.maxHp = e.hp = Math.round(e.def.hp * foeHpMul(bonus));
   }
 
   private inArena(x: number, z: number, margin: number) {
@@ -378,7 +385,7 @@ export class Spawner {
         const [sx, sz] = this.spot(id, x, z, 6);
         if (!this.wild(sx, sz, ENEMIES[id].affinity === 'water' || ENEMIES[id].body === 'floater')) continue;
         const e = g.spawnEnemy(id, sx, sz);
-        this.applyBonus(e, nearTown ? 0 : Math.max(0, Math.min(3, ZONES[zone].level - ENEMIES[id].level)));
+        this.applyBonus(e, nearTown ? 0 : Math.max(0, ZONES[zone].level - ENEMIES[id].level));
         this.ambient.push(e);
       }
       return;
