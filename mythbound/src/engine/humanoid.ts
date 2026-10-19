@@ -2187,11 +2187,39 @@ function buildFeatherWings(k: Kit, j: Joints, color: number) {
 
 // ---------------------------------------------------------------- bosses --
 
-export function buildBossHumanoid(model: 'colossus' | 'golem' | 'champion', color: number, scale: number): Rig {
+export function buildBossHumanoid(model: 'colossus' | 'golem' | 'champion' | 'erebus', color: number, scale: number): Rig {
   return instance(`boss:${model}:${color}`, scale, () => buildBoss(model, color));
 }
 
-function buildBoss(model: 'colossus' | 'golem' | 'champion', color: number): Rig {
+function buildBoss(model: 'colossus' | 'golem' | 'champion' | 'erebus', color: number): Rig {
+  if (model === 'erebus') {
+    // Erebus: black plate under a hood that holds only darkness and two violet eyes,
+    // a crown of shadow-shards, wings of night, a void burning in his chest.
+    const night = 0x8a50ff;
+    return makeRig({ skin: 0x2a2238, armor: 0x17141f, cloth: color, accent: 0x6a40c0, build: 'heavy', head: 'hood', voidFace: true, glowEyes: 0xc08aff, featherWings: 0x1c1828, cape: 0x0e0b16, garb: 'warrior' }, {
+      bulk: 1.2, limb: 1.15, fist: 1.15, ink: true, posture: { heavy: 0.5 },
+      extras: (k, j, d) => {
+        const H = j.head;
+        for (let i = 0; i < 9; i++) {
+          const a = ((i - 4) / 4) * 1.1;
+          const tall = i === 4 ? 0.2 : 0.1 + 0.05 * (1 - Math.abs(i - 4) / 4);
+          k.add(shard(), GLOW, i % 2 ? shade(night, 0.6) : night, H, Math.sin(a) * 0.15, 1.9 + tall * 0.25, Math.cos(a) * 0.12 - 0.02, -0.25 * Math.cos(a), 0, -a * 0.7, 0.025, tall, 0.025);
+        }
+        for (const s of [-1, 1]) {
+          const arm = s > 0 ? j.armL : j.armR;
+          for (const [x, y, z, rz] of [[1.1, 1.62, 0, -0.4], [1.25, 1.56, -0.06, -0.9], [0.95, 1.64, 0.06, -0.15]])
+            k.add(shard(), GLOW, shade(night, 0.7), arm, s * d.SX * x, y, z, 0, 0, s * rz, 0.035, 0.16, 0.035);
+        }
+        // The void in his chest: a black heart in a ring of violet fire.
+        k.add(ball(10, 8), MATTE, 0x020104, j.chest, 0, 1.37, 0.22 * d.BZ, 0, 0, 0, 0.075, 0.075, 0.04);
+        k.add(new THREE.TorusGeometry(1, 0.16, 4, 16), GLOW, night, j.chest, 0, 1.37, 0.235 * d.BZ, 0, 0, 0, 0.095, 0.095, 0.05);
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * TAU;
+          k.add(cube(0.012, 0.13, 0.01), GLOW, shade(night, 0.6), j.chest, Math.sin(a) * 0.16, 1.37 + Math.cos(a) * 0.16, 0.22 * d.BZ, 0, 0, -a);
+        }
+      },
+    });
+  }
   if (model === 'colossus') {
     // Sandstone giant shot through with storm-blue crystal.
     const sand = 0x9a8a6a;

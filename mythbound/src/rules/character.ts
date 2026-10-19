@@ -1,3 +1,4 @@
+import { sunHpMul } from './sun';
 import { MAX_KNIVES, classWields } from './weapons';
 import { newSteed, normalizeSteed, type Steed } from './horse';
 import { fedMul, fedSwims, normalizeFed, type Fed } from './fed';
@@ -397,6 +398,7 @@ export function maxHp(c: Character): number {
   base += 15 * rank(c, 'iron-hide') + 12 * rank(c, 'hardy') + 14 * rank(c, 'tempered-body') + 20 * rank(c, 'iron-will');
   base *= 1 + 0.1 * perk(c, 10) + 0.1 * perk(c, 30) + 0.1 * perk(c, 35);
   base *= renownMul(c) * (c.weapons && hasPerk(c, 'colossus') ? PERK.colossus : 1);
+  base *= sunHpMul(c);
   if (c.raceId === 'orc') base *= ORC.hp;
   return Math.max(1, Math.round(base - c.hpLost));
 }

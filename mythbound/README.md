@@ -4,6 +4,26 @@ A dark-fantasy, third-person 3D action RPG that runs in the browser on PC and ph
 Mage, Monk, Sorcerer or Rogue), subclass, race and role, then explore a world of fifteen regions, take quests from the people of Hearthhold, and conquer six trials whose
 bosses guard the weapons of the old gods.
 
+## The story
+
+Erebus, god of darkness, slew Helios, god of the sun, and the land has known nothing but night since. The sun broke
+as Helios fell: six fragments, one sealed in each of the six trials. Each fragment wakes a branch of the **Sun Tree**
+(its own menu tab) and pales the sky a little toward dawn:
+
+| Fragment | Branch | Power |
+|---|---|---|
+| 1 | Ember Heart | +15% max health, a warm light round you in the dark |
+| 2 | Burning Strikes | +15% damage; hits can set foes alight |
+| 3 | Solar Flare | a new spell: a burst of sunlight that scorches and blinds everything within 8 m |
+| 4 | Dawnward | creatures of darkness strike you 25% softer |
+| 5 | Radiance | an aura that burns nearby foes every second |
+| 6 | Phoenix Dawn | once every five minutes, rise again at full health when you would fall |
+
+With all six the **Eclipse** opens on the hill where Helios fell (in Whisperwood). Erebus comes down out of the sky;
+at half health the ghost of Helios rises beside you and lends you his fire. When Erebus falls, the ending and credits
+play, and you rise as the **Sun God** (the Crown of Helios: +25% damage and health, a halo) as the first sunrise comes
+up, and keep playing in a world with day again. The rules are in `src/rules/sun.ts`, the play in `src/engine/sun.ts`.
+
 ## Play
 
 ```sh

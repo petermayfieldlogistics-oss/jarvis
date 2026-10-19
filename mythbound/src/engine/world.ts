@@ -991,6 +991,8 @@ export class World {
   private lights: THREE.PointLight[] = [];
   /** A soft moonlit glow around the hero at night, so the hero and nearby ground stay readable. */
   private heroLight = new THREE.PointLight(0xa8b8ff, 0, 16, 1.4);
+  /** 0-1: the Sun Tree's warm light round the hero (engine/sun.ts). */
+  heroWarm = 0;
   private lightPick: (Emitter | null)[] = [];
   private animated: { obj: THREE.Object3D; kind: 'spin' | 'bob' | 'flicker'; base: number }[] = [];
   private batch = new Batcher();
@@ -2374,8 +2376,8 @@ export class World {
   }
 
   private buildTrials() {
-    const palette: Record<string, number> = { hunt: 0x60ffb0, tides: 0x40d0ff, storms: 0x80b0ff, forge: 0xff6a20, war: 0xff4030, crossroads: 0xa070ff, deep: 0x40e0ff, court: 0x60fff0, roost: 0xff5020 };
-    const stones: Record<string, number> = { storms: 0xa08060, forge: 0x2a2220, deep: 0x7a8a84, court: 0x5a7a76, roost: 0x2e2624 };
+    const palette: Record<string, number> = { hunt: 0x60ffb0, tides: 0x40d0ff, storms: 0x80b0ff, forge: 0xff6a20, war: 0xff4030, crossroads: 0xa070ff, deep: 0x40e0ff, court: 0x60fff0, roost: 0xff5020, eclipse: 0x8a50ff };
+    const stones: Record<string, number> = { storms: 0xa08060, forge: 0x2a2220, deep: 0x7a8a84, court: 0x5a7a76, roost: 0x2e2624, eclipse: 0x1c1922 };
     for (const t of TRIALS) {
       const y = this.groundY(t.x, t.z);
       const color = palette[t.id] ?? 0xffd080;
@@ -2944,7 +2946,8 @@ export class World {
     this.hemi.groundColor.setHex(0x3a3020).lerp(this.tmp.setHex(0x222a3a), night);
     this.ambient.intensity = 0.2 + 0.4 * night + (nightVision ? 0.6 * night : 0);
     this.heroLight.position.set(focus.x, focus.y + 3, focus.z);
-    this.heroLight.intensity = 7 * night;
+    this.heroLight.intensity = Math.max(7 * night, 4 * this.heroWarm);
+    this.heroLight.color.setHex(0xa8b8ff).lerp(this.tmp.setHex(0xffc070), this.heroWarm);
 
     // Water mirrors the sky; the glint follows the sun, or the moon at night.
     const w = this.waterU;

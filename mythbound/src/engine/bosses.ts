@@ -1028,7 +1028,7 @@ export class GreatBoss extends Boss {
 /** Glow colours for each foe's minor effects. */
 const AFFINITY: Record<BossId, number> = {
   cernunna: 0x60ffb0, thalassor: 0x40c0ff, zephyron: 0x80b0ff, ignaroth: 0xff6a20, champion: 0xff4030, 'hecate-shade': 0xa070ff,
-  leviathan: 0x40c0ff, 'sea-queen': 0x60e0ff, 'elder-dragon': 0xff6020, reaper: 0x60ffa0, 'giant-spider': 0x9aff40,
+  leviathan: 0x40c0ff, 'sea-queen': 0x60e0ff, 'elder-dragon': 0xff6020, reaper: 0x60ffa0, 'giant-spider': 0x9aff40, erebus: 0xa060ff,
 };
 
 /** The boss for a trial or lair: the great foes get their own moves. */

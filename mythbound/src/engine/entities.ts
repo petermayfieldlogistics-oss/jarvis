@@ -133,7 +133,7 @@ function bossBody(def: BossDef): Model {
     default: {
       const rig = buildBossHumanoid(def.model, def.color, def.scale);
       // Each wields the legendary it drops.
-      const weapon = def.model === 'champion' ? buildWeapon('sword', true, undefined, 'sword-of-mars') : def.model === 'golem' ? buildWeapon('hammer', true, undefined, 'hammer-of-hephaestus') : buildWeapon('bolt', true);
+      const weapon = def.model === 'champion' ? buildWeapon('sword', true, undefined, 'sword-of-mars') : def.model === 'golem' ? buildWeapon('hammer', true, undefined, 'hammer-of-hephaestus') : def.model === 'erebus' ? buildWeapon('sword', true, undefined, 'reapers-edge') : buildWeapon('bolt', true);
       rig.handR.add(weapon);
       if (def.model === 'champion') rig.handL.add(buildShield());
       return humanoidModel(rig);
@@ -1082,7 +1082,7 @@ export class Boss extends Enemy {
   protected last: BossAttack | null = null;
   protected dustT = 0;
   protected telegraphs: TelegraphHandle[] = [];
-  protected auraFx: { stop(): void } | null = null;
+  auraFx: { stop(): void } | null = null;
   /** Its difficulty tier: 0 Normal, then Heroic, Mythic and Godslayer. */
   tier = 0;
   private bossPoise = 0;
@@ -1091,6 +1091,9 @@ export class Boss extends Enemy {
   private bossLastHp: number;
   protected strafeSide = 1;
   protected trampled = new Set<Hero>();
+  /** Seconds left of coming down out of the sky (Erebus). */
+  descend = 0;
+  private descendDur = 0;
 
   constructor(def: BossDef, arena: { x: number; z: number; radius: number }) {
     super('wolf', arena.x, arena.z - arena.radius * 0.5, bossModel(def));
@@ -1103,6 +1106,11 @@ export class Boss extends Enemy {
     this.state = 'chase';
     this.summoned = true;
     this.anim.attackStyle = 'roar';
+    if (def.model === 'erebus') {
+      // He comes down out of the dark, and roars once he lands.
+      this.descend = this.descendDur = 3.4;
+      this.roarLeft = this.roarDur = 5;
+    }
   }
   get name() {
     return this.bdef.name;
@@ -1176,7 +1184,8 @@ export class Boss extends Enemy {
       g.sfx.ring(this.center(), 10, 0xff4020, 0.8);
       g.sfx.sound('roar', this.pos);
       g.sfx.shake(this.pos, 0.5);
-      this.auraFx = g.fx.aura(this.model.root, this.color, 3600);
+      if (this.bdef.model === 'erebus') g.sun.heliosRises(this);
+      else this.auraFx = g.fx.aura(this.model.root, this.color, 3600);
       // Roar into the second phase once the current move is done.
       if (!this.attack || this.stage === 'recover') this.startRoar(1.2);
     }
@@ -1239,6 +1248,12 @@ export class Boss extends Enemy {
     this.setMotion(vx, vz);
     a.phase += Math.hypot(vx, vz) * dt * 1.4;
     this.syncModel(dt);
+    if (this.descend > 0) {
+      this.descend -= dt;
+      const k = Math.max(0, this.descend) / this.descendDur;
+      this.model.root.position.y += 38 * k * k;
+      if (this.descend <= 0) (g.sfx.shake(this.pos, 0.8), g.sfx.ring(this.center(), 12, 0x8a50ff, 0.9), g.sfx.dust(this.pos, 40));
+    }
   }
 
   /** Stays inside the arena, on the ground (or hovering). */

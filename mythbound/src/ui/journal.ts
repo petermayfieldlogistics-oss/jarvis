@@ -4,7 +4,7 @@
 // rewards and difficulty on the right). Menu (menu.ts) hosts them.
 
 import { PERKS, WEAPONS } from '../data/defs';
-import { ARENA, BOSSES, ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, NPCS, QUESTS, SHRINES, TOWN, WEAPON_TRIALS, ZONES, type BossId, type QuestId, type ZoneId } from '../data/world';
+import { ARENA, BOSSES, ECLIPSE_TRIAL, ELDER_TRIALS, EYES_RUINS, ITEMS, LAIRS, NPCS, QUESTS, SHRINES, TOWN, WEAPON_TRIALS, ZONES, type BossId, type QuestId, type ZoneId } from '../data/world';
 import { rewardName } from '../engine/bosses';
 import { questLines, trackedId, type QuestLine } from '../engine/questlog';
 import { zoneAt } from '../engine/terrain';
@@ -88,6 +88,7 @@ export class Journal {
     for (const sh of SHRINES) if (s.shrinesFound.includes(sh.id)) out.push({ id: `s:${sh.id}`, layer: 'shrine', x: sh.x, z: sh.z, label: sh.name });
     for (const t of WEAPON_TRIALS) out.push({ id: `t:${t.id}`, layer: 'trial', x: t.x, z: t.z, label: t.name.replace('Trial of ', '').replace('the ', ''), done: s.trialsDone.includes(t.id) });
     if (s.quests.elders.state !== 'none') for (const t of ELDER_TRIALS) out.push({ id: `t:${t.id}`, layer: 'boss', x: t.x, z: t.z, label: BOSSES[t.boss].name, done: s.trialsDone.includes(t.id) });
+    out.push({ id: `t:${ECLIPSE_TRIAL.id}`, layer: 'trial', x: ECLIPSE_TRIAL.x, z: ECLIPSE_TRIAL.z, label: 'Eclipse', done: s.trialsDone.includes(ECLIPSE_TRIAL.id) });
     if (s.quests.hunts.state !== 'none') for (const l of LAIRS) out.push({ id: `l:${l.id}`, layer: 'boss', x: l.x, z: l.z, label: BOSSES[l.boss].name, done: !!s.flags[`hunted-${l.boss}`] });
     out.push({ id: 'town', layer: 'town', x: TOWN.x, z: TOWN.z, label: 'Hearthhold' });
     out.push({ id: 'arena', layer: 'town', x: ARENA.x, z: ARENA.z, label: 'Arena of Ares' });
@@ -141,7 +142,7 @@ export class Journal {
         <div class="cfoot">${l.target ? `<span>${away(l.target.x, l.target.z)}</span>` : '<span></span>'}${tracked ? '<span class="tag">Tracked</span>' : `<button data-track="${l.id}">Track</button>`}</div>`;
     }
     if (kind === 't' || kind === 'l') {
-      const t = kind === 't' ? [...WEAPON_TRIALS, ...ELDER_TRIALS].find((x) => x.id === key) : null;
+      const t = kind === 't' ? [...WEAPON_TRIALS, ...ELDER_TRIALS, ECLIPSE_TRIAL].find((x) => x.id === key) : null;
       const lair = kind === 'l' ? LAIRS.find((x) => x.id === key) : null;
       const boss = t ? t.boss : lair?.boss;
       if (!boss) return '';

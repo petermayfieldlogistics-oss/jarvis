@@ -568,13 +568,14 @@ export const LEGEND_SHARD = 'legend-shard';
 
 // ------------------------------------------------------------------ relics --
 
-export type RelicId = 'leviathan-pearl' | 'dragon-heart' | 'tide-crown';
+export type RelicId = 'leviathan-pearl' | 'dragon-heart' | 'tide-crown' | 'sun-crown';
 
 /** Won from the three elder foes: kept in the pack, each grants a lasting boon to any hero. */
 export const RELICS: Record<RelicId, { id: RelicId; name: string; boon: string }> = {
   'leviathan-pearl': { id: 'leviathan-pearl', name: 'Pearl of the Leviathan', boon: '+1 flask, and you swim without tiring.' },
   'tide-crown': { id: 'tide-crown', name: 'Crown of the Tides', boon: '+20 max mana, mana flows 30% faster, and water hurts you half as much.' },
   'dragon-heart': { id: 'dragon-heart', name: 'Heart of the Elder Dragon', boon: '+30 max HP, and fire hurts you half as much.' },
+  'sun-crown': { id: 'sun-crown', name: 'Crown of Helios', boon: 'You are the Sun God: +25% damage, +25% max health, a halo of light, and day has returned.' },
 };
 
 // ------------------------------------------------------------------ spells --
@@ -625,7 +626,9 @@ export type SpellId =
   | 'arrow-rain'
   | 'mark-prey'
   | 'snare-trap'
-  | 'evasive-leap';
+  | 'evasive-leap'
+  // The Sun Tree's own (taught by the third sun fragment).
+  | 'solar-flare';
 
 export interface SpellDef {
   id: SpellId;
@@ -750,6 +753,10 @@ export const SPELLS: Record<SpellId, SpellDef> = {
   'mending-light': {
     id: 'mending-light', name: 'Mending Light', school: 'light', element: 'light', mana: 16, cooldown: 10, power: 40,
     description: 'Heals you, your beasts, and co-op friends within 12 m.',
+  },
+  'solar-flare': {
+    id: 'solar-flare', name: 'Solar Flare', school: 'light', element: 'light', mana: 22, cooldown: 14, power: 55, hidden: true,
+    description: 'A burst of sunlight from the Sun Tree: it scorches everything within 8 m and blinds what it does not kill.',
   },
   'ward-of-dawn': {
     id: 'ward-of-dawn', name: 'Ward of Dawn', school: 'light', element: 'light', mana: 18, cooldown: 22, power: 30,
