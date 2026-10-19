@@ -41,7 +41,7 @@ export const KINDS: Record<string, () => Rig> = {
 
 // The humanoid monsters and great foes: build each once, then dump every look that was made.
 for (const def of Object.values(W.ENEMIES)) if (def.body === 'humanoid') E.enemyModel(def);
-for (const def of Object.values(W.BOSSES)) if (['colossus', 'golem', 'champion'].includes(def.model)) E.bossModel(def);
+for (const def of Object.values(W.BOSSES)) if (['colossus', 'golem', 'champion', 'erebus'].includes(def.model)) E.bossModel(def);
 for (const [key, rig] of H.humanoidTemplates()) {
   KINDS[humanoidKey(key)] = () => rig as unknown as Rig;
   console.log('look', humanoidKey(key), key.slice(0, 90));

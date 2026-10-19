@@ -23,6 +23,7 @@ import bpy  # noqa: E402,I001
 import bmesh  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
+import forge as F  # noqa: E402
 from kit import DARK, FIXED, GLOW, LIGHT, MAIN, Beast, G, Part, lerp, look, pack  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -251,107 +252,7 @@ def curve(pts, n=8):
     return out
 
 
-@builder('stag', 0x4a4232)
-def stag(bt):
-    """Cernunna: a tall spirit stag with a bone-white skull for a face, a shaggy mane and vast glowing antlers."""
-    n, B = bt.n, bt.B
-    hips, chest, neck, head, jaw = n['hips'], n['chest'], n['neck'], n['head'], n['jaw']
-    H, C, Hd, J = B[hips], B[chest], B[head], B[jaw]
-    torso = [hips, chest]
-    coat = dict(belly=-0.5, back=0.65, mottle=0.35)
-    bone = 0xe6dcc2
-    # A deep chest, a lean waist, strong haunches.
-    bt.blob(gv(C, 0, -0.03, 0.04), 0.17, 0.23, 0.26, bones=[chest], **coat)
-    bt.capsule(gv(C, 0, -0.02, -0.15), gv(H, 0, 0.02, 0.08), 0.15, 0.135, bones=torso, **coat)
-    bt.blob(gv(H, 0, 0.01, -0.06), 0.16, 0.18, 0.2, bones=[hips], **coat)
-    # The neck rising high and thick, then the head.
-    N0, N1 = B[neck[0]], B[neck[1]]
-    bt.chain([gv(C, 0, 0.04, 0.14), N0, N1, gv(Hd, 0, 0.0, -0.04)], [0.17, 0.15, 0.12, 0.095], [[chest, neck[0]], [neck[0], neck[1]], [neck[1], head]], **coat)
-    # The mane: shaggy locks hanging under the neck and chest, shorter ones along the crest.
-    for i in range(16):
-        t = i / 15
-        sd = (i % 3) - 1
-        a = gv(C, sd * 0.09, -0.08, 0.2).lerp(gv(N1, sd * 0.06, -0.06, 0.02), t)
-        L = 0.36 - t * 0.2
-        bt.capsule(a, a + G(sd * 0.04, -L, 0.03 - t * 0.05), 0.07 - t * 0.02, 0.012, bones=[chest] + neck if t < 0.5 else neck, slot=DARK, mottle=0.3)
-    for i in range(8):
-        t = i / 7
-        for sd in (-1, 1):
-            a = gv(C, sd * 0.05, 0.16, 0.12).lerp(gv(N1, sd * 0.04, 0.08, -0.04), t)
-            bt.capsule(a, a + G(sd * 0.08, -0.06, -0.14), 0.05, 0.01, bones=neck, slot=DARK, mottle=0.3)
-    # The head: a furred crown behind a bone-white skull face with dark sockets and glowing eyes.
-    hy = Hd + G(0, 0.04, 0)
-    bt.blob(gv(hy, 0, 0.0, 0.01), 0.095, 0.095, 0.1, bones=[head], **coat)
-    face = curve([gv(hy, 0, 0.01, 0.03), gv(hy, 0, 0.0, 0.13), gv(hy, 0, -0.04, 0.27), gv(hy, 0, -0.08, 0.39), gv(hy, 0, -0.09, 0.44)], 3)
-    radii = [0.09, 0.085, 0.06, 0.038, 0.022]
-    for k in range(4):
-        bt.capsule(face[k * 3], face[(k + 1) * 3], radii[k], radii[k + 1], bones=[head], slot=FIXED, rgb=bone)
-    for sd in (-1, 1):
-        bt.blob(gv(hy, sd * 0.062, 0.02, 0.14), 0.032, 0.028, 0.03, bones=[head], slot=FIXED, rgb=0x0e0a08)
-        bt.eye(gv(hy, sd * 0.07, 0.02, 0.15), 0.016, [head], rgb=0x70ffc0)
-        bt.blob(gv(hy, sd * 0.016, -0.085, 0.43), 0.009, 0.011, 0.008, bones=[head], slot=FIXED, rgb=0x0e0a08)
-        # Cheekbones.
-        bt.blob(gv(hy, sd * 0.07, -0.03, 0.17), 0.025, 0.02, 0.06, bones=[head], slot=FIXED, rgb=bone)
-    bt.tube([gv(hy, 0, 0.065, 0.12), gv(hy, 0, 0.045, 0.24), gv(hy, 0, 0.0, 0.36)], 0.008, [head], surface='glow', slot=GLOW, rgb=0x50e0a0, n=5)
-    # The jaw: a bare bone mandible with a dark mouth line.
-    bt.capsule(gv(J, 0, -0.01, -0.02), gv(J, 0, -0.06, 0.27), 0.05, 0.022, bones=[jaw], slot=FIXED, rgb=0xcfc4a8)
-    # Ears: long, drooping a little, set out sideways.
-    for e in n['ears']:
-        E = B[e]
-        sd = 1 if E.x > 0 else -1
-        base, tip = gv(E, -sd * 0.03, -0.03, 0.0), gv(E, sd * 0.2, 0.04, -0.06)
-        bt.tube([base, base.lerp(tip, 0.4) + G(0, 0.03, 0), tip], lambda t: 0.05 * math.sin(math.pi * min(1, 0.25 + t * 0.85)) + 0.004, [e], surface='fur', slot=DARK, n=10, squash=0.3)
-    # The antlers: beams sweeping up and out, tines along them, glowing tips and hanging moss.
-    for sd in (-1, 1):
-        beam = curve([gv(hy, sd * 0.06, 0.07, -0.01), gv(hy, sd * 0.22, 0.36, -0.13), gv(hy, sd * 0.42, 0.7, -0.11), gv(hy, sd * 0.46, 1.06, -0.23), gv(hy, sd * 0.36, 1.36, -0.35)], 3)
-        bt.tube(beam, lambda t: 0.048 * (1 - t) + 0.014, [head], rgb=0xd8cbb0, n=8)
-        bt.blob(beam[0], 0.05, 0.03, 0.05, bones=[head], slot=FIXED, rgb=0x8a7a60)
-        tines = [(0.12, (0.05, 0.12, 0.3), 0.3), (0.3, (0.12, 0.25, 0.25), 0.36), (0.5, (0.02, 0.3, 0.26), 0.42),
-                 (0.62, (0.2, 0.22, -0.08), 0.36), (0.78, (-0.1, 0.32, 0.18), 0.32), (0.9, (0.16, 0.3, -0.12), 0.28), (1.0, (-0.04, 0.28, -0.04), 0.22)]
-        for f, d, L in tines:
-            p0 = beam[round(f * (len(beam) - 1))]
-            dv = G(d[0] * sd, d[1], d[2]).normalized()
-            p1 = p0 + dv * L * 0.55 + G(0, L * 0.08, 0)
-            p2 = p0 + dv * L + G(0, L * 0.25, 0)
-            bt.tube([p0, p1, p2], lambda t: 0.028 * (1 - t) + 0.006, [head], rgb=0xd8cbb0, n=6)
-            bt.tube([p1.lerp(p2, 0.5), p2, p2 + dv * 0.06], lambda t: 0.017 * (1 - t) + 0.002, [head], surface='glow', slot=GLOW, rgb=0x80ffc8, n=6)
-        for f in (0.3, 0.5, 0.72):
-            p0 = beam[round(f * (len(beam) - 1))]
-            for k in range(3):
-                q = p0 + G(sd * 0.02 * (k - 1), -0.01, 0.02 * (k - 1))
-                bt.tube([q, q + G(sd * 0.02, -0.14 - 0.06 * k, 0.01), q + G(sd * 0.03, -0.28 - 0.08 * k, 0.03)], lambda t: 0.018 * (1 - t) + 0.003, [head], rgb=0x3e5a2a, n=5, squash=0.6)
-    # Legs: long and slender, with powerful upper legs and small dark hooves.
-    for leg in n['limbs']:
-        up, mid, low = leg['up'], leg['mid'], leg['low']
-        U, M, L = B[up], B[mid], B[low]
-        F = G(*leg['foot'])
-        sd = leg['side']
-        if leg['front']:
-            bt.blob(gv(U, -sd * 0.03, -0.08, 0.0), 0.09, 0.2, 0.13, bones=[chest, up], **coat)
-            bt.capsule(gv(U, 0, -0.1, 0), M, 0.08, 0.05, bones=[up, mid], mottle=0.3)
-        else:
-            bt.blob(gv(U, -sd * 0.03, -0.1, 0.04), 0.1, 0.22, 0.16, rot=(-0.25, 0, 0), bones=[hips, up], **coat)
-            bt.capsule(gv(U, 0, -0.14, 0.05), M, 0.1, 0.06, bones=[up, mid], mottle=0.3)
-        bt.capsule(M, L, 0.045, 0.032, bones=[mid, low], mottle=0.3)
-        bt.capsule(L, F + G(0, 0.07, 0), 0.032, 0.028, bones=[low], slot=DARK)
-        bt.blob(L, 0.04, 0.04, 0.045, bones=[mid, low], slot=DARK)
-        hoof(bt, L, F + G(0, -0.01, 0.0), [low], 0.04)
-    # A short pale tail.
-    tail = n['tail']
-    T0, T1 = B[tail[0]], B[tail[1]]
-    bt.capsule(gv(T0, 0, 0.02, 0.06), T1 + (T1 - T0) * 0.2, 0.045, 0.025, bones=tail, belly=0.2)
-    # Spirit whorls on the flanks, laid on the skin.
-    for sd in (-1, 1):
-        for z0, y0, cnt in ((-0.5, 1.32, 6), (0.0, 1.22, 6), (0.32, 1.35, 4)):
-            pts = []
-            for i in range(cnt):
-                z = z0 + i * 0.08
-                y = y0 + 0.07 * math.sin(i * 1.7)
-                p = bt.surface(G(sd * 0.6, y, z), G(-sd, 0, 0))
-                pts.append(p + G(sd * 0.006, 0, 0))
-            bt.tube(pts, lambda t: 0.012 * (1 - t) + 0.002, [hips, chest], surface='glow', slot=GLOW, rgb=0x30c890, n=4)
-    return bt.build(0.008, 12000, ('CLOUDS', 0.025, 0.006)), ['fur', 'glow']
-
+# (Cernunna is forged now: see the great foes below.)
 
 # ------------------------------------------------------------------ dragons --
 
@@ -498,12 +399,6 @@ def drake(bt):
     return bt.build(0.0075, 12000, ('VORONOI', 0.02, 0.004), surface='scale'), ['scale', 'fur', 'glow']
 
 
-@builder('dragon', 0x5a1a12)
-def dragon(bt):
-    wyrm(bt, 1.0, [(1.5, -0.38, -0.37), (1.2, -0.64, -1.42), (0.6, -0.76, -2.17), (-0.25, -0.82, -2.57)], 0xc08a50, horn_rgb=0x3a2a1c, embers=True, club=True)
-    return bt.build(0.012, 18000, ('VORONOI', 0.035, 0.008), surface='scale'), ['scale', 'fur', 'glow']
-
-
 # -------------------------------------------------------------- arthropods --
 
 
@@ -586,145 +481,6 @@ def scorpion(bt):
         up, mid, low = leg['up'], leg['mid'], leg['low']
         jointed(bt, [B[up], B[mid], B[low], G(*leg['foot'])], [0.05, 0.042, 0.03, 0.008], [up, mid, low])
     return bt.build(0.006, 9000, ('CLOUDS', 0.03, 0.0015), surface='shell'), ['shell', 'glow', 'fur']
-
-
-@builder('spider', 0x2a221c)
-def spider(bt):
-    """A great hairy spider: a domed head with eight red eyes, venom fangs, a vast marked abdomen and high-kneed legs."""
-    n, B = bt.n, bt.B
-    head, abdomen, fangs = n['head'], n['abdomen'], n['fangs']
-    Hd = B[head]
-    hair = dict(belly=-0.4, under=DARK, mottle=0.35)
-    # Head and thorax: a domed plate, hairy round its rim.
-    bt.blob(gv(Hd, 0, 0.02, 0.0), 0.22, 0.13, 0.27, bones=[head], **hair)
-    bt.blob(gv(Hd, 0, 0.09, -0.02), 0.15, 0.07, 0.2, bones=[head], slot=DARK)
-    bt.blob(gv(Hd, 0, 0.06, 0.17), 0.11, 0.08, 0.09, bones=[head], **hair)
-    for sd in (-1, 1):
-        for x, y, r in ((0.035, 0.06, 0.032), (0.09, 0.05, 0.022), (0.05, 0.11, 0.018), (0.12, 0.09, 0.016)):
-            p = bt.surface(gv(Hd, sd * x, y, 0.8), G(0, 0, -1))
-            bt.eye(p + G(0, 0, r * 0.6), r * 1.2, [head], rgb=0xff2a10)
-        # Palps.
-        jointed(bt, [gv(Hd, sd * 0.1, -0.04, 0.2), gv(Hd, sd * 0.16, 0.02, 0.3), gv(Hd, sd * 0.13, -0.1, 0.38)], [0.025, 0.02, 0.012], [head, head], slot=MAIN, surface='fur')
-    for f in fangs:
-        F = B[f]
-        sd = 1 if F.x > 0 else -1
-        bt.blob(gv(F, 0, -0.01, 0.01), 0.05, 0.07, 0.05, bones=[f], **hair)
-        fang = curve([gv(F, 0, -0.06, 0.03), gv(F, sd * 0.01, -0.15, 0.08), gv(F, -sd * 0.04, -0.19, 0.05)], 3)
-        bt.tube(fang, lambda t: 0.024 * (1 - t) + 0.002, [f], rgb=0x1a1410, n=7)
-        bt.eye(fang[-1], 0.011, [f], rgb=0x9aff40)
-    # The abdomen: a great round sac, bristling, with a glowing hourglass and side spots.
-    A = gv(B[abdomen], 0, 0.12, -0.36)
-    bt.blob(A, 0.34, 0.3, 0.42, bones=[abdomen], **hair)
-    bt.capsule(gv(Hd, 0, 0.0, -0.18), A, 0.08, 0.15, bones=[head, abdomen], **hair)
-    top = bt.surface(A + G(0, 1, 0.05), Vector((0, 0, -1)))
-    bt.blob(top + G(0, -0.01, 0.07), 0.07, 0.02, 0.1, bones=[abdomen], slot=GLOW, rgb=0xff3a18)
-    bt.blob(top + G(0, -0.02, -0.13), 0.1, 0.02, 0.08, bones=[abdomen], slot=GLOW, rgb=0xff3a18)
-    for sd in (-1, 1):
-        for i in range(3):
-            p = bt.surface(A + G(sd * 0.6, 0.18 - i * 0.06, -0.05 - i * 0.12), G(-sd, 0, 0))
-            bt.eye(p, 0.03 - i * 0.004, [abdomen], rgb=0xff3a18, squash=0.6)
-    for i in range(26):
-        a = i * 2.39996
-        u = 0.1 + 0.8 * ((i + 0.5) / 26)
-        d = G(math.cos(a) * math.sin(u * math.pi), math.cos(u * math.pi) * 0.3 + 0.45, -math.sin(a) * math.sin(u * math.pi) * 0.6 - 0.45).normalized()
-        p = bt.surface(A + d * 0.8, -d)
-        bt.cone(p - d * 0.01, p + d * 0.07, 0.01, [abdomen], slot=DARK)
-    for sd in (-1, 1):
-        bt.cone(A + G(sd * 0.04, -0.05, -0.38), A + G(sd * 0.05, -0.08, -0.48), 0.025, [abdomen], slot=DARK)
-    # Legs: high knees, long shins, a bristle or two on each.
-    for leg in n['limbs']:
-        up, mid, low = leg['up'], leg['mid'], leg['low']
-        U, K, Fo, T = B[up], B[mid], B[low], G(*leg['foot'])
-        jointed(bt, [U, K, Fo, T], [0.05, 0.042, 0.028, 0.006], [up, mid, low], slot=MAIN, surface='fur', n=8)
-        sd = leg['side']
-        for f in (0.3, 0.6):
-            p = U.lerp(K, f)
-            bt.cone(p, p + G(sd * 0.02, 0.07, 0), 0.01, [up], slot=DARK)
-            q = K.lerp(Fo, f)
-            bt.cone(q, q + G(sd * 0.05, 0.03, 0), 0.008, [mid], slot=DARK)
-    return bt.build(0.0065, 9000, ('CLOUDS', 0.02, 0.004), surface='fur'), ['fur', 'shell', 'glow']
-
-
-@builder('crab', 0x3e5f66)
-def crab(bt):
-    """Thalassor: a giant crab, its domed shell crusted with barnacles and weed, one claw bigger than the other."""
-    n, B = bt.n, bt.B
-    body, jaw = n['body'], n['jaw']
-    Bo = B[body]
-    ty = Bo.z
-    shell = dict(belly=-0.35, under=LIGHT, mottle=0.25)
-    spike_rgb = 0x23302f
-    # The carapace: broad and domed, a raised crown, a pale underside.
-    bt.blob(gv(Bo, 0, 0.08, 0.0), 1.3, 0.5, 1.0, bones=[body], **shell)
-    bt.blob(gv(Bo, 0, 0.3, -0.1), 0.85, 0.3, 0.62, bones=[body], **shell)
-    bt.blob(gv(Bo, 0, -0.16, 0.0), 1.12, 0.3, 0.86, bones=[body], slot=LIGHT)
-    for sd in (-1, 1):
-        bt.blob(gv(Bo, sd * 0.45, 0.28, 0.25), 0.3, 0.18, 0.32, bones=[body], **shell)
-    # Spikes round the front rim.
-    for i in range(11):
-        a = -1.2 + (i / 10) * 2.4
-        p = bt.surface(gv(Bo, math.sin(a) * 3, 0.08, math.cos(a) * 3), G(-math.sin(a), 0, -math.cos(a)))
-        d = G(math.sin(a), 0.15, math.cos(a)).normalized()
-        bt.cone(p - d * 0.05, p + d * 0.24, 0.07, [body], rgb=spike_rgb)
-    # Barnacles crusting the dome.
-    for i in range(18):
-        a = i * 2.39996
-        r = 0.2 + 0.7 * math.sqrt((i + 0.5) / 18)
-        x, z = math.cos(a) * r * 1.1, math.sin(a) * r * 0.8 - 0.1
-        p = bt.top(x, z)
-        w = 0.07 + (i % 3) * 0.02
-        bt.tube([p - G(0, 0.04, 0), p + G(0, 0.07, 0), p + G(0, 0.09, 0)], lambda t, w=w: w * (1 - 0.45 * t), [body], rgb=0xa8b0a2, n=7)
-        bt.hard.append(('shell', _ball(p + G(0, 0.09, 0), w * 0.42, (1, 1, 0.4)), _part([body], FIXED, 0x30302c)))
-    # Weed trailing off the back on its own strands.
-    for st in n['strands']:
-        pts = [B[k] for k in st]
-        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.8
-        for k in range(len(pts)):
-            a, b = pts[k], pts[k + 1] if k + 1 < len(pts) else tip
-            bt.tube([a, a.lerp(b, 0.5) + G(0.03 * math.sin(k * 2.0), 0, 0), b], lambda t, k=k: 0.075 * (1 - (k + t) / len(pts)) + 0.01, [st[k]], surface='fur', rgb=0x2e5030 if k % 2 else 0x3e6034, n=5, squash=0.25)
-    # Eye stalks, glowing eyes, and mouthparts.
-    for sk_ in n['stalks']:
-        S = B[sk_]
-        sd = 1 if S.x > 0 else -1
-        bt.tube([gv(S, 0, -0.08, 0), gv(S, sd * 0.03, 0.22, 0.04), gv(S, sd * 0.05, 0.42, 0.05)], lambda t: 0.055 - 0.015 * t, [sk_], slot=MAIN, n=8)
-        bt.eye(gv(S, sd * 0.05, 0.47, 0.06), 0.08, [sk_], rgb=0x60ffe0)
-    J = B[jaw]
-    for sd in (-1, 1):
-        bt.blob(gv(J, sd * 0.1, -0.03, 0.03), 0.1, 0.16, 0.05, bones=[jaw], slot=LIGHT)
-    # Two huge claws, the left the larger: a spined arm, a ridged palm, a serrated fixed finger, a hinged one.
-    for pc in n['pincers']:
-        arm, fore, hand, finger = pc['arm'], pc['fore'], pc['hand'], pc['finger']
-        A, E, Wr, Fj = B[arm], B[fore], B[hand], B[finger]
-        sd = 1 if Wr.x > 0 else -1
-        k = 1.18 if sd < 0 else 1.0
-        bt.capsule(A, E, 0.17, 0.2, bones=[arm, fore], **shell)
-        bt.capsule(E, Wr, 0.19, 0.22, bones=[fore, hand], **shell)
-        for t in (0.3, 0.7):
-            p = A.lerp(E, t) + G(0, 0.17, 0)
-            bt.cone(p - G(0, 0.04, 0), p + G(0, 0.17, -0.05), 0.05, [arm], rgb=spike_rgb)
-        palm = G(sd * 1.4, ty + 0.2, 2.2)
-        bt.blob(palm, 0.28 * k, 0.4 * k, 0.6 * k, bones=[hand], **shell)
-        for dz in (-0.25, 0.05, 0.3):
-            p = palm + G(0, 0.37 * k, dz * k)
-            bt.cone(p - G(0, 0.04, 0), p + G(sd * 0.04, 0.15 * k, -0.06), 0.05 * k, [hand], rgb=spike_rgb)
-        fixed = curve([palm + G(0, -0.14 * k, 0.4 * k), palm + G(-sd * 0.05, -0.2 * k, 0.85 * k), palm + G(-sd * 0.1, -0.1 * k, 1.25 * k)], 3)
-        bt.tube(fixed, lambda t: 0.15 * k * (1 - t) ** 0.8 + 0.01, [hand], slot=MAIN, n=10, squash=0.75)
-        dact = curve([Fj, Fj + G(-sd * 0.03, 0.05 * k, 0.42 * k), Fj + G(-sd * 0.09, -0.12 * k, 0.82 * k)], 3)
-        bt.tube(dact, lambda t: 0.14 * k * (1 - t) ** 0.8 + 0.01, [finger], slot=MAIN, n=10, squash=0.75)
-        for i in range(4):
-            p = Fj + G(-sd * 0.03, -0.1 * k, (0.12 + i * 0.15) * k)
-            bt.cone(p, p + G(0, -0.1 * k, 0.02), 0.035, [finger], rgb=0xd8d0b8)
-            q = palm + G(-sd * 0.04, -0.06 * k, (0.5 + i * 0.16) * k)
-            bt.cone(q, q + G(0, 0.1 * k, 0.02), 0.035, [hand], rgb=0xd8d0b8)
-    # Eight spiny walking legs.
-    for leg in n['limbs']:
-        up, mid, low = leg['up'], leg['mid'], leg['low']
-        U, K, Fo, T = B[up], B[mid], B[low], G(*leg['foot'])
-        jointed(bt, [U, K, Fo, T], [0.16, 0.13, 0.09, 0.012], [up, mid, low], slot=MAIN, n=9)
-        bt.cone(K, K + G(0, 0.16, 0), 0.045, [mid], rgb=spike_rgb)
-        q = K.lerp(Fo, 0.4)
-        bt.cone(q, q + G(0, 0.06, 0.08), 0.03, [mid], rgb=spike_rgb)
-    return bt.build(0.016, 11000, ('VORONOI', 0.06, 0.012), surface='shell'), ['shell', 'fur', 'glow']
 
 
 # ------------------------------------------------------------- robed spirits --
@@ -825,141 +581,6 @@ def wraith(bt):
             k2 = k1 + G(0, -0.08, 0.07)
             bt.tube(curve([k0, k1, k2], 2), lambda t: 0.012 * (1 - t) + 0.002, [low], surface='fur', rgb=bone, n=5)
     return bt.build(0.0075, 7000, ('CLOUDS', 0.04, 0.006), surface='ghost'), ['ghost', 'fur', 'glow']
-
-
-@builder('witch', 0x2a2440)
-def witch(bt):
-    """The Shade of Hecate: three faces under a spiked crown, a high collar, a gown dissolving into tatters, staff and torch."""
-    n, B = bt.n, bt.B
-    body, chest, head = n['body'], n['chest'], n['head']
-    Bo, C, Hd = B[body], B[chest], B[head]
-    gown = dict(fade=(0.2, 2.0, 0.4), mottle=0.15, stiff=3.5)
-    gold, skin = 0xc8a858, 0xb8b0a0
-    strands = n['strands']
-    skirt, hair = strands[:12], strands[12:]
-    # Bodice, a cinched waist with a gold belt, and a skirt flaring to the hem.
-    bt.blob(gv(C, 0, 0.24, 0.0), 0.24, 0.08, 0.13, bones=[chest], **gown)
-    bt.capsule(gv(C, 0, 0.24, 0), gv(C, 0, -0.05, 0.01), 0.14, 0.13, bones=[chest], **gown)
-    for sd in (-1, 1):
-        bt.blob(gv(C, sd * 0.065, 0.06, 0.08), 0.07, 0.07, 0.06, bones=[chest], **gown)
-    bt.capsule(gv(C, 0, -0.05, 0.01), gv(C, 0, -0.27, 0.0), 0.13, 0.12, bones=[chest], **gown)
-    bt.tube([gv(C, 0, -0.27, 0), gv(C, 0, -0.23, 0)], 0.135, [chest], surface='fur', rgb=gold, n=16)
-    bt.capsule(gv(C, 0, -0.27, 0), gv(Bo, 0, 0.1, 0), 0.12, 0.3, bones=[chest, body], **gown)
-    bt.capsule(gv(Bo, 0, 0.1, 0), gv(Bo, 0, -0.18, 0), 0.3, 0.38, bones=[body], **gown)
-    for st in skirt:
-        R = B[st[0]]
-        bt.capsule(Vector((R.x * 0.75, R.y * 0.75, Bo.z + 0.05)), R + Vector((0, 0, 0.02)), 0.07, 0.07, bones=[body, st[0]], **gown)
-    tatters(bt, skirt, 0.15, 'fur', (0.0, 1.0, 0.45))
-    # The collar: dark spines fanning up behind the head.
-    for i in range(7):
-        a = (i / 6 - 0.5) * 2.6 + math.pi
-        b = gv(C, math.sin(a) * 0.14, 0.3, math.cos(a) * 0.1 - 0.02)
-        bt.tube([b, b + G(math.sin(a) * 0.08, 0.15, math.cos(a) * 0.08), b + G(math.sin(a) * 0.16, 0.3, math.cos(a) * 0.14 - 0.06)], lambda t: 0.045 * (1 - t) + 0.003, [chest], surface='fur', slot=DARK, n=6, squash=0.3, wide=G(math.cos(a), 0, -math.sin(a)))
-    # Three faces: the maiden ahead, the mother and the crone to either side, on a veiled head.
-    bt.blob(Hd, 0.14, 0.16, 0.14, bones=[head], slot=FIXED, rgb=0x18141e, stiff=3.0)
-    for a, c in ((0.0, 0xe8e0d0), (2.1, skin), (-2.1, 0x8a8070)):
-        d = G(math.sin(a), 0, math.cos(a))
-        side = G(math.cos(a), 0, -math.sin(a))
-        fc = Hd + d * 0.08
-        bt.blob(fc, 0.085, 0.12, 0.07, rot=(0, a, 0), bones=[head], slot=FIXED, rgb=c, stiff=3.0)
-        bt.blob(fc + d * 0.065 + G(0, -0.01, 0), 0.016, 0.03, 0.02, rot=(0, a, 0), bones=[head], slot=FIXED, rgb=c, stiff=3.0)
-        for sd in (-1, 1):
-            e = fc + d * 0.065 + side * sd * 0.037 + G(0, 0.03, 0)
-            bt.hard.append(('fur', _ball(e, 0.02, (1, 1, 0.7)), Part([head], slot=FIXED, rgb=0x050308)))
-            bt.eye(e + d * 0.008, 0.009, [head], rgb=0xb070ff)
-        bt.hard.append(('fur', _ball(fc + d * 0.068 + G(0, -0.055, 0), 0.022, (1, 0.35, 0.5)), Part([head], slot=FIXED, rgb=0x3a1420)))
-    # The crown: a gold band with spikes, every third set with a burning gem.
-    hy = Hd.z
-    bt.tube([gv(Hd, 0, 0.1, 0), gv(Hd, 0, 0.135, 0)], 0.142, [head], surface='shell', rgb=gold, n=18)
-    for i in range(9):
-        a = (i / 9) * math.tau
-        b = gv(Hd, math.sin(a) * 0.135, 0.12, math.cos(a) * 0.135)
-        tall = 0.2 if i % 3 == 0 else 0.12
-        bt.cone(b, b + G(math.sin(a) * 0.04, tall, math.cos(a) * 0.04), 0.026, [head], surface='shell', rgb=gold)
-        if i % 3 == 0:
-            bt.eye(b + G(math.sin(a) * 0.012, 0.035, math.cos(a) * 0.012), 0.02, [head], rgb=0xb070ff)
-    # A veil of dark hair down the back, on its own strands.
-    for st in hair:
-        pts = [B[k] for k in st]
-        tip = pts[-1] + (pts[-1] - pts[-2]) * 1.15
-        bt.tube(curve([pts[0], pts[1], tip], 3), lambda t: 0.07 * (1 - 0.7 * t), st, surface='fur', rgb=0x16121a, n=7, squash=0.35)
-    # Long sleeves and pale hands.
-    for arm in n['arms']:
-        sleeve_arm(bt, arm, 0.06, 0.13, skin, robe=gown)
-    # The staff in the right hand: a dark shaft, a gold crescent cradling a violet orb.
-    right, left = n['arms'][0], n['arms'][1]
-    W = B[right['low']]
-    rl = right['low']
-    bt.tube([W + G(0, -1.1, 0.04), W + G(0, 0.2, 0), W + G(0, 1.05, -0.02)], lambda t: 0.032, [rl], surface='fur', rgb=0x221830, n=8)
-    top = W + G(0, 1.12, -0.02)
-    bt.tube(curve([top + G(-0.17, 0.12, 0), top + G(-0.1, -0.08, 0), top + G(0, -0.14, 0), top + G(0.1, -0.08, 0), top + G(0.17, 0.12, 0)], 3), lambda t: 0.01 + 0.025 * math.sin(math.pi * t), [rl], surface='shell', rgb=gold, n=7)
-    bt.eye(top + G(0, 0.06, 0), 0.075, [rl], rgb=0xb080ff)
-    # The torch in the left: a wrapped haft and a tongue of violet flame.
-    Wl = B[left['low']]
-    ll = left['low']
-    bt.tube([Wl + G(0, -0.14, 0.04), Wl + G(0, 0.28, 0.06)], lambda t: 0.022 + 0.01 * t, [ll], surface='fur', rgb=0x2a1c12, n=7)
-    bt.tube(curve([Wl + G(0, 0.28, 0.06), Wl + G(0.02, 0.4, 0.06), Wl + G(-0.01, 0.56, 0.05)], 3), lambda t: 0.06 * (1 - t) ** 0.8 + 0.002, [ll], surface='glow', slot=GLOW, rgb=0x9060ff, n=8)
-    return bt.build(0.008, 9000, ('CLOUDS', 0.04, 0.004), surface='fur'), ['fur', 'glow', 'shell']
-
-
-@builder('reaper', 0x15131a)
-def reaper(bt):
-    """The Reaper: a towering hooded void with cold eyes, a ragged mantle, bony hands, a great scythe and a soul lantern."""
-    n, B = bt.n, bt.B
-    body, chest, head = n['body'], n['chest'], n['head']
-    Bo, C, Hd = B[body], B[chest], B[head]
-    robe = dict(fade=(0.3, 2.9, 0.4), mottle=0.2, stiff=3.5)
-    bone, soul, iron = 0xd8d0b8, 0x70ffb0, 0x3a3a40
-    strands = n['strands']
-    skirt, mantle = strands[:12], strands[12:]
-    # Broad shoulders, a long robe flaring to the hem.
-    bt.blob(gv(C, 0, 0.24, -0.02), 0.4, 0.12, 0.24, bones=[chest], **robe)
-    bt.capsule(gv(C, 0, 0.24, 0), gv(C, 0, -0.1, 0), 0.24, 0.24, bones=[chest], **robe)
-    bt.capsule(gv(C, 0, -0.1, 0), gv(Bo, 0, 0.0, 0), 0.24, 0.32, bones=[chest, body], **robe)
-    bt.capsule(gv(Bo, 0, 0.0, 0), gv(Bo, 0, -0.38, 0), 0.32, 0.44, bones=[body], **robe)
-    for st in skirt:
-        R = B[st[0]]
-        bt.capsule(Vector((R.x * 0.75, R.y * 0.75, Bo.z - 0.25)), R + Vector((0, 0, 0.02)), 0.08, 0.08, bones=[body, st[0]], **robe)
-    tatters(bt, skirt, 0.16, 'ghost', (0.0, 1.6, 0.35))
-    tatters(bt, mantle, 0.13, 'ghost', (1.4, 3.0, 0.4))
-    # The hood: deep and peaked, a void within, two cold eyes, a glimpse of jaw.
-    bt.blob(gv(Hd, 0, 0.06, -0.04), 0.24, 0.25, 0.26, bones=[head], **robe)
-    bt.capsule(gv(Hd, 0, 0.14, -0.14), gv(Hd, 0, 0.14, -0.5), 0.12, 0.03, bones=[head], **robe)
-    bt.blob(gv(Hd, 0, 0.0, 0.18), 0.15, 0.17, 0.16, bones=[head], neg=True)
-    bt.hard.append(('fur', _ball(gv(Hd, 0, 0.0, -0.02), 0.19, (1, 1.05, 0.85)), Part([head], slot=FIXED, rgb=0x020203)))
-    for sd in (-1, 1):
-        bt.eye(gv(Hd, sd * 0.065, 0.03, 0.12), 0.03, [head], rgb=0x90ffc0, squash=0.6)
-    bt.tube([gv(Hd, 0, -0.12, 0.06), gv(Hd, 0, -0.15, 0.12)], lambda t: 0.06 - 0.015 * t, [head], surface='fur', rgb=0x7a7464, n=8, squash=0.4, wide=Vector((1, 0, 0)))
-    # Sleeves and skeletal hands.
-    for arm in n['arms']:
-        sleeve_arm(bt, arm, 0.07, 0.16, bone, robe=robe)
-    # The scythe: a long black haft bound with iron, a great curved blade with a ghostly edge.
-    rl = n['arms'][0]['low']
-    W = B[rl]
-    bt.tube([W + G(0.02, -1.5, -0.14), W, W + G(-0.03, 2.1, 0.12)], lambda t: 0.036, [rl], surface='fur', rgb=0x241a14, n=8)
-    for y in (-1.2, -0.4, 0.6, 1.5):
-        bt.tube([W + G(0, y, y * 0.06), W + G(0, y + 0.08, y * 0.06)], 0.046, [rl], surface='shell', rgb=0x4a3a2a, n=8)
-    T0 = W + G(-0.03, 2.12, 0.12)
-    bt.tube([T0 + G(0, -0.12, 0), T0 + G(0, 0.08, 0)], 0.055, [rl], surface='shell', rgb=0x5a5a62, n=10)
-    bt.cone(T0 + G(0, 0.02, -0.02), T0 + G(0, 0.18, -0.36), 0.04, [rl], surface='shell', rgb=0x5a5a62)
-    spine = curve([T0 + G(0, 0.04, 0.02), T0 + G(0, 0.3, 0.7), T0 + G(0, 0.1, 1.4), T0 + G(0, -0.34, 1.85)], 4)
-    wid = lambda t: 0.19 * (1 - t) ** 0.7 + 0.004
-    # The blade is flat in the swing's plane: its width hangs below the spine.
-    edge = [p + G(0, -wid(i / (len(spine) - 1)) * 0.95, 0) for i, p in enumerate(spine)]
-    bm_pts = [a.lerp(b, 0.5) for a, b in zip(spine, edge)]
-    bt.tube(bm_pts, lambda t: wid(t) * 0.5, [rl], surface='shell', rgb=0xa8b0b8, n=8, squash=0.08, wide=Vector((0, 0, 1)))
-    bt.tube(edge, lambda t: 0.012 * (1 - t) + 0.002, [rl], surface='glow', slot=GLOW, rgb=soul, n=4)
-    # A soul lantern swinging at the left hip.
-    lp = G(0.4, 1.5, 0.14)
-    bt.tube([G(0.34, 1.95, 0.08), lp + G(0, 0.16, 0)], 0.008, [body], surface='shell', rgb=iron, n=4)
-    for dy in (0.13, -0.13):
-        bt.tube([lp + G(0, dy - 0.01, 0), lp + G(0, dy + 0.01, 0)], 0.062, [body], surface='shell', rgb=iron, n=10)
-    bt.cone(lp + G(0, 0.13, 0), lp + G(0, 0.22, 0), 0.06, [body], surface='shell', rgb=iron)
-    for i in range(4):
-        a = (i / 4) * math.tau + 0.4
-        bt.tube([lp + G(math.sin(a) * 0.055, 0.13, math.cos(a) * 0.055), lp + G(math.sin(a) * 0.055, -0.13, math.cos(a) * 0.055)], 0.008, [body], surface='shell', rgb=iron, n=4)
-    bt.eye(lp, 0.05, [body], rgb=soul, squash=1.0)
-    return bt.build(0.011, 9000, ('CLOUDS', 0.06, 0.006), surface='ghost'), ['ghost', 'fur', 'glow', 'shell']
 
 
 def cap(c, r, theta, axis, thick=0.0, segs=24, rings=8):
@@ -1120,108 +741,6 @@ def imp(bt):
 # ------------------------------------------------------------------ sea foes --
 
 
-@builder('serpent', 0x24525e)
-def serpent(bt):
-    """The Leviathan: a sea serpent rearing from the waves, sail-finned, horned, glowing along its flanks; two coils and a tail behind."""
-    n, B = bt.n, bt.B
-    neck, head, jaw, tail, coils = n['neck'], n['head'], n['jaw'], n['tail'], n['coils']
-    hide = dict(back=0.75, mottle=0.2)
-    spine_rgb, ivory, bone_rgb, glow = 0x0e2a2c, 0xeae4d0, 0xd0c8a8, 0x50fff0
-    nb = neck + [head]
-    N = [B[k] for k in neck] + [B[head]]
-    tipN = G(0, 9.9, 4.6)
-    path = curve(N + [tipN], 3)
-    m = len(path)
-
-    def rad(i):
-        u = i / (m - 1)
-        sst = lambda a, b, x: max(0.0, min(1.0, (x - a) / (b - a))) ** 2 * (3 - 2 * max(0.0, min(1.0, (x - a) / (b - a))))
-        return 1.65 - 0.95 * sst(0, 1, u) - 0.25 * sst(0.85, 1, u)
-
-    def bone_at(p):
-        return sorted(nb, key=lambda b: (B[b] - p).length)[:2]
-
-    throat = G(0, -0.45, 1).normalized()
-    for i in range(m - 1):
-        bt.capsule(path[i], path[i + 1], rad(i), rad(i + 1), bones=bone_at(path[i].lerp(path[i + 1], 0.5)), belly=-0.2, under=LIGHT, **hide)
-    # Belly scutes up the throat, glowing spots down the flanks, sail spines down the back.
-    for i in range(1, m - 2):
-        c = path[i]
-        T = (path[i + 1] - path[i - 1]).normalized()
-        D = (throat - T * T.dot(throat)).normalized()
-        r = rad(i)
-        bt.blob(c + D * r * 0.82, r * 0.25, r * 0.7, r * 0.18, rot=look(T), bones=bone_at(c), slot=LIGHT, stiff=3.0)
-        if i % 2 == 0:
-            for sd in (-1, 1):
-                side = (G(sd, 0, 0) - T * T.x * sd).normalized()
-                bt.eye(c + side * r * 0.98 - D * r * 0.15, 0.13, bone_at(c), rgb=glow)
-        if i >= 2:
-            b = c - D * r * 0.9
-            tip = b - D * (0.5 + 0.9 * math.sin(i / m * math.pi)) - T * 0.5
-            bt.cone(b + D * 0.1, tip, 0.12, bone_at(c), rgb=spine_rgb)
-    # The head: an armoured skull, a long snout, heavy brows over glowing eyes, horns swept back, a fan at each cheek.
-    hd = [head]
-    bt.blob(G(0, 9.75, 4.25), 0.95, 0.78, 1.25, bones=hd, **hide)
-    bt.capsule(G(0, 9.78, 4.9), G(0, 9.4, 6.9), 0.72, 0.24, bones=hd, belly=-0.4, under=LIGHT, **hide)
-    for sd in (-1, 1):
-        bt.blob(G(sd * 0.56, 10.25, 4.65), 0.44, 0.18, 0.62, rot=(0.15, 0, -sd * 0.32), bones=hd, slot=DARK)
-        bt.hard.append(('fur', _ball(G(sd * 0.66, 10.0, 5.0), 0.26, (1, 1.05, 0.8)), Part(hd, slot=FIXED, rgb=0x061012)))
-        bt.eye(G(sd * 0.74, 10.02, 5.1), 0.15, hd, rgb=glow, squash=1.0)
-        bt.eye(G(sd * 0.18, 9.6, 6.98), 0.06, hd, rgb=0x40d0e0)
-        horn = curve([G(sd * 0.45, 10.35, 4.1), G(sd * 0.85, 11.1, 3.5), G(sd * 1.1, 11.3, 2.5), G(sd * 1.05, 11.2, 1.6)], 3)
-        bt.tube(horn, lambda t: 0.26 * (1 - t) ** 0.9 + 0.01, hd, surface='fur', rgb=bone_rgb, n=10)
-        for i in range(4):
-            bt.cone(G(sd * (0.5 - i * 0.06), 10.2 - i * 0.12, 3.7 - i * 0.32), G(sd * (0.78 - i * 0.06), 10.7 - i * 0.12, 3.3 - i * 0.34), 0.08, hd, rgb=spine_rgb)
-        base = G(sd * 0.82, 9.6, 3.75)
-        for t in (G(sd * 2.1, 10.7, 2.9), G(sd * 2.6, 9.8, 2.6), G(sd * 2.3, 8.8, 2.9), G(sd * 1.5, 8.3, 3.4)):
-            bt.tube([base, base.lerp(t, 0.5), t], lambda u: 0.05 * (1 - u) + 0.006, hd, surface='fur', rgb=spine_rgb, n=6)
-        for i in range(8):
-            z, x = 5.0 + i * 0.27, sd * (0.6 - i * 0.045)
-            bt.cone(G(x, 9.36, z), G(x, 8.98, z + 0.06), 0.055, hd, rgb=ivory)
-        bt.tube(curve([G(sd * 0.5, 9.28, 6.5), G(sd * 0.95, 8.55, 6.7), G(sd * 1.15, 7.65, 6.4), G(sd * 1.05, 6.9, 6.0)], 3), lambda t: 0.08 * (1 - t) + 0.006, hd, surface='fur', slot=DARK, n=6)
-        for g in range(3):
-            pts = [G(sd * 0.98, 8.0 - g * 0.32, 2.25 - g * 0.18), G(sd * 1.04, 7.82 - g * 0.32, 1.95 - g * 0.18), G(sd * 0.98, 7.6 - g * 0.32, 1.7 - g * 0.18)]
-            q = [bt.surface(p + G(sd * 1.5, 0, 0), G(-sd, 0, 0)) + G(sd * 0.02, 0, 0) for p in pts]
-            bt.tube(q, lambda t: 0.035 + 0.015 * math.sin(math.pi * t), [neck[4]], surface='glow', slot=GLOW, rgb=0x40e8ff, n=4)
-    bt.blob(G(0, 9.18, 5.45), 0.5, 0.12, 1.25, bones=hd, slot=FIXED, rgb=0x0a2a30)
-    # The jaw.
-    J = [jaw]
-    bt.capsule(G(0, 9.05, 4.4), G(0, 8.98, 6.9), 0.6, 0.18, bones=J, slot=LIGHT, mottle=0.2)
-    for sd in (-1, 1):
-        for i in range(6):
-            z, x = 5.15 + i * 0.28, sd * (0.5 - i * 0.05)
-            bt.cone(G(x, 9.0, z), G(x, 9.32, z + 0.05), 0.05, J, rgb=ivory)
-    for sd in (-1, 0, 1):
-        bt.cone(G(sd * 0.25, 8.75, 5.2 + abs(sd) * 0.3), G(sd * 0.32, 8.3, 5.0 + abs(sd) * 0.3), 0.07, J, rgb=spine_rgb)
-    # Two coils arching out of the sea, finned along their crests.
-    for root, (z0, top, r0) in zip(coils, ((-10.5, 3.7, 1.45), (-19.5, 3.1, 1.25))):
-        pts = [G(0, -2.8 + (top + 2.8) * math.sin(i / 10 * math.pi), z0 + 4.4 * math.cos(i / 10 * math.pi)) for i in range(11)]
-        mid = G(0, -2.8, z0)
-        inner = lambda v, nn, mid=mid: nn.dot((mid - v).normalized()) > 0.35
-        for i in range(10):
-            bt.capsule(pts[i], pts[i + 1], r0, r0, bones=[root], light=inner, **hide)
-        for i in range(2, 9):
-            a = i / 10 * math.pi
-            out = G(0, math.sin(a), math.cos(a))
-            b = pts[i] + out * r0 * 0.9
-            bt.cone(b - out * 0.1, b + out * (0.7 + 0.5 * math.sin(a)) + G(0, 0, -0.4), 0.11, [root], rgb=spine_rgb)
-            if i % 2 == 0:
-                for sd in (-1, 1):
-                    bt.eye(pts[i] + G(sd * r0 * 0.97, 0, 0), 0.12, [root], rgb=glow)
-    # The tail standing up out of the water, a finned paddle at the tip.
-    tp = [G(0, -3.4, -27), G(0, -0.8, -27.3), G(0, 1.8, -27.6), G(0, 4.2, -27.9), G(0, 6.2, -28.2), G(0, 7.7, -28.5)]
-    rr = [1.1, 0.92, 0.74, 0.54, 0.34, 0.12]
-    tb = sorted(tail, key=lambda b: B[b].z)
-    for i in range(5):
-        bt.capsule(tp[i], tp[i + 1], rr[i], rr[i + 1], bones=tb[max(0, i - 1):i + 2] if i < len(tb) else [tb[-1]], light=lambda v, nn: nn.y > 0.4, **hide)
-    base = G(0, 6.9, -28.35)
-    for t in (G(0, 10.4, -28.9), G(0, 10.0, -30.2), G(0, 8.6, -31.0), G(0, 6.8, -30.6), G(0, 5.6, -29.6)):
-        bt.tube([base, base.lerp(t, 0.5), t], lambda u: 0.08 * (1 - u) + 0.01, [tb[-1]], surface='fur', rgb=spine_rgb, n=6)
-    for i in range(1, 5):
-        bt.cone(tp[i] + G(0, 0, -0.85 + i * 0.12), tp[i] + G(0, 0.3, -1.6 + i * 0.1), 0.12, [tb[min(i, len(tb) - 1)]], rgb=spine_rgb)
-    return bt.build(0.06, 20000, ('VORONOI', 0.18, 0.03), surface='scale'), ['scale', 'glow', 'fur']
-
-
 def fin(bt, base, tips, bones, rgb=0x5cbcc6, surface='membrane', scallop=0.22, rod_r=0.008, rod_rgb=0x1e5058, edge=0.6):
     """
     A fin: a sheet fanned between rods from a base out to each tip, its edge
@@ -1254,222 +773,6 @@ def fin(bt, base, tips, bones, rgb=0x5cbcc6, surface='membrane', scallop=0.22, r
         bt.tube([base, base.lerp(t, 0.5), t], lambda u: rod_r * (1 - u) + 0.0015, bones, surface='shell', rgb=rod_rgb, n=4)
 
 
-@builder('siren', 0x2f8a96)
-def siren(bt):
-    """
-    Queen Nerissa: a sea queen of fine features and flowing hair under a
-    crown of coral, in a bodice of overlapping scales and shell pauldrons;
-    below a frilled, belted waist, a long scaled tail curls along the
-    ground to a great fluke. She bears a golden trident.
-    """
-    n, B = bt.n, bt.B
-    body, chest, head, tail = n['body'], n['chest'], n['head'], n['tail']
-    Bo, C, Hd = B[body], B[chest], B[head]
-    bt.ao_floor = 0.68
-    skin = dict(slot=FIXED, rgb=0xcdeee6, stiff=3.0, mottle=0.08)
-    hair_rgb, gold, pearl, coral, deep = 0x22606c, 0xe0bc64, 0xf2eee2, 0xf07a88, 0x1e5058
-    scale_a, scale_b = 0x4cbcc4, 0x3696a4
-    # --- the torso: a slender waist, a ribcage, shoulders, a long neck, collarbones.
-    bt.capsule(gv(Bo, 0, 0.12, 0.0), gv(C, 0, -0.1, 0.01), 0.13, 0.115, bones=[body, chest], group='torso', **skin)
-    bt.blob(gv(C, 0, 0.05, 0.0), 0.165, 0.17, 0.12, bones=[chest], group='torso', **skin)
-    bt.capsule(gv(C, -0.17, 0.2, -0.01), gv(C, 0.17, 0.2, -0.01), 0.05, 0.05, bones=[chest], group='torso', **skin)
-    bt.capsule(gv(C, 0, 0.22, 0.0), gv(Hd, 0, -0.06, 0.0), 0.05, 0.043, bones=[chest, head], group='torso', **skin)
-    for sd in (-1, 1):
-        bt.capsule(gv(C, sd * 0.02, 0.19, 0.08), gv(C, sd * 0.15, 0.21, 0.04), 0.014, 0.012, bones=[chest], group='torso', **skin)
-    # --- the face: cranium, a fine jaw and chin, cheekbones, a small nose, coral lips.
-    face = dict(slot=FIXED, rgb=0xcdeee6, stiff=3.0)
-    bt.blob(gv(Hd, 0, 0.06, -0.01), 0.1, 0.112, 0.108, bones=[head], group='head', **face)
-    bt.blob(gv(Hd, 0, 0.005, 0.035), 0.085, 0.1, 0.085, bones=[head], group='head', **face)
-    for sd in (-1, 1):
-        bt.capsule(gv(Hd, sd * 0.05, -0.0, 0.03), gv(Hd, sd * 0.01, -0.07, 0.085), 0.034, 0.024, bones=[head], group='head', **face)
-    bt.blob(gv(Hd, 0, -0.075, 0.09), 0.026, 0.022, 0.022, bones=[head], group='head', **face)
-    bt.capsule(gv(Hd, 0, 0.04, 0.108), gv(Hd, 0, 0.005, 0.122), 0.009, 0.012, bones=[head], group='head', **face)
-    bt.blob(gv(Hd, 0, -0.03, 0.113), 0.019, 0.007, 0.009, bones=[head], group='head', slot=FIXED, rgb=0x9a6a78, stiff=3.0)
-    bt.blob(gv(Hd, 0, -0.043, 0.11), 0.016, 0.008, 0.009, bones=[head], group='head', slot=FIXED, rgb=0x8e5e6c, stiff=3.0)
-    # Eyes: almond-shaped and glowing, lined dark beneath fine brows.
-    for sd in (-1, 1):
-        e = bt.surface(gv(Hd, sd * 0.04, 0.035, 0.8), G(0, 0, -1)) + G(0, 0, 0.004)
-        bt.hard.append(('fur', _ball(e, 1.0, (0.027, 0.013, 0.01)), Part([head], slot=FIXED, rgb=0x0a2a30)))
-        bt.hard.append(('glow', _ball(e + G(0, 0, 0.004), 1.0, (0.02, 0.0095, 0.008)), Part([head], slot=GLOW, rgb=0x60fff0)))
-        bt.tube([e + G(-sd * 0.02, 0.026, -0.004), e + G(sd * 0.004, 0.034, 0.0), e + G(sd * 0.026, 0.028, -0.008)], 0.0045, [head], surface='fur', rgb=hair_rgb, n=4)
-        # Fin ears, swept back.
-        bt.tube([gv(Hd, sd * 0.09, 0.03, 0.0), gv(Hd, sd * 0.1, 0.03, -0.01)], 0.02, [head], surface='fur', slot=FIXED, rgb=0xcdeee6, n=6)
-        fin(bt, gv(Hd, sd * 0.095, 0.03, 0.0), [gv(Hd, sd * 0.17, 0.17, -0.08), gv(Hd, sd * 0.22, 0.07, -0.12), gv(Hd, sd * 0.2, -0.02, -0.1), gv(Hd, sd * 0.14, -0.07, -0.05)], [head], rod_r=0.005)
-    # --- the hair: a cap over the crown, then locks flowing down each strand, waved.
-    bt.blob(gv(Hd, 0, 0.09, -0.02), 0.105, 0.105, 0.115, bones=[head], group='hair', slot=FIXED, rgb=hair_rgb, stiff=3.0, mottle=0.2)
-    bt.blob(gv(Hd, 0, 0.05, -0.07), 0.11, 0.11, 0.085, bones=[head], group='hair', slot=FIXED, rgb=hair_rgb, stiff=3.0, mottle=0.2)
-    for sd in (-1, 1):
-        # Locks framing the face, parted at the brow and falling past the cheeks to the collarbones.
-        run = [gv(Hd, sd * 0.03, 0.15, 0.09), gv(Hd, sd * 0.095, 0.1, 0.075), gv(Hd, sd * 0.12, 0.0, 0.05), gv(Hd, sd * 0.125, -0.12, 0.04), gv(C, sd * 0.12, 0.22, 0.07), gv(C, sd * 0.14, 0.12, 0.08)]
-        bt.tube(curve(run, 3), lambda t: 0.035 * (1 - 0.5 * t) + 0.006, [head, chest], surface='fur', n=6, squash=0.3, wide=G(0, 0, 1), part=Part([head], slot=FIXED, rgb=0x2c7480, mottle=0.25))
-    for si, st in enumerate(n['strands']):
-        pts = [B[k] for k in st]
-        tip = pts[-1] + (pts[-1] - pts[-2]) * 1.0
-        root = B[head] + (pts[0] - B[head]) * 1.0
-        for j, off in enumerate((-1, 0, 1)):
-            side = (pts[1] - B[head]).cross(Vector((0, 0, 1)))
-            side = side.normalized() if side.length > 1e-6 else Vector((1, 0, 0))
-            o = side * off * 0.04
-            wave = lambda k: side * 0.02 * math.sin(k * 2.2 + si + j)
-            run = [root + o * 0.6, pts[0] + o + wave(0), pts[1] + o * 1.3 + wave(1), pts[2] + o * 1.5 + wave(2), tip + o * 1.7 + wave(3)]
-            bt.tube(curve(run, 3), lambda t: 0.05 * (1 - 0.6 * math.sin(t * 2.4) ** 2) * (1 - 0.5 * t) + 0.006, [head] + st, surface='fur', n=6, squash=0.28, wide=side, part=Part([head] + st, slot=FIXED, rgb=hair_rgb if (si + j) % 3 else 0x2c7480, mottle=0.25))
-    # --- the crown: a golden circlet, branching coral, pearls and a burning gem.
-    bt.tube([gv(Hd, 0, 0.12, -0.01), gv(Hd, 0, 0.145, -0.01)], 0.112, [head], surface='shell', rgb=gold, n=20)
-    for i in range(9):
-        a = -1.5 + i * 0.375
-        out = G(math.sin(a), 0, math.cos(a))
-        b0 = gv(Hd, math.sin(a) * 0.11, 0.14, -0.01 + math.cos(a) * 0.1)
-        h = 0.22 if i == 4 else 0.12 + 0.035 * (i % 2) - 0.012 * abs(i - 4)
-        p1 = b0 + out * 0.03 + G(0, h * 0.55, 0)
-        p2 = b0 + out * 0.06 + G(0, h, 0)
-        bt.tube(curve([b0, p1, p2], 3), lambda t: 0.013 * (1 - t) + 0.004, [head], surface='fur', rgb=coral, n=6)
-        for sgn in (-1, 1):
-            q = b0.lerp(p1, 0.7 + 0.2 * sgn)
-            side = G(math.cos(a), 0, -math.sin(a)) * sgn
-            bt.tube([q, q + side * 0.03 + out * 0.02 + G(0, 0.035, 0), q + side * 0.04 + out * 0.035 + G(0, 0.06, 0)], lambda t: 0.007 * (1 - t) + 0.002, [head], surface='fur', rgb=0xf08a96, n=5)
-        if i == 4:
-            bt.eye(p2 + G(0, 0.02, 0), 0.024, [head], rgb=0xa0fff8)
-        else:
-            bt.hard.append(('shell', _ball(p2 + G(0, 0.008, 0), 0.014), Part([head], slot=FIXED, rgb=pearl)))
-    bt.eye(gv(Hd, 0, 0.13, 0.115), 0.017, [head], rgb=0x60fff0)
-    # --- the bodice: rows of overlapping scales over the breast and ribs, a gold rim, a pearl necklace.
-    for r in range(6):
-        y = 0.17 - r * 0.05
-        cnt = 9
-        for k in range(cnt):
-            a = -1.35 + 2.7 * (k + 0.5 * (r % 2)) / (cnt - 0.5)
-            d = G(math.sin(a), -0.15, math.cos(a)).normalized()
-            p = bt.surface(gv(C, 0, y, 0) + d * 0.6, -d)
-            bt.hard.append(('shell', cap(p - d * 0.006, 0.036, 1.0, d + G(0, -0.5, 0), segs=8, rings=2, thick=0.006), Part([chest], slot=FIXED, rgb=scale_a if (r + k) % 2 else scale_b)))
-    for k in range(13):
-        a = -1.4 + k * 2.8 / 12
-        d = G(math.sin(a), 0, math.cos(a))
-        p = bt.surface(gv(C, 0, 0.2 - 0.025 * math.cos(a * 1.1), 0) + d * 0.6, -d)
-        bt.hard.append(('shell', _ball(p + d * 0.004, 0.012), Part([chest], slot=FIXED, rgb=gold)))
-    for k in range(15):
-        a = -1.2 + k * 2.4 / 14
-        p = gv(C, math.sin(a) * 0.075, 0.25 - 0.06 * math.cos(a), 0.02 + math.cos(a) * 0.065)
-        bt.hard.append(('shell', _ball(p, 0.011), Part([chest], slot=FIXED, rgb=pearl)))
-    bt.eye(gv(C, 0, 0.165, 0.11), 0.026, [chest], rgb=0x60fff0, squash=0.7)
-    # --- the arms: slender, gold-banded, finned at the elbow; shell pauldrons layered on the shoulders.
-    for arm in n['arms']:
-        up, mid, low = arm['up'], arm['mid'], arm['low']
-        S, E, W = B[up], B[mid], B[low]
-        sd = 1 if W.x > 0 else -1
-        g = 'arm' + str(sd)
-        bt.capsule(gv(S, -sd * 0.02, 0.01, 0), E, 0.05, 0.036, bones=[up, mid], group=g, **skin)
-        bt.capsule(E, W, 0.036, 0.026, bones=[mid, low], group=g, **skin)
-        bt.blob(gv(W, 0, -0.055, 0.025), 0.034, 0.05, 0.02, bones=[low], group=g, **skin)
-        for f in range(4):
-            k0 = gv(W, (f - 1.5) * 0.017, -0.09, 0.035)
-            bt.capsule(k0, k0 + G((f - 1.5) * 0.006, -0.075, 0.025), 0.009, 0.006, bones=[low], group=g, **skin)
-        bt.capsule(gv(W, -sd * 0.025, -0.05, 0.04), gv(W, -sd * 0.045, -0.1, 0.07), 0.01, 0.007, bones=[low], group=g, **skin)
-        for t, r in ((0.12, 0.034), (0.2, 0.034)):
-            bt.tube([W.lerp(E, t), W.lerp(E, t + 0.05)], r, [low], surface='shell', rgb=gold, n=12)
-        bt.tube([S.lerp(E, 0.55), S.lerp(E, 0.62)], 0.045, [up], surface='shell', rgb=gold, n=12)
-        for k, (r, dy) in enumerate(((0.1, 0.03), (0.085, 0.0), (0.07, -0.03))):
-            bt.hard.append(('shell', cap(gv(S, sd * (0.025 + k * 0.012), dy, 0), r, 1.25, G(sd * 0.7, 1, 0), segs=14, rings=4, thick=0.01), Part([up], slot=FIXED, rgb=scale_a if k % 2 else scale_b)))
-        for k in range(3):
-            q = gv(S, sd * (0.05 + k * 0.025), 0.1 - k * 0.025, -0.03 + k * 0.03)
-            bt.cone(q, q + G(sd * 0.05, 0.08, -0.02), 0.012, [up], surface='shell', rgb=gold)
-        base = E + G(sd * 0.02, 0.0, -0.03)
-        fin(bt, base, [E + G(sd * 0.16, 0.06, -0.13), E + G(sd * 0.14, -0.14, -0.13), W + G(sd * 0.07, 0.06, -0.09)], [mid], rod_r=0.006)
-    # --- the waist: a frill of fins where skin gives way to scales, a gold belt strung with pearls.
-    for k in range(14):
-        a = k / 14 * math.tau
-        d = G(math.sin(a), 0, math.cos(a))
-        side = G(math.cos(a), 0, -math.sin(a))
-        b0 = gv(Bo, 0, 0.12, 0) + d * 0.125
-        fin(bt, b0, [b0 + side * 0.07 + d * 0.03, b0 + side * 0.05 + d * 0.13 + G(0, -0.17, 0), b0 - side * 0.02 + d * 0.16 + G(0, -0.26, 0), b0 - side * 0.07 + d * 0.06 + G(0, -0.05, 0)], [body], rgb=0x68cad2 if k % 2 else 0x48aab6, rod_r=0.004, scallop=0.3)
-    bt.tube([gv(Bo, 0, 0.1, 0), gv(Bo, 0, 0.145, 0)], 0.145, [body], surface='shell', rgb=gold, n=20, squash=0.85, wide=Vector((1, 0, 0)))
-    for k in range(12):
-        a = k / 12 * math.tau
-        bt.hard.append(('shell', _ball(gv(Bo, math.sin(a) * 0.15, 0.123, math.cos(a) * 0.128), 0.014), Part([body], slot=FIXED, rgb=pearl)))
-    # --- the tail: hips swelling into a long scaled tail that curls along the ground, dark-backed, pale-bellied.
-    pts = [gv(Bo, 0, 0.08, 0)] + [B[t] for t in tail]
-    end = pts[-1] + (pts[-1] - pts[-2]) * 0.9
-    run = pts + [end]
-    rr = [0.14, 0.195, 0.185, 0.165, 0.14, 0.112, 0.085, 0.06, 0.04, 0.026]
-    tb = [[body]] + [[tail[max(0, i - 1)], tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))]
-    def dorsal(d):
-        """The tail's back at a segment: up where it lies along the ground, behind where it hangs from the hips."""
-        up = Vector((0, 0, 1)) - d * d.z
-        if up.length < 0.5:
-            back = G(0, 0, -1)
-            up = up.normalized() * up.length + (back - d * d.dot(back)) * (0.5 - up.length) * 2
-        return up.normalized()
-
-    # Scales painted as a net: each vertex finds where it lies along the tail and round it, and the
-    # seams of a diamond lattice (staggered, finer toward the tip) are drawn in the dark colour.
-    seglen = [(run[i + 1] - run[i]).length for i in range(len(run) - 1)]
-    starts = [sum(seglen[:i]) for i in range(len(seglen))]
-
-    def scales(v, nn):
-        best = None
-        for i in range(len(run) - 1):
-            ab = run[i + 1] - run[i]
-            t = max(0.0, min(1.0, (v - run[i]).dot(ab) / (ab.length_squared or 1e-9)))
-            q = run[i] + ab * t
-            dd = (v - q).length - lerp(rr[i], rr[i + 1], t)
-            if best is None or dd < best[0]:
-                best = (dd, i, t, q, ab.normalized())
-        _, i, t, q, d = best
-        if i == 0 and t < 0.6:
-            return 1.0
-        sarc = starts[i] + seglen[i] * t
-        up = dorsal(d)
-        side = d.cross(up)
-        rad = (v - q).normalized()
-        ang = math.atan2(rad.dot(side), rad.dot(up))
-        r = lerp(rr[i], rr[i + 1], t)
-        k = 1 / max(0.05, r * 0.7)
-        u1 = sarc * k + ang * 1.6
-        u2 = sarc * k - ang * 1.6
-        f1, f2 = u1 - math.floor(u1), u2 - math.floor(u2)
-        # Each scale bright where it rises and shadowed toward the edge it laps over the next.
-        lap = max(f1, f2)
-        tone = 0.42 + 0.58 * (1 - lap) ** 1.3
-        # The back darker, the belly paler.
-        return tone * (0.82 + 0.3 * min(1.0, abs(ang) / math.pi))
-
-    for i in range(len(run) - 1):
-        bt.capsule(run[i], run[i + 1], rr[i], rr[i + 1], bones=tb[i], group='tail', slot=FIXED, rgb=0x40a8b4, mottle=0.1, tone=scales)
-    # A crest of fin down the back of the tail.
-    for i in range(2, 7):
-        a_, b_ = run[i], run[i + 1]
-        d = (b_ - a_).normalized()
-        up = dorsal(d)
-        base_ = a_.lerp(b_, 0.5) + up * rr[i] * 0.85
-        L = 0.12 + 0.05 * math.sin((i - 2) / 4 * math.pi)
-        fin(bt, base_ - d * 0.08, [base_ - d * 0.1 + up * 0.02, base_ - d * 0.04 + up * L, base_ + d * 0.06 + up * L * 0.9, base_ + d * 0.12 + up * 0.02], [tail[min(i, len(tail) - 1)]], rod_r=0.005, scallop=0.3)
-    # Hip fins.
-    for sd in (-1, 1):
-        h = G(sd * 0.17, 1.42, -0.06)
-        fin(bt, h, [G(sd * 0.36, 1.52, -0.12), G(sd * 0.52, 1.32, -0.28), G(sd * 0.48, 1.08, -0.34), G(sd * 0.3, 1.0, -0.24)], [body, tail[0]], rod_r=0.007)
-    # The fluke: two great lobes.
-    te, last = end, tail[-1]
-    for sd in (-1, 1):
-        fin(bt, te, [te + G(sd * 0.1, 0.62, -0.06), te + G(sd * 0.5, 0.58, -0.4), te + G(sd * 0.82, 0.16, -0.62), te + G(sd * 0.62, -0.16, -0.38), te + G(sd * 0.2, -0.08, -0.08)], [last, tail[-2]], rod_r=0.012, scallop=0.18)
-    # --- the trident: a long gilded shaft wound with gold, three barbed prongs, a burning gem where they meet.
-    rl = n['arms'][0]['low']
-    W = B[rl]
-    bt.tube([W + G(0, -1.0, 0.03), W + G(0, 0.3, 0), W + G(0, 1.35, -0.03)], 0.026, [rl], surface='shell', rgb=0xb8903a, n=8)
-    for k in range(14):
-        y = -0.9 + k * 0.17
-        bt.tube([W + G(0, y, 0.0), W + G(0, y + 0.03, 0.0)], 0.031, [rl], surface='shell', rgb=gold, n=8)
-    bt.cone(W + G(0, -1.0, 0.03), W + G(0, -1.14, 0.035), 0.03, [rl], surface='shell', rgb=gold)
-    tp = W + G(0, 1.38, -0.03)
-    bt.tube(curve([tp + G(-0.19, 0.12, 0), tp + G(-0.1, -0.05, 0), tp + G(0, -0.08, 0), tp + G(0.1, -0.05, 0), tp + G(0.19, 0.12, 0)], 3), lambda u: 0.012 + 0.018 * math.sin(math.pi * u), [rl], surface='shell', rgb=gold, n=7)
-    for dx, h in ((0, 0.5), (-0.18, 0.38), (0.18, 0.38)):
-        base_ = tp + G(dx, 0.1 if dx else 0, 0)
-        tip_ = base_ + G(dx * 0.08, h, 0)
-        bt.tube([base_, base_.lerp(tip_, 0.6), tip_], lambda u: 0.022 * (1 - u) + 0.002, [rl], surface='shell', rgb=gold, n=6, flat=True)
-        bt.cone(tip_ + G(0, -0.11, 0), tip_ + G(0.05 if dx >= 0 else -0.05, -0.18, 0), 0.012, [rl], surface='shell', rgb=gold)
-        bt.eye(tip_ + G(0, -0.04, 0), 0.016, [rl], rgb=0x80fff0, squash=2.6)
-    bt.eye(tp + G(0, 0.0, 0.02), 0.035, [rl], rgb=0x60fff0)
-    return bt.build(0.005, 24000, ('CLOUDS', 0.03, 0.0015), surface='scale', details={'tail': ('VORONOI', 0.03, 0.0015)}), ['fur', 'shell', 'glow', 'scale', 'membrane']
-
-
 # -------------------------------------------------------------- stone giants --
 # Humanoid great foes: the game's humanoid skeleton, its surfaces numbered
 # ('0' matte, '1' metal, '2' glow), coloured in fixed colours of their own.
@@ -1480,134 +783,6 @@ def shard(bt, base, d, length, r, bones, rgb):
     d = d.normalized()
     tip = base + d * length
     bt.tube([base - d * r, base + d * length * 0.6, tip], lambda t: r if t < 0.55 else r * (1 - t) / 0.45 + 0.002, bones, surface='2', slot=GLOW, rgb=rgb, n=5, flat=True)
-
-
-def stone_limbs(bt, n, B, rock, k_arm, k_leg, fist, plate=None):
-    """A stone giant's arms and legs, each segment a separate hewn block: boulder shoulders, thick forearms, great fists, pillar legs, block feet."""
-    plate = plate or rock
-    st = dict(stiff=3.2)
-    for side in ('L', 'R'):
-        arm, fore, hand = n['arm' + side], n['fore' + side], n['hand' + side]
-        leg, shin, foot = n['leg' + side], n['shin' + side], n['foot' + side]
-        A, F, H = B[arm], B[fore], B[hand]
-        sd = 1 if A.x > 0 else -1
-        bt.blob(gv(A, sd * 0.04, 0.04, 0), 0.14 * k_arm, 0.12 * k_arm, 0.135 * k_arm, bones=[arm, n['chest']], group='sh' + side, **plate, **st)
-        bt.capsule(gv(A, sd * 0.01, -0.04, 0), F + G(0, 0.02, 0), 0.1 * k_arm, 0.09 * k_arm, bones=[arm, fore], group='arm' + side, **rock, **st)
-        bt.capsule(F + G(0, -0.02, 0), gv(H, 0, 0.04, 0), 0.105 * k_arm, 0.11 * k_arm, bones=[fore, hand], group='fore' + side, **rock, **st)
-        bt.blob(gv(F, sd * 0.03, -0.1, 0.0), 0.12 * k_arm, 0.12 * k_arm, 0.12 * k_arm, bones=[fore], group='bracer' + side, **plate, **st)
-        bt.blob(gv(H, 0, -0.05, 0.02), 0.11 * fist, 0.11 * fist, 0.12 * fist, bones=[hand], group='fist' + side, **rock, **st)
-        for k in range(4):
-            bt.blob(gv(H, (k - 1.5) * 0.048 * fist, -0.11 * fist, 0.075 * fist), 0.03 * fist, 0.04 * fist, 0.04 * fist, bones=[hand], group='fist' + side, **rock, **st)
-        L, S, Ft = B[leg], B[shin], B[foot]
-        bt.blob(gv(L, sd * 0.02, -0.04, 0), 0.15 * k_leg, 0.14 * k_leg, 0.15 * k_leg, bones=[n['hips'], leg], group='hip' + side, **plate, **st)
-        bt.capsule(gv(L, 0, -0.08, 0), S + G(0, 0.03, 0), 0.115 * k_leg, 0.1 * k_leg, bones=[leg, shin], group='thigh' + side, **rock, **st)
-        bt.blob(gv(S, 0, 0.0, 0.05), 0.085 * k_leg, 0.085 * k_leg, 0.07 * k_leg, bones=[leg, shin], group='knee' + side, **plate, **st)
-        bt.capsule(S + G(0, -0.02, 0), gv(Ft, 0, 0.05, 0), 0.1 * k_leg, 0.105 * k_leg, bones=[shin, foot], group='shin' + side, **rock, **st)
-        bt.blob(gv(Ft, 0, -0.02, 0.06), 0.11 * k_leg, 0.07 * k_leg, 0.17 * k_leg, bones=[foot], group='foot' + side, **plate, **st)
-
-
-@builder('h-6ad1895d', 0x9a8a6a)
-def colossus(bt):
-    """Zephyron, the storm colossus: a sandstone giant, cracked and weathered, shot through with storm-blue crystal."""
-    n, B = bt.n, bt.B
-    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
-    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
-    sand = dict(slot=FIXED, rgb=0x9a8a6a, mottle=0.35)
-    pale = dict(slot=FIXED, rgb=0xb4a482, mottle=0.3)
-    blue = 0x58b4ff
-    # The trunk: a great chest, a narrower waist, a belt of stone.
-    st = dict(stiff=3.2)
-    bt.blob(gv(C, 0, 0.04, 0.0), 0.3, 0.22, 0.2, bones=[chest], group='chest', **pale, **st)
-    bt.blob(gv(C, 0, 0.12, -0.06), 0.27, 0.14, 0.18, bones=[chest], group='chest', **sand, **st)
-    bt.capsule(gv(C, 0, -0.1, 0), gv(Sp, 0, -0.02, 0), 0.2, 0.17, bones=[chest, spine], group='waist', **sand, **st)
-    bt.capsule(gv(Sp, 0, 0, 0), gv(Hp, 0, -0.04, 0), 0.17, 0.19, bones=[spine, hips], group='waist', **sand, **st)
-    for x, y, z, r in ((0.15, 0.1, 0.17, 0.11), (-0.15, 0.1, 0.17, 0.11), (0.0, -0.05, 0.18, 0.1)):
-        bt.blob(gv(C, x, y, z), r * 1.1, r * 0.95, r * 0.5, bones=[chest], group=f'plate{x}{y}', **pale, **st)
-    bt.tube([gv(Hp, 0, 0.06, 0), gv(Hp, 0, 0.14, 0)], 0.24, [hips, spine], surface='0', rgb=0x6a5a40, n=12, squash=0.8, wide=Vector((1, 0, 0)))
-    # A loincloth hanging front and back.
-    for fz in (-1, 1):
-        a = gv(Hp, 0, 0.06, fz * 0.17)
-        bt.tube([a, a + G(0, -0.2, fz * 0.04), a + G(0, -0.4, fz * 0.06)], lambda t: 0.13 * (1 - 0.3 * t), [hips], surface='0', rgb=0x6a5a40, n=6, squash=0.15, wide=Vector((1, 0, 0)))
-    # The head: a stone helm with no face, a glowing visor slit, a crown of crystal.
-    bt.capsule(gv(C, 0, 0.18, -0.02), gv(Hd, 0, 0.02, 0), 0.1, 0.085, bones=[chest, head], group='neck', **sand, **st)
-    bt.blob(gv(Hd, 0, 0.13, 0.0), 0.12, 0.14, 0.13, bones=[head], group='head', **pale, **st)
-    bt.blob(gv(Hd, 0, 0.21, -0.01), 0.09, 0.05, 0.1, bones=[head], group='head', **sand, **st)
-    bt.tube([gv(Hd, -0.085, 0.15, 0.13), gv(Hd, 0.085, 0.15, 0.13)], 0.016, [head], surface='2', slot=GLOW, rgb=blue, n=6)
-    for x, y, z, rx, rz in ((0, 0.3, -0.02, 0, 0.0), (0.06, 0.27, -0.03, 0, -0.45), (-0.06, 0.27, -0.03, 0, 0.45), (0.03, 0.25, -0.09, -0.5, -0.2), (-0.03, 0.25, -0.09, -0.5, 0.2)):
-        shard(bt, gv(Hd, x, y - 0.03, z), G(-math.sin(rz), math.cos(rz) * math.cos(rx), math.sin(rx)), 0.15, 0.03, [head], blue)
-    # Arms and legs of stone.
-    stone_limbs(bt, n, B, sand, 1.35, 1.3, 1.4, plate=pale)
-    # Crystal growing out of shoulders, forearms, thighs and back.
-    for side in ('L', 'R'):
-        A, F, L = B[n['arm' + side]], B[n['fore' + side]], B[n['leg' + side]]
-        sd = 1 if A.x > 0 else -1
-        for dx, dy, dz, ln in ((0.12, 0.14, 0.02, 0.22), (0.18, 0.08, -0.06, 0.18), (0.05, 0.16, -0.08, 0.16)):
-            shard(bt, gv(A, sd * dx, dy, dz), G(sd * (0.4 + dx), 1, dz * 2), ln, 0.045, [n['arm' + side]], blue)
-        shard(bt, gv(F, sd * 0.14, -0.1, -0.04), G(sd, 0.4, -0.3), 0.14, 0.035, [n['fore' + side]], blue)
-        shard(bt, gv(L, sd * 0.17, -0.12, 0.0), G(sd, 0.2, 0.1), 0.12, 0.03, [n['leg' + side]], blue)
-    for x, y, rx, rz in ((0.1, 0.23, -0.7, -0.3), (-0.08, 0.26, -0.8, 0.35), (0.0, 0.13, -1.0, 0), (0.16, 0.06, -0.9, -0.6), (-0.15, 0.04, -0.9, 0.6)):
-        shard(bt, gv(C, x, y, -0.2), G(-math.sin(rz) * 0.6, 0.6, -1), 0.22, 0.05, [chest], blue)
-    # The storm core in the chest, cracks running out of it.
-    core = bt.surface(gv(C, 0, 0.04, 0.8), G(0, 0, -1))
-    bt.eye(core, 0.075, [chest], rgb=0x7ac8ff)
-    for i in range(6):
-        a = i / 6 * math.tau + 0.3
-        pts = [bt.surface(gv(C, math.sin(a) * r, 0.04 + math.cos(a) * r, 0.8), G(0, 0, -1)) + G(0, 0, 0.004) for r in (0.07, 0.13, 0.19)]
-        bt.tube(pts, lambda t: 0.012 * (1 - t) + 0.003, [chest], surface='2', slot=GLOW, rgb=blue, n=4)
-    # A tattered cape hanging from the shoulders.
-    cape = [k for k in range(len(B)) if bt.parent[k] == chest and abs(B[k].x) < 0.01 and B[k].y > 0.1]
-    if cape:
-        chain_ = [cape[0]]
-        while bt.child(chain_[-1]) is not None:
-            chain_.append(bt.child(chain_[-1]))
-        pts = [B[k] for k in chain_]
-        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.6
-        bt.tube(curve(pts + [tip], 3), lambda t: 0.36 * (1 + 0.15 * t) * (1 - 0.2 * t * t), chain_, surface='0', rgb=0x5a4a30, n=10, squash=0.08, wide=Vector((1, 0, 0)))
-    return bt.build(0.01, 4200, ('VORONOI', 0.07, 0.016), surface='0', facet=True), ['0', '1', '2']
-
-
-@builder('h-8277b566', 0x2a1c18)
-def golem(bt):
-    """Ignaroth, the magma golem: hunched black basalt in warm plates, molten seams, a furnace in its chest, fists like anvils."""
-    n, B = bt.n, bt.B
-    hips, spine, chest, head = n['hips'], n['spine'], n['chest'], n['head']
-    Hp, Sp, C, Hd = B[hips], B[spine], B[chest], B[head]
-    rock = dict(slot=FIXED, rgb=0x2e2420, mottle=0.3)
-    plate = dict(slot=FIXED, rgb=0x6a5040, mottle=0.35)
-    lava = 0xff6a20
-    st = dict(stiff=3.2)
-    bt.blob(gv(C, 0, 0.02, 0.02), 0.32, 0.23, 0.22, bones=[chest], group='chest', **rock, **st)
-    bt.blob(gv(C, 0, 0.14, -0.1), 0.28, 0.16, 0.18, bones=[chest], group='chest', **rock, **st)
-    bt.capsule(gv(C, 0, -0.1, 0), gv(Sp, 0, 0, 0), 0.21, 0.18, bones=[chest, spine], group='waist', **rock, **st)
-    bt.capsule(gv(Sp, 0, 0, 0), gv(Hp, 0, -0.04, 0), 0.18, 0.2, bones=[spine, hips], group='waist', **rock, **st)
-    # Plates of warm basalt over chest, back and shoulders, each its own slab.
-    for i, (x, y, z, r) in enumerate(((0.14, 0.12, 0.18, 0.12), (-0.14, 0.1, 0.18, 0.12), (0.0, -0.03, 0.2, 0.11), (0.12, 0.2, -0.18, 0.13), (-0.13, 0.17, -0.2, 0.13), (0.0, 0.05, -0.24, 0.12))):
-        bt.blob(gv(C, x, y, z), r * 1.15, r * 0.95, r * 0.5, bones=[chest], group=f'plate{i}', **plate, **st)
-    # The head: a lump of rock sunk between the shoulders, two burning eyes and a molten mouth.
-    bt.blob(gv(Hd, 0, 0.08, 0.06), 0.12, 0.11, 0.12, bones=[head], group='head', **plate, **st)
-    bt.blob(gv(Hd, 0, 0.14, 0.03), 0.11, 0.05, 0.09, bones=[head], group='brow', **rock, **st)
-    for sd in (-1, 1):
-        e = bt.surface(gv(Hd, sd * 0.05, 0.1, 0.8), G(0, 0, -1))
-        bt.eye(e + G(0, 0, 0.01), 0.024, [head], rgb=0xffa040, squash=0.6)
-    m = bt.surface(gv(Hd, 0, 0.03, 0.8), G(0, 0, -1))
-    bt.tube([m + G(-0.05, 0, 0.005), m + G(0, -0.008, 0.008), m + G(0.05, 0, 0.005)], 0.012, [head], surface='2', slot=GLOW, rgb=lava, n=4)
-    stone_limbs(bt, n, B, rock, 1.5, 1.4, 1.95, plate=plate)
-    # Molten seams over the limbs and the trunk; the furnace core.
-    for side in ('L', 'R'):
-        A, F, L, S = B[n['arm' + side]], B[n['fore' + side]], B[n['leg' + side]], B[n['shin' + side]]
-        sd = 1 if A.x > 0 else -1
-        for bone, P, dy0, dy1 in ((n['arm' + side], A, -0.05, -0.24), (n['fore' + side], F, -0.04, -0.22), (n['leg' + side], L, -0.1, -0.36), (n['shin' + side], S, -0.05, -0.3)):
-            pts = [bt.surface(gv(P, sd * 0.6, dy, 0.06 + 0.03 * math.sin(dy * 30)), G(-sd, 0, 0)) + G(sd * 0.008, 0, 0) for dy in (dy0, (dy0 + dy1) / 2, dy1)]
-            bt.tube(pts, lambda t: 0.014 * math.sin(math.pi * min(1, 0.15 + t)) + 0.004, [bone], surface='2', slot=GLOW, rgb=lava, n=4)
-    for x, y, rz in ((0.08, 0.13, 0.6), (0.14, 0.0, -0.4), (0.05, -0.12, 0.3), (-0.1, 0.1, -0.7), (-0.13, -0.07, 0.5)):
-        for fz in (1, -1):
-            a = gv(C, x, y, 0.8 * fz)
-            p0 = bt.surface(a, G(0, 0, -fz))
-            p1 = bt.surface(a + G(math.sin(rz) * 0.1, math.cos(rz) * 0.1, 0), G(0, 0, -fz))
-            bt.tube([p0 + G(0, 0, 0.006 * fz), p1 + G(0, 0, 0.006 * fz)], lambda t: 0.012, [chest], surface='2', slot=GLOW, rgb=lava, n=4)
-    core = bt.surface(gv(C, 0, 0.02, 0.8), G(0, 0, -1))
-    bt.eye(core, 0.08, [chest], rgb=0xffb050)
-    return bt.build(0.01, 4200, ('VORONOI', 0.06, 0.018), surface='0', facet=True), ['0', '1', '2']
 
 
 # ------------------------------------------------------- humanoid monsters --
@@ -1851,6 +1026,1625 @@ def drowned(bt):
         p = bt.surface(gv(C, math.sin(a) * 0.5, 0.12 - (k % 4) * 0.08, math.cos(a) * 0.5), G(-math.sin(a), 0, -math.cos(a)))
         bt.hard.append(('0', _ball(p, 0.016, (1, 1, 0.6)), Part([chest], slot=FIXED, rgb=0xa8b0a2)))
     return bt.build(0.007, 5000, ('CLOUDS', 0.03, 0.004), surface='0'), ['0', '1', '2']
+
+# ------------------------------------------------------------- great foes --
+# Forged, not sculpted: crisp flat-shaded plate, blade and horn (forge.py).
+
+
+class Body:
+    """A humanoid's joints by name (Blender positions), left and right."""
+
+    def __init__(self, bt):
+        n, B = bt.n, bt.B
+        self.bt, self.n, self.B = bt, n, B
+        self.hips, self.spine, self.chest, self.head = n['hips'], n['spine'], n['chest'], n['head']
+        self.Hp, self.Sp, self.C, self.Hd = B[self.hips], B[self.spine], B[self.chest], B[self.head]
+        self.sides = []
+        for side in ('L', 'R'):
+            j = {k: n[k + side] for k in ('arm', 'fore', 'hand', 'leg', 'shin', 'foot')}
+            self.sides.append((1 if B[j['arm']].x > 0 else -1, j))
+
+    def P(self, j):
+        return self.B[j]
+
+
+@builder('h-662e96e4', 0x1a1426)
+def erebus(bt):
+    """Erebus, god of darkness: black plate with violet light in its seams, a horned helm over a void, wings of night."""
+    p = Body(bt)
+    C, Hp, Sp, Hd = p.C, p.Hp, p.Sp, p.Hd
+    ch, hip, sp, hd = p.chest, p.hips, p.spine, p.head
+    PL, PD, EDGE, TRIM, CLOTH, VOID = 0x2c2735, 0x16131c, 0x4a4060, 0xa070ff, 0x1d1527, 0x030205
+    # ---- torso: a keeled breastplate, ribbed belly lames, the void in the chest
+    keel = lambda a, i: 1 + 0.07 * max(0.0, math.cos(a)) ** 6 if 1 <= i <= 3 else 1
+    F.hull(bt, [(gv(C, 0, -0.17, 0.0), 0.16, 0.115), (gv(C, 0, -0.08, 0.012), 0.19, 0.13), (gv(C, 0, 0.03, 0.02), 0.215, 0.145), (gv(C, 0, 0.13, 0.012), 0.225, 0.142), (gv(C, 0, 0.21, -0.008), 0.18, 0.12), (gv(C, 0, 0.255, -0.012), 0.1, 0.085)], [ch], PL, sides=14, wave=keel)
+    for k in range(3):
+        y = 0.06 - k * 0.07
+        F.hull(bt, [(gv(Sp, 0, y + 0.035, 0.008), 0.152 + 0.006 * k, 0.11), (gv(Sp, 0, y - 0.03, 0.01), 0.16 + 0.006 * k, 0.116)], [sp, hip] if k == 2 else [sp], PD if k % 2 else PL, sides=14)
+    core = gv(C, 0, 0.04, 0.165)
+    F.gem(bt, core, 0.055, [ch], VOID, surf='0', glow=False, stretch=1.2)
+    F.ring(bt, core, 0.075, [ch], TRIM, width=0.016, thick=0.014, axis=(0, 0, 1), glow=True, surf='2')
+    for k in range(6):
+        a = k / 6 * math.tau + 0.3
+        F.blade(bt, core + G(math.sin(a) * 0.08, math.cos(a) * 0.08, -0.01), core + G(math.sin(a) * 0.19, math.cos(a) * 0.17, -0.035), 0.012, [ch], TRIM, thick=0.004, surf='2', glow=True, side=G(0, 0, 1))
+    # The gorget: a high collar, spiked behind.
+    F.hull(bt, [(gv(C, 0, 0.23, -0.005), 0.15, 0.13), (gv(C, 0, 0.33, -0.01), 0.125, 0.12)], [ch, hd], PD, sides=12, arc=(-2.6, 2.6))
+    for k in range(7):
+        a = math.pi + (k - 3) * 0.32
+        b = gv(C, math.sin(a) * 0.13, 0.27, math.cos(a) * 0.12)
+        F.spike(bt, b, b + G(math.sin(a) * 0.08, 0.2 + 0.05 * (3 - abs(k - 3)), math.cos(a) * 0.1), 0.022, [ch], EDGE)
+    # ---- shoulders: three lames each, spiked, with violet light along the top one
+    for sd, j in p.sides:
+        A, Fo, W = p.P(j['arm']), p.P(j['fore']), p.P(j['hand'])
+        arm, fore, hand = j['arm'], j['fore'], j['hand']
+        for k in range(3):
+            F.dome(bt, gv(A, sd * (0.02 + 0.012 * k), 0.05 - 0.065 * k, 0), 0.17 - 0.022 * k, [arm, ch] if k == 0 else [arm], PL if k % 2 == 0 else PD, axis=(sd * 0.55, 1, 0), theta=1.25, thick=0.014, squash=(1.05, 0.85, 1.1))
+        F.ring(bt, gv(A, sd * 0.02, 0.05, 0), 0.16, [arm, ch], TRIM, width=0.012, thick=0.01, axis=(sd * 0.55, 1, 0), glow=True, surf='2', arc=(0.6, math.tau - 0.6))
+        for v in (-0.07, 0.0, 0.07):
+            b = gv(A, sd * 0.07, 0.17, v)
+            F.spike(bt, b, b + G(sd * 0.16, 0.3 - abs(v) * 1.2, v * 1.6), 0.03, [arm], EDGE)
+            F.gem(bt, b + G(sd * 0.16, 0.3 - abs(v) * 1.2, v * 1.6), 0.012, [arm], TRIM)
+        # Mail under the plate, a rerebrace, a spiked couter, a flared vambrace, a clawed gauntlet.
+        F.prism(bt, gv(A, 0, -0.04, 0), Fo, 0.068, 0.058, [arm, fore], PD, sides=8, surf='0')
+        F.hull(bt, [(gv(A, 0, -0.08, 0), 0.075, 0.075), (A.lerp(Fo, 0.75), 0.068, 0.068)], [arm], PL, sides=8, arc=(-2.2, 2.2))
+        F.dome(bt, gv(Fo, 0, 0.0, -0.01), 0.07, [fore], PL, axis=(0, 0.2, -1), theta=1.3, thick=0.01)
+        F.spike(bt, gv(Fo, 0, 0.0, -0.06), gv(Fo, 0, 0.04, -0.2), 0.025, [fore], EDGE)
+        F.hull(bt, [(Fo.lerp(W, 0.1), 0.058, 0.058), (Fo.lerp(W, 0.6), 0.064, 0.064), (Fo.lerp(W, 0.95), 0.082, 0.082)], [fore], PL, sides=8)
+        F.ring(bt, Fo.lerp(W, 0.92), 0.085, [fore], TRIM, width=0.012, thick=0.008, glow=True, surf='2')
+        F.plate(bt, gv(W, 0, -0.05, 0.02), (0.075, 0.09, 0.05), [hand], PD, bevel=0.3)
+        for f in range(4):
+            x = (f - 1.5) * 0.017
+            k0 = gv(W, x, -0.09, 0.035)
+            k1 = k0 + G(0, -0.06, 0.025)
+            F.prism(bt, k0, k1, 0.011, 0.009, [hand], PD, sides=5)
+            F.spike(bt, k1, k1 + G(0, -0.045, 0.03), 0.009, [hand], EDGE)
+        F.prism(bt, gv(W, -sd * 0.03, -0.05, 0.04), gv(W, -sd * 0.05, -0.1, 0.07), 0.012, 0.009, [hand], PD, sides=5)
+    # ---- hips: faulds in rows, tassets, tattered cloth to the shin
+    for k in range(3):
+        y = 0.04 - k * 0.065
+        F.hull(bt, [(gv(Hp, 0, y + 0.035, 0.01), 0.175 + 0.012 * k, 0.13 + 0.008 * k), (gv(Hp, 0, y - 0.035, 0.012), 0.188 + 0.012 * k, 0.138 + 0.008 * k)], [hip], PL if k % 2 == 0 else PD, sides=14, arc=(-2.3, 2.3))
+    for sd, j in p.sides:
+        L, S, Ft = p.P(j['leg']), p.P(j['shin']), p.P(j['foot'])
+        leg, shin, foot = j['leg'], j['shin'], j['foot']
+        F.plate(bt, gv(L, sd * 0.05, -0.15, 0.04), (0.15, 0.2, 0.018), [leg], PL, rot=(-0.12, 0, sd * 0.12), bevel=0.4, taper=1.15)
+        F.plate(bt, gv(L, sd * 0.06, -0.27, 0.05), (0.13, 0.12, 0.016), [leg], PD, rot=(-0.12, 0, sd * 0.12), bevel=0.4)
+        # Under the plate a dark padded leg; a cuisse, a spiked poleyn, a ridged greave, a pointed sabaton.
+        F.prism(bt, gv(L, 0, 0.02, 0), S, 0.09, 0.07, [hip, leg], CLOTH, sides=8, surf='0')
+        F.hull(bt, [(L.lerp(S, 0.35), 0.088, 0.085), (L.lerp(S, 0.9), 0.072, 0.07)], [leg], PL, sides=8, arc=(-1.7, 1.7))
+        F.dome(bt, gv(S, 0, 0.0, 0.035), 0.065, [leg, shin], PL, axis=(0, 0.25, 1), theta=1.3, thick=0.01)
+        F.spike(bt, gv(S, 0, 0.0, 0.09), gv(S, 0, 0.06, 0.2), 0.022, [shin], EDGE)
+        ridge = lambda a, i: 1 + 0.18 * max(0.0, math.cos(a)) ** 10
+        F.hull(bt, [(gv(S, 0, -0.04, 0), 0.07, 0.072), (S.lerp(Ft, 0.5), 0.064, 0.066), (gv(Ft, 0, 0.02, 0), 0.06, 0.062)], [shin], PL, sides=10, wave=ridge)
+        F.plate(bt, gv(Ft, 0, -0.03, 0.055), (0.11, 0.1, 0.23), [foot], PD, bevel=0.35, taper=0.7)
+        F.spike(bt, gv(Ft, 0, -0.05, 0.16), gv(Ft, 0, -0.07, 0.28), 0.03, [foot], EDGE)
+        F.ring(bt, gv(Ft, 0, 0.03, 0), 0.066, [shin], TRIM, width=0.01, thick=0.008, glow=True, surf='2')
+    strips = [(-0.13, 0.15, 1), (-0.04, 0.17, 1), (0.05, 0.16, 1), (0.13, 0.14, 1), (-0.14, 0.15, -1), (-0.05, 0.17, -1), (0.04, 0.18, -1), (0.14, 0.15, -1)]
+    for x, w, face in strips:
+        leg = p.sides[0][1]['leg'] if (x > 0) == (p.sides[0][0] > 0) else p.sides[1][1]['leg']
+        top = gv(Hp, x, -0.06, face * 0.15)
+        drop = 0.42 + 0.08 * math.sin(x * 40)
+        F.ribbon(bt, [top, top + G(0, -drop * 0.5, face * 0.03), top + G(0, -drop, face * 0.06)], [w, w * 0.95, w * 0.6], G(1, 0, 0), [hip, leg], CLOTH)
+    # ---- the helm: horned, a black visor over a void, two violet eyes, a crown of shadow
+    F.hull(bt, [(gv(Hd, 0, 0.02, 0.0), 0.1, 0.11), (gv(Hd, 0, 0.12, 0.005), 0.125, 0.135), (gv(Hd, 0, 0.22, 0.0), 0.13, 0.14), (gv(Hd, 0, 0.3, -0.01), 0.105, 0.115), (gv(Hd, 0, 0.35, -0.02), 0.04, 0.05)], [hd], PD, sides=12, wave=lambda a, i: 1 + 0.08 * max(0.0, math.cos(a)) ** 8 if i in (1, 2) else 1)
+    F.plate(bt, gv(Hd, 0, 0.15, 0.135), (0.17, 0.055, 0.02), [hd], VOID, bevel=0.3, surf='0', rot=(0.1, 0, 0))
+    for sd in (-1, 1):
+        F.gem(bt, gv(Hd, sd * 0.042, 0.155, 0.148), 0.018, [hd], 0xd0a0ff, stretch=0.55)
+        F.chain(bt, [gv(Hd, sd * 0.105, 0.22, -0.01), gv(Hd, sd * 0.2, 0.3, -0.06), gv(Hd, sd * 0.25, 0.43, -0.17), gv(Hd, sd * 0.22, 0.56, -0.33), gv(Hd, sd * 0.16, 0.62, -0.45)], [0.04, 0.032, 0.022, 0.012, 0.004], [hd], PD, sides=6)
+    for k in range(9):
+        a = (k - 4) * 0.36
+        tall = 0.13 + 0.09 * (1 - abs(k - 4) / 4)
+        b = gv(Hd, math.sin(a) * 0.11, 0.3, math.cos(a) * 0.11 - 0.015)
+        F.blade(bt, b, b + G(math.sin(a) * 0.05, tall, math.cos(a) * 0.04), 0.035, [hd], TRIM if k % 2 == 0 else 0x6a40b0, thick=0.01, surf='2', glow=True)
+    # ---- the cape: tattered strips down the cape chain
+    cape = [p.n['cape']]
+    while bt.child(cape[-1]) is not None:
+        cape.append(bt.child(cape[-1]))
+    cp = [p.B[k] for k in cape]
+    for i in range(7):
+        x = (i - 3) * 0.075
+        drop = 1.0 - 0.12 * ((i * 7) % 3)
+        pts = [c + G(x * (1 + 0.25 * t), 0, -0.012 * abs(i - 3)) for t, c in enumerate(cp)]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * (0.55 * drop)
+        F.ribbon(bt, pts + [tip], [0.085] * len(pts) + [0.03], G(1, 0, 0), cape, 0x120d1a)
+    # ---- wings of night: a jointed spar and long black feathers, violet at the edge
+    for root, tip in ((20, 21), (22, 23)):
+        R, T = Vector(bt.B[root]), Vector(bt.B[tip])
+        sdw = 1 if T.x > R.x else -1
+        elbow = R.lerp(T, 0.45) + G(0, 0.12, -0.05)
+        F.chain(bt, [R, elbow, T, T + (T - elbow).normalized() * 0.25], [0.035, 0.03, 0.02, 0.006], [root, tip], PD, sides=6)
+        tipx = T + (T - elbow).normalized() * 0.2
+        # Secondaries hang from the inner spar; primaries fan out from the outer one, longest at the tip.
+        for i in range(7):
+            t = i / 6
+            base = R.lerp(elbow, 0.15 + 0.85 * t)
+            L = 0.52 + 0.12 * t
+            F.blade(bt, base, base + G(sdw * 0.04 * t, -L, -0.05), 0.15, [root, tip], 0x1b1724 if i % 2 else 0x221c2c, thick=0.014, side=G(sdw, 0, 0.25), belly=0.55)
+        for i in range(8):
+            t = i / 7
+            base = elbow.lerp(tipx, t)
+            phi = 0.15 + 1.05 * t
+            L = 0.66 + 0.34 * t
+            d = G(sdw * math.sin(phi), -math.cos(phi), -0.12)
+            F.blade(bt, base, base + d * L, 0.15 - 0.03 * t, [root, tip], 0x221c2c if i % 2 else 0x1b1724, thick=0.014, side=G(math.cos(phi) * sdw, math.sin(phi), 0.2), belly=0.55)
+            if i % 2 == 1:
+                e = base + d * L
+                F.blade(bt, e - d * 0.14, e + d * 0.02, 0.05, [root, tip], TRIM, thick=0.008, surf='2', glow=True, side=G(math.cos(phi) * sdw, math.sin(phi), 0.2))
+        # Coverts over the bones of the wing.
+        for i in range(9):
+            t = i / 8
+            base = R.lerp(elbow, t * 2) if t < 0.5 else elbow.lerp(tipx, (t - 0.5) * 2)
+            F.blade(bt, base + G(0, 0.03, 0.01), base + G(sdw * 0.06 * t, -0.3 - 0.06 * t, -0.02), 0.13, [root, tip], PL, thick=0.016, side=G(sdw, 0, 0.25), belly=0.5)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 4000, surface='0'), ['0', '1', '2']
+
+
+CREATURE_SURFACES = ['fur', 'shell', 'glow', 'scale', 'membrane', 'ghost']
+
+
+@builder('stag', 0x4a4232)
+def stag(bt):
+    """Cernunna, the Antlered Shade: a gaunt spirit stag of dark bark, a bone skull for a face, vast antlers hung with moss."""
+    n, B = bt.n, bt.B
+    hips, chest, head, jaw = n['hips'], n['chest'], n['head'], n['jaw']
+    nk = n['neck']
+    BARK, BARK2, BELLY, BONE, HOOF, MOSS, GREEN = 0x3b3328, 0x2c261e, 0x5a4e3c, 0xe2d8bf, 0x161210, 0x3e5c2a, 0x6affc0
+    P = lambda i: Vector(B[i])
+    # ---- the body: a deep chest, a lean waist, high haunches
+    body = [(0, 1.33, -0.76), (0, 1.32, -0.64), (0, 1.3, -0.44), (0, 1.27, -0.18), (0, 1.27, 0.1), (0, 1.27, 0.33), (0, 1.36, 0.5), (0, 1.44, 0.57)]
+    F.loft(bt, [G(*q) for q in body], [0.06, 0.16, 0.21, 0.18, 0.205, 0.22, 0.18, 0.12], [0.07, 0.19, 0.24, 0.2, 0.25, 0.28, 0.22, 0.14], [hips, chest], BARK, sides=10)
+    # A paler belly and throat, and the haunches and shoulders standing out.
+    F.loft(bt, [G(0, 1.08, -0.3), G(0, 1.05, 0.0), G(0, 1.05, 0.3)], [0.12, 0.13, 0.14], [0.06, 0.07, 0.08], [hips, chest], BELLY, sides=8)
+    for sd in (-1, 1):
+        F.loft(bt, [G(sd * 0.13, 1.44, -0.62), G(sd * 0.155, 1.27, -0.47), G(sd * 0.15, 1.06, -0.38)], [0.075, 0.12, 0.085], [0.1, 0.15, 0.1], [hips], BARK2, sides=8)
+        F.loft(bt, [G(sd * 0.14, 1.46, 0.32), G(sd * 0.165, 1.28, 0.4), G(sd * 0.15, 1.06, 0.38)], [0.075, 0.11, 0.08], [0.1, 0.125, 0.085], [chest], BARK2, sides=8)
+        # Runes of green light on the flanks.
+        for k in range(3):
+            z = -0.25 + k * 0.22
+            a = G(sd * 0.2, 1.32 - k * 0.02, z)
+            F.blade(bt, a, a + G(sd * 0.01, -0.13, 0.05), 0.016, [hips, chest], GREEN, thick=0.005, surf='glow', glow=True, side=G(0, 0, 1))
+    # ---- the neck and mane
+    F.loft(bt, [G(0, 1.38, 0.5), P(nk[0]), P(nk[1]), P(head) + G(0, -0.02, -0.02)], [0.155, 0.135, 0.105, 0.08], [0.19, 0.165, 0.12, 0.09], [chest] + nk + [head], BARK, sides=9)
+    for i in range(11):
+        t = i / 10
+        a = G(0, 1.5, 0.44).lerp(P(head) + G(0, 0.05, -0.06), t)
+        for sd in (-1, 1):
+            L = 0.2 - 0.08 * t + 0.04 * ((i * 5 + (sd > 0)) % 3)
+            F.blade(bt, a + G(sd * 0.04, 0.02, 0), a + G(sd * (0.08 + 0.05 * ((i + (sd > 0)) % 2)), -0.1, -L), 0.09, [chest] + nk if t < 0.5 else nk + [head], 0x221c15 if (i + (sd > 0)) % 2 else BARK2, thick=0.014, side=G(0, 1, 0.3))
+    for i in range(10):
+        t = i / 9
+        a = G(0, 1.18, 0.5).lerp(P(nk[1]) + G(0, -0.08, 0.02), t)
+        F.blade(bt, a, a + G(((i % 3) - 1) * 0.04, -0.3 + 0.12 * t, -0.02), 0.07, [chest] + nk, 0x221c15 if i % 2 else BARK2, thick=0.01, side=G(1, 0, 0))
+    # ---- the skull: bone-white, long and narrow, deep sockets, eyes of green fire
+    Hd = P(head)
+    F.loft(bt, [Hd + G(0, 0.04, -0.07), Hd + G(0, 0.04, 0.02), Hd + G(0, 0.01, 0.13), Hd + G(0, -0.04, 0.25), Hd + G(0, -0.08, 0.33)], [0.085, 0.1, 0.082, 0.056, 0.034], [0.09, 0.095, 0.072, 0.05, 0.032], [head], BONE, sides=8, surf='shell')
+    F.loft(bt, [P(jaw) + G(0, -0.04, -0.02), P(jaw) + G(0, -0.06, 0.12), P(jaw) + G(0, -0.075, 0.19)], [0.05, 0.035, 0.022], [0.025, 0.02, 0.015], [jaw], BONE, sides=6, surf='shell')
+    for sd in (-1, 1):
+        F.gem(bt, Hd + G(sd * 0.06, 0.04, 0.06), 0.034, [head], 0x0a0806, surf='shell', glow=False, stretch=0.8)
+        F.gem(bt, Hd + G(sd * 0.072, 0.04, 0.07), 0.016, [head], GREEN)
+        F.gem(bt, Hd + G(sd * 0.018, -0.05, 0.27), 0.012, [head], 0x0a0806, surf='shell', glow=False)
+        # Ears: long leaves, laid back.
+        F.blade(bt, P(n['ears'][0 if sd < 0 else 1]), P(n['ears'][0 if sd < 0 else 1]) + G(sd * 0.14, 0.04, -0.06), 0.06, [n['ears'][0 if sd < 0 else 1]], BARK2, thick=0.012, side=G(0, 1, 0))
+        # ---- antlers: a great beam sweeping back and out, tines forward and up, moss trailing, the tips alight
+        beam = [Hd + G(sd * 0.05, 0.08, 0.0), Hd + G(sd * 0.13, 0.18, -0.04), Hd + G(sd * 0.24, 0.36, -0.1), Hd + G(sd * 0.31, 0.56, -0.18), Hd + G(sd * 0.35, 0.78, -0.24), Hd + G(sd * 0.31, 0.98, -0.28)]
+        F.chain(bt, beam, [0.034, 0.03, 0.025, 0.02, 0.014, 0.006], [head], BONE, sides=6, surf='shell')
+        tines = [(1, (sd * 0.04, 0.16, 0.16)), (2, (sd * 0.1, 0.2, 0.12)), (2, (-sd * 0.02, 0.22, 0.1)), (3, (sd * 0.14, 0.18, 0.04)), (3, (-sd * 0.04, 0.24, 0.08)), (4, (sd * 0.12, 0.16, -0.02)), (4, (-sd * 0.05, 0.2, 0.05))]
+        for k, (bi, (dx, dy, dz)) in enumerate(tines):
+            b0 = beam[bi].lerp(beam[bi + 1], 0.35 if k % 2 else 0.7)
+            b1 = b0 + G(dx * 0.6, dy * 0.6, dz * 0.6)
+            b2 = b0 + G(dx, dy, dz)
+            F.chain(bt, [b0, b1, b2], [0.016, 0.011, 0.003], [head], BONE, sides=5, surf='shell')
+            F.gem(bt, b2, 0.012, [head], GREEN, surf='glow', stretch=1.8)
+        for k in range(5):
+            b0 = beam[1 + k % 4].lerp(beam[2 + k % 4], 0.5)
+            L = 0.16 + 0.08 * (k % 3)
+            F.ribbon(bt, [b0, b0 + G(0, -L * 0.5, 0.01), b0 + G(sd * 0.01, -L, 0.02)], [0.03, 0.025, 0.01], G(1, 0, 0), [head], MOSS)
+    # ---- legs: long and jointed, a tuft at each fetlock, cloven hooves
+    for limb in n['limbs']:
+        up, mid, low, side, front = limb['up'], limb['mid'], limb['low'], limb['side'], limb['front']
+        U, M, L = P(up), P(mid), P(low)
+        Ft = G(*limb['foot'])
+        top = 0.13 if front else 0.16
+        F.prism(bt, U + G(0, 0.06, 0), M, top, 0.072, [up, mid], BARK, sides=8, surf='fur')
+        F.prism(bt, M, L, 0.066, 0.048, [mid, low], BARK, sides=7, surf='fur')
+        F.prism(bt, L, Ft + G(0, 0.06, 0), 0.048, 0.042, [low], BARK2, sides=6, surf='fur')
+        F.gem(bt, M, 0.062, [mid], BARK2, surf='fur', glow=False, stretch=1.1)
+        for k in range(4):
+            a = (k / 4) * math.tau
+            F.blade(bt, Ft + G(math.sin(a) * 0.03, 0.14, math.cos(a) * 0.03), Ft + G(math.sin(a) * 0.045, 0.05, math.cos(a) * 0.045), 0.035, [low], 0x221c15, thick=0.008)
+        for sd in (-1, 1):
+            F.plate(bt, Ft + G(sd * 0.016, 0.025, 0.015), (0.036, 0.065, 0.08), [low], HOOF, bevel=0.35, taper=0.8, surf='shell')
+    # ---- a short tail, a flick of dark fur
+    tl = n['tail']
+    F.blade(bt, P(tl[0]), P(tl[1]) + G(0, -0.12, -0.06), 0.09, tl, 0x221c15, thick=0.015, side=G(1, 0, 0))
+    bt.ao_floor = 0.55
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+
+
+
+
+# forged:crab
+@builder('crab', 0x3e5f66)
+def crab(bt):
+    """Thalassor, the Tide Tyrant: a serrated dome of a shell crusted with barnacles and weed, one crushing claw far bigger than the other."""
+    n, B = bt.n, bt.B
+    body, jaw = n['body'], n['jaw']
+    P = lambda i: Vector(B[i])
+    SHELL, SHELL2, RIM, UNDER, SPIKE, BARN, WEED, EYE = 0x30525a, 0x264450, 0x6a8a84, 0x9aa894, 0x1c2a2c, 0xb0b6a6, 0x3a6a3a, 0x60f0ff
+    # ---- the carapace: a faceted dome with a serrated rim, ridge plates down the middle
+    rim = lambda a, i: 1 + 0.045 * math.cos(a * 9) if i <= 1 else 1
+    F.hull(bt, [(G(0, 0.86, -0.02), 1.12, 0.9), (G(0, 1.12, 0.0), 1.34, 1.06), (G(0, 1.42, -0.04), 1.18, 0.92), (G(0, 1.62, -0.08), 0.82, 0.62), (G(0, 1.74, -0.1), 0.36, 0.28)], [body], SHELL, sides=18, wave=rim)
+    F.hull(bt, [(G(0, 0.7, -0.02), 0.85, 0.66), (G(0, 0.88, -0.02), 1.1, 0.88)], [body], UNDER, sides=18)
+    for k in range(4):
+        z = 0.42 - k * 0.32
+        F.plate(bt, G(0, 1.72 - abs(z + 0.1) * 0.22, z), (0.5 - 0.06 * abs(k - 1.5), 0.08, 0.3), [body], SHELL2, rot=(-z * 0.4, 0, 0), bevel=0.4, taper=0.8)
+    for sd in (-1, 1):
+        for k in range(3):
+            a = 0.5 + k * 0.5
+            F.plate(bt, G(sd * math.sin(a) * 0.95, 1.5, math.cos(a) * 0.72 - 0.05), (0.32, 0.07, 0.26), [body], SHELL2, rot=(0, sd * a, sd * 0.45), bevel=0.4, taper=0.8)
+    # Spikes round the rim, longest at the front corners.
+    for i in range(15):
+        a = -1.45 + (i / 14) * 2.9
+        d = G(math.sin(a), 0.12, math.cos(a)).normalized()
+        b = G(math.sin(a) * 1.38, 1.12, math.cos(a) * 1.1)
+        L = 0.22 + 0.12 * abs(math.sin(a * 1.4))
+        F.spike(bt, b - d * 0.05, b + d * L, 0.07, [body], SPIKE)
+    # Barnacles crusting the dome, weed hanging off the back.
+    for i in range(22):
+        a = i * 2.39996
+        r = 0.18 + 0.75 * math.sqrt((i + 0.5) / 22)
+        x, z = math.cos(a) * r * 1.1, math.sin(a) * r * 0.8 - 0.1
+        y = 1.78 - (x * x / 1.4 + (z + 0.1) ** 2 / 0.9) * 0.6
+        w = 0.06 + (i % 3) * 0.02
+        F.prism(bt, G(x, y - 0.03, z), G(x, y + 0.09, z), w, w * 0.6, [body], BARN, sides=6)
+        F.gem(bt, G(x, y + 0.09, z), w * 0.42, [body], 0x2a2c28, surf='1', glow=False, stretch=0.4)
+    for st in n['strands']:
+        F.ribbon(bt, [P(b) for b in st] + [P(st[-1]) + (P(st[-1]) - P(st[-2])) * 0.8], 0.09, G(1, 0, 0), st, WEED)
+    # ---- the face: stalked eyes, mandibles
+    for k, st in enumerate(n['stalks']):
+        sd = -1 if k == 0 else 1
+        F.prism(bt, G(sd * 0.22, 1.2, 0.78), P(st), 0.06, 0.045, [body, st], SHELL2, sides=6)
+        F.gem(bt, P(st) + G(0, 0.06, 0.02), 0.075, [st], EYE, stretch=1.1)
+        F.dome(bt, P(st) + G(0, 0.06, 0), 0.085, [st], SHELL2, axis=(0, 0.3, -1), theta=1.2, thick=0.012)
+    J = P(jaw)
+    for sd in (-1, 1):
+        F.plate(bt, J + G(sd * 0.1, -0.02, 0.08), (0.14, 0.18, 0.06), [jaw], SHELL2, rot=(0.2, sd * 0.3, 0), bevel=0.4, taper=0.6)
+        F.spike(bt, J + G(sd * 0.08, -0.1, 0.1), J + G(sd * 0.02, -0.22, 0.18), 0.03, [jaw], SPIKE)
+    # ---- claws: the left a cutter, the right a great crusher
+    for pc in n['pincers']:
+        arm, fore, hand, finger, sd = pc['arm'], pc['fore'], pc['hand'], pc['finger'], pc['side']
+        big = 1.25 if sd > 0 else 0.95
+        A, Fo, H, Fi = P(arm), P(fore), P(hand), P(finger)
+        F.prism(bt, A, Fo, 0.17 * big, 0.14 * big, [arm, fore], SHELL, sides=7)
+        F.prism(bt, Fo, H, 0.16 * big, 0.17 * big, [fore, hand], SHELL, sides=7)
+        for t in (0.3, 0.6):
+            b = Fo.lerp(H, t)
+            F.spike(bt, b + G(0, 0.12 * big, 0), b + G(0, 0.3 * big, -0.05), 0.04 * big, [fore], SPIKE)
+        # The palm: a swollen hull from the wrist, the fixed finger beyond it, the hinged finger above.
+        d = (Fi - H).normalized()
+        palm_end = H + d * 0.55 * big
+        F.loft(bt, [H, H.lerp(palm_end, 0.5), palm_end], [0.2 * big, 0.26 * big, 0.2 * big], [0.17 * big, 0.22 * big, 0.16 * big], [hand], SHELL, sides=9, surf='1')
+        tip = palm_end + d * 0.55 * big + G(0, -0.08, 0)
+        F.loft(bt, [palm_end + G(0, -0.06 * big, 0), palm_end.lerp(tip, 0.5) + G(0, -0.08 * big, 0), tip], [0.11 * big, 0.08 * big, 0.015], [0.09 * big, 0.06 * big, 0.012], [hand], RIM, sides=6, surf='1')
+        top = palm_end + G(0, 0.12 * big, 0)
+        ftip = top + d * 0.6 * big + G(0, -0.06, 0)
+        F.loft(bt, [top, top.lerp(ftip, 0.5) + G(0, 0.05 * big, 0), ftip], [0.1 * big, 0.08 * big, 0.015], [0.09 * big, 0.06 * big, 0.012], [finger], RIM, sides=6, surf='1')
+        for t in (0.25, 0.5, 0.75):
+            q = palm_end.lerp(tip, t) + G(0, -0.02, 0)
+            F.spike(bt, q, q + G(0, 0.07 * big, 0), 0.025 * big, [hand], 0xd8d0b8)
+    # ---- legs: jointed, spiked at the knee, ending in a point
+    for limb in n['limbs']:
+        up, mid, low = limb['up'], limb['mid'], limb['low']
+        U, M, L = P(up), P(mid), P(low)
+        Ft = G(*limb['foot'])
+        F.prism(bt, U, M, 0.1, 0.085, [up, mid], SHELL, sides=6)
+        F.prism(bt, M, L, 0.085, 0.06, [mid, low], SHELL2, sides=6)
+        F.prism(bt, L, Ft, 0.06, 0.008, [low], SHELL, sides=6)
+        F.gem(bt, M, 0.1, [mid], SHELL2, surf='1', glow=False)
+        F.spike(bt, M + G(0, 0.06, 0), M + G(0, 0.24, -0.04), 0.035, [mid], SPIKE)
+    bt.ao_floor = 0.55
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+# end:crab
+
+
+# forged:h-6ad1895d
+def stone_giant(bt, p, rock, rock2, glow, seed, bulk=1.0, lava=False):
+    """A forged stone giant: a blocky chest and pelvis, a small heavy head between boulder shoulders, chunky limbs, huge fists. Light (crystal or lava) shows in its seams."""
+    import random
+    r = random.Random(seed)
+    C, Hp, Sp, Hd = p.C, p.Hp, p.Sp, p.Hd
+    ch, hip, sp, hd = p.chest, p.hips, p.spine, p.head
+    k = bulk
+    jit = lambda c: c if r.random() < 0.5 else rock2
+    # Chest: a faceted barrel, a slab over each pectoral; belly blocks; a heavy pelvis.
+    F.hull(bt, [(gv(C, 0, -0.16, 0), 0.2 * k, 0.15 * k), (gv(C, 0, 0.0, 0.01), 0.27 * k, 0.19 * k), (gv(C, 0, 0.14, 0.0), 0.29 * k, 0.19 * k), (gv(C, 0, 0.24, -0.02), 0.2 * k, 0.15 * k), (gv(C, 0, 0.29, -0.03), 0.1 * k, 0.09 * k)], [ch], rock, sides=7, surf='0')
+    for sd in (-1, 1):
+        F.plate(bt, gv(C, sd * 0.12 * k, 0.1, 0.17 * k), (0.2 * k, 0.17, 0.08), [ch], rock2, rot=(0.1, sd * 0.25, sd * 0.06), bevel=0.35, surf='0')
+    for i in range(3):
+        F.plate(bt, gv(Sp, (i - 1) * 0.11 * k, 0.03 + 0.03 * (i % 2), 0.12 * k), (0.12 * k, 0.13, 0.1), [sp], jit(rock), rot=(0.05, (i - 1) * 0.3, 0.05 * (i - 1)), bevel=0.35, surf='0')
+    F.hull(bt, [(gv(Sp, 0, 0.06, 0), 0.19 * k, 0.14 * k), (gv(Hp, 0, 0.0, 0), 0.22 * k, 0.15 * k), (gv(Hp, 0, -0.1, 0), 0.18 * k, 0.13 * k)], [sp, hip], rock2, sides=7, surf='0')
+    # Back slabs.
+    for i in range(4):
+        F.plate(bt, gv(C, (r.random() - 0.5) * 0.2 * k, 0.2 - i * 0.12, -0.17 * k), (0.2 * k, 0.14, 0.1), [ch] if i < 3 else [sp], jit(rock), rot=(-0.15, (r.random() - 0.5) * 0.5, (r.random() - 0.5) * 0.3), bevel=0.35, surf='0')
+    # The head: a small heavy block, sunk forward, a brow ridge over burning eyes.
+    F.plate(bt, gv(Hd, 0, 0.1, 0.04), (0.2, 0.2, 0.22), [hd], rock2, bevel=0.3, taper=0.85, surf='0')
+    F.plate(bt, gv(Hd, 0, 0.17, 0.12), (0.22, 0.05, 0.08), [hd], rock, rot=(0.25, 0, 0), bevel=0.3, surf='0')
+    F.plate(bt, gv(Hd, 0, 0.0, 0.1), (0.15, 0.08, 0.12), [hd], rock, bevel=0.3, surf='0')
+    for sd in (-1, 1):
+        F.plate(bt, gv(Hd, sd * 0.05, 0.12, 0.155), (0.06, 0.02, 0.02), [hd], glow, surf='2', glow=True, bevel=0)
+    F.plate(bt, gv(Hd, 0, 0.04, 0.165), (0.07, 0.015, 0.02), [hd], glow, surf='2', glow=True, bevel=0)
+    for sd, j in p.sides:
+        A, Fo, W = p.P(j['arm']), p.P(j['fore']), p.P(j['hand'])
+        arm, fore, hand = j['arm'], j['fore'], j['hand']
+        L, S, Ft = p.P(j['leg']), p.P(j['shin']), p.P(j['foot'])
+        leg, shin, foot = j['leg'], j['shin'], j['foot']
+        # Shoulders: two great boulders.
+        F.plate(bt, gv(A, sd * 0.06, 0.08, 0), (0.3 * k, 0.24, 0.3 * k), [arm, ch], rock, rot=(0.1, 0.3, sd * 0.35), bevel=0.4, taper=0.8, surf='0')
+        F.plate(bt, gv(A, sd * 0.12, -0.02, 0.02), (0.22 * k, 0.2, 0.24 * k), [arm], rock2, rot=(-0.2, -0.4, sd * 0.6), bevel=0.4, surf='0')
+        # Arms: a thick upper arm in plates, a flaring forearm, a fist of blocks.
+        F.prism(bt, gv(A, 0, -0.05, 0), Fo, 0.11 * k, 0.1 * k, [arm, fore], rock2, sides=6, surf='0')
+        F.plate(bt, A.lerp(Fo, 0.55) + G(sd * 0.06, 0, 0), (0.12, 0.18, 0.16 * k), [arm], rock, rot=(0, 0, sd * 0.12), bevel=0.35, surf='0')
+        F.prism(bt, Fo, W.lerp(Fo, 0.15), 0.11 * k, 0.14 * k, [fore], rock, sides=6, surf='0')
+        F.plate(bt, Fo.lerp(W, 0.5) + G(sd * 0.08 * k, 0, 0), (0.1, 0.2, 0.18 * k), [fore], rock2, rot=(0, 0, sd * 0.1), bevel=0.35, surf='0')
+        F.plate(bt, gv(W, 0, -0.07, 0.03), (0.2 * k, 0.2, 0.2 * k), [hand], rock2, bevel=0.3, surf='0')
+        for f in range(3):
+            F.plate(bt, gv(W, (f - 1) * 0.065 * k, -0.15, 0.08), (0.06 * k, 0.07, 0.08), [hand], rock, bevel=0.35, surf='0')
+        # Legs: thick columns of stone, a knee slab, a block foot.
+        F.prism(bt, gv(L, 0, 0.04, 0), S, 0.13 * k, 0.11 * k, [hip, leg], rock2, sides=6, surf='0')
+        F.plate(bt, L.lerp(S, 0.5) + G(sd * 0.03, 0, 0.06), (0.18 * k, 0.24, 0.12), [leg], rock, rot=(0.08, 0, 0), bevel=0.35, surf='0')
+        F.plate(bt, gv(S, 0, 0.02, 0.07), (0.16 * k, 0.14, 0.1), [leg, shin], rock2, rot=(0.2, 0, 0), bevel=0.35, surf='0')
+        F.prism(bt, S, gv(Ft, 0, 0.06, 0), 0.11 * k, 0.12 * k, [shin], rock, sides=6, surf='0')
+        F.plate(bt, gv(Ft, 0, -0.02, 0.06), (0.2 * k, 0.12, 0.3), [foot], rock2, bevel=0.3, taper=0.85, surf='0')
+        # Light in the cracks of the limbs.
+        for a, b, bones in ((A.lerp(Fo, 0.2), A.lerp(Fo, 0.75), [arm]), (Fo.lerp(W, 0.15), Fo.lerp(W, 0.7), [fore]), (L.lerp(S, 0.15), L.lerp(S, 0.75), [leg]), (S.lerp(Ft, 0.1), S.lerp(Ft, 0.6), [shin])):
+            off = G(sd * 0.115 * k, 0, 0.05 * k)
+            F.blade(bt, a + off, b + off + G(0, 0, 0.02), 0.025, bones, glow, thick=0.006, surf='2', glow=True, side=G(0, 0, 1))
+            off = G(-sd * 0.02, 0, 0.12 * k)
+            F.blade(bt, a.lerp(b, 0.3) + off, b + off, 0.02, bones, glow, thick=0.006, surf='2', glow=True, side=G(1, 0, 0))
+    # Cracks of light over the chest and back.
+    for x, y, rz in ((0.1, 0.05, 0.6), (-0.12, 0.1, -0.5), (0.02, -0.08, 0.2), (0.16, 0.18, -0.9), (-0.07, 0.2, 0.9)):
+        q = gv(C, x * k, y, 0.205 * k)
+        F.blade(bt, q, q + G(math.sin(rz) * 0.14, math.cos(rz) * 0.14, 0), 0.022, [ch], glow, thick=0.006, surf='2', glow=True, side=G(0, 0, 1))
+        q = gv(C, -x * k, y, -0.2 * k)
+        F.blade(bt, q, q + G(math.sin(rz) * 0.14, math.cos(rz) * 0.14, 0), 0.022, [ch], glow, thick=0.006, surf='2', glow=True, side=G(0, 0, 1))
+
+
+@builder('h-6ad1895d', 0x9a8a6a)
+def colossus(bt):
+    """Zephyron, the Storm Colossus: a sandstone giant shot through with storm-blue crystal, a crystal crown, a storm in its chest."""
+    p = Body(bt)
+    SAND, SAND2, CRYS = 0xa08e6a, 0x7c6c50, 0x58b4ff
+    stone_giant(bt, p, SAND, SAND2, CRYS, seed=3, bulk=1.1)
+    C, Hd = p.C, p.Hd
+    # The storm core: a crystal heart in a ring of light.
+    core = gv(C, 0, 0.06, 0.23)
+    F.gem(bt, core, 0.08, [p.chest], 0x9ad8ff, stretch=1.3)
+    F.ring(bt, core, 0.11, [p.chest], CRYS, width=0.02, thick=0.014, axis=(0, 0, 1), glow=True, surf='2')
+    # A crown of crystal on the head, crystal spines out of shoulders, back and forearms.
+    for k in range(7):
+        a = (k - 3) * 0.42
+        b = gv(Hd, math.sin(a) * 0.08, 0.2, math.cos(a) * 0.06 - 0.02)
+        F.blade(bt, b, b + G(math.sin(a) * 0.06, 0.16 + 0.08 * (1 - abs(k - 3) / 3), math.cos(a) * 0.02 - 0.04), 0.05, [p.head], CRYS, thick=0.025, surf='2', glow=True)
+    for sd, j in p.sides:
+        A, Fo, W = p.P(j['arm']), p.P(j['fore']), p.P(j['hand'])
+        for dx, dy, dz, L in ((0.12, 0.2, 0.0, 0.32), (0.2, 0.12, -0.08, 0.24), (0.06, 0.22, -0.1, 0.22)):
+            b = gv(A, sd * dx, dy, dz)
+            F.blade(bt, b, b + G(sd * L * 0.6, L, dz * 1.5), 0.08, [j['arm']], CRYS, thick=0.04, surf='2', glow=True)
+        b = Fo.lerp(W, 0.4) + G(sd * 0.13, 0, -0.02)
+        F.blade(bt, b, b + G(sd * 0.2, 0.08, -0.08), 0.06, [j['fore']], CRYS, thick=0.03, surf='2', glow=True)
+    for k in range(5):
+        b = gv(C, (k - 2) * 0.09, 0.18 - abs(k - 2) * 0.05, -0.22)
+        F.blade(bt, b, b + G((k - 2) * 0.06, 0.3 - abs(k - 2) * 0.05, -0.18), 0.08, [p.chest], CRYS, thick=0.035, surf='2', glow=True)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 3000, surface='0'), ['0', '1', '2']
+# end:h-6ad1895d
+
+
+# forged:h-8277b566
+@builder('h-8277b566', 0x2a1c18)
+def golem(bt):
+    """Ignaroth, the Molten Forge: black basalt with molten seams, slag spikes on the back, a furnace burning in the chest."""
+    p = Body(bt)
+    BAS, BAS2, LAVA = 0x2e2420, 0x463630, 0xff6a20
+    stone_giant(bt, p, BAS2, BAS, LAVA, seed=9, bulk=1.2, lava=True)
+    C, Hd = p.C, p.Hd
+    core = gv(C, 0, 0.04, 0.25)
+    F.gem(bt, core, 0.09, [p.chest], 0xffc060, stretch=1.1)
+    F.ring(bt, core, 0.12, [p.chest], LAVA, width=0.03, thick=0.016, axis=(0, 0, 1), glow=True, surf='2')
+    for k in range(8):
+        a = k / 8 * math.tau
+        F.blade(bt, core + G(math.sin(a) * 0.13, math.cos(a) * 0.13, -0.01), core + G(math.sin(a) * 0.25, math.cos(a) * 0.23, -0.04), 0.02, [p.chest], LAVA, thick=0.005, surf='2', glow=True, side=G(0, 0, 1))
+    # Slag spikes down the back and on the shoulders, glowing at the root.
+    for k in range(6):
+        b = gv(C, ((k % 2) - 0.5) * 0.18, 0.24 - k * 0.09, -0.24)
+        F.spike(bt, b, b + G(((k % 2) - 0.5) * 0.1, 0.12, -0.26 + 0.02 * k), 0.06, [p.chest] if k < 4 else [p.spine], 0x1a1412, surf='0')
+        F.gem(bt, b, 0.04, [p.chest] if k < 4 else [p.spine], LAVA)
+    for sd, j in p.sides:
+        A = p.P(j['arm'])
+        for dz in (-0.1, 0.05):
+            b = gv(A, sd * 0.12, 0.2, dz)
+            F.spike(bt, b, b + G(sd * 0.12, 0.26, dz), 0.05, [j['arm']], 0x1a1412, surf='0')
+    # A molten mouth under the brow.
+    F.plate(bt, gv(Hd, 0, 0.03, 0.17), (0.11, 0.025, 0.02), [p.head], 0xffa040, surf='2', glow=True, bevel=0)
+    bt.ao_floor = 0.55
+    return bt.build(0.01, 3000, surface='0'), ['0', '1', '2']
+# end:h-8277b566
+
+
+
+
+# forged:h-416c43fb
+@builder('h-416c43fb', 0x6a2018)
+def champion(bt):
+    """Aresios, Champion of Mars: ornate bronze with gold trim over red cloth, a closed crested helm, a golden sun on the breastplate."""
+    p = Body(bt)
+    C, Hp, Sp, Hd = p.C, p.Hp, p.Sp, p.Hd
+    ch, hip, sp, hd = p.chest, p.hips, p.spine, p.head
+    BR, BR2, GOLD, RED, RED2, LEATHER, SKIN, SLIT = 0x9a6430, 0x7a4c22, 0xe0b860, 0x8a1c14, 0x6a140e, 0x4a2c16, 0xb08a6a, 0x07060a
+    # ---- cuirass: a keeled, muscled breastplate, gold at the edges; belly bands
+    keel = lambda a, i: 1 + 0.06 * max(0.0, math.cos(a)) ** 6 if 1 <= i <= 3 else 1
+    F.hull(bt, [(gv(C, 0, -0.17, 0.0), 0.16, 0.115), (gv(C, 0, -0.07, 0.012), 0.185, 0.13), (gv(C, 0, 0.04, 0.018), 0.205, 0.14), (gv(C, 0, 0.14, 0.01), 0.21, 0.135), (gv(C, 0, 0.22, -0.006), 0.165, 0.115), (gv(C, 0, 0.26, -0.01), 0.09, 0.08)], [ch], BR, sides=14, wave=keel)
+    F.ring(bt, gv(C, 0, 0.215, -0.006), 0.158, [ch], GOLD, width=0.016, thick=0.01, segs=18)
+    F.ring(bt, gv(C, 0, -0.17, 0.0), 0.165, [ch, sp], GOLD, width=0.018, thick=0.01, segs=18)
+    for k in range(3):
+        y = 0.06 - k * 0.065
+        F.hull(bt, [(gv(Sp, 0, y + 0.032, 0.008), 0.15 + 0.005 * k, 0.11), (gv(Sp, 0, y - 0.028, 0.01), 0.156 + 0.005 * k, 0.114)], [sp, hip] if k == 2 else [sp], BR2 if k % 2 else BR, sides=14)
+    # The golden sun.
+    sun = gv(C, 0, 0.05, 0.165)
+    F.gem(bt, sun, 0.05, [ch], GOLD, surf='1', glow=False, stretch=0.4)
+    F.ring(bt, sun, 0.055, [ch], GOLD, width=0.012, thick=0.014, axis=(0, 0, 1))
+    for k in range(10):
+        a = k / 10 * math.tau
+        F.blade(bt, sun + G(math.sin(a) * 0.06, math.cos(a) * 0.06, 0), sun + G(math.sin(a) * 0.12, math.cos(a) * 0.12, -0.01), 0.03, [ch], GOLD, thick=0.008, surf='1', side=G(0, 0, 1))
+    # ---- shoulders: layered bronze, gilt spikes; red cloth sleeves; bronze bracers; gloves
+    for sd, j in p.sides:
+        A, Fo, W = p.P(j['arm']), p.P(j['fore']), p.P(j['hand'])
+        arm, fore, hand = j['arm'], j['fore'], j['hand']
+        for k in range(3):
+            F.dome(bt, gv(A, sd * (0.015 + 0.01 * k), 0.04 - 0.055 * k, 0), 0.14 - 0.018 * k, [arm, ch] if k == 0 else [arm], BR if k % 2 == 0 else BR2, axis=(sd * 0.5, 1, 0), theta=1.2, thick=0.012, squash=(1.05, 0.85, 1.1))
+        F.ring(bt, gv(A, sd * 0.015, 0.04, 0), 0.135, [arm, ch], GOLD, width=0.012, thick=0.008, axis=(sd * 0.5, 1, 0), arc=(0.5, math.tau - 0.5))
+        for v in (-0.06, 0.06):
+            b = gv(A, sd * 0.06, 0.15, v)
+            F.spike(bt, b, b + G(sd * 0.09, 0.15, v * 0.8), 0.022, [arm], GOLD)
+        F.prism(bt, gv(A, 0, -0.04, 0), Fo, 0.06, 0.05, [arm, fore], RED, sides=8, surf='0')
+        F.prism(bt, Fo, W.lerp(Fo, 0.1), 0.045, 0.038, [fore, hand], SKIN, sides=8, surf='0')
+        F.hull(bt, [(Fo.lerp(W, 0.3), 0.05, 0.05), (Fo.lerp(W, 0.85), 0.058, 0.058)], [fore], BR, sides=8)
+        F.ring(bt, Fo.lerp(W, 0.85), 0.06, [fore], GOLD, width=0.012, thick=0.006, segs=12)
+        F.plate(bt, gv(W, 0, -0.05, 0.02), (0.07, 0.09, 0.05), [hand], LEATHER, bevel=0.3, surf='0')
+        for f in range(4):
+            k0 = gv(W, (f - 1.5) * 0.016, -0.09, 0.035)
+            F.prism(bt, k0, k0 + G(0, -0.06, 0.03), 0.01, 0.008, [hand], LEATHER, sides=5, surf='0')
+    # ---- hips: a red tunic skirt under studded leather strips; greaves over red-wrapped legs; sandal-boots
+    F.hull(bt, [(gv(Hp, 0, 0.05, 0), 0.17, 0.125), (gv(Hp, 0, -0.08, 0), 0.2, 0.15), (gv(Hp, 0, -0.27, 0), 0.24, 0.18)], [hip], RED, sides=16, surf='0')
+    F.ring(bt, gv(Hp, 0, 0.06, 0), 0.165, [hip, sp], GOLD, width=0.03, thick=0.012, segs=18)
+    for k in range(14):
+        a = (k + 0.5) / 14 * math.tau
+        b = gv(Hp, math.sin(a) * 0.185, 0.02, math.cos(a) * 0.14)
+        d = G(math.sin(a), 0, math.cos(a))
+        F.ribbon(bt, [b, b + d * 0.025 + G(0, -0.13, 0), b + d * 0.045 + G(0, -0.24, 0)], 0.045, G(math.cos(a), 0, -math.sin(a)), [hip], LEATHER if k % 2 else RED2, thick=0.006)
+        F.gem(bt, b + d * 0.05 + G(0, -0.22, 0), 0.01, [hip], GOLD, surf='1', glow=False)
+    for sd, j in p.sides:
+        L, S, Ft = p.P(j['leg']), p.P(j['shin']), p.P(j['foot'])
+        leg, shin, foot = j['leg'], j['shin'], j['foot']
+        F.prism(bt, gv(L, 0, 0.02, 0), S, 0.08, 0.06, [hip, leg], RED2, sides=8, surf='0')
+        F.dome(bt, gv(S, 0, 0.0, 0.03), 0.055, [leg, shin], GOLD, axis=(0, 0.2, 1), theta=1.2, thick=0.01)
+        ridge = lambda a, i: 1 + 0.15 * max(0.0, math.cos(a)) ** 10
+        F.hull(bt, [(gv(S, 0, -0.03, 0), 0.062, 0.066), (S.lerp(Ft, 0.55), 0.055, 0.06), (gv(Ft, 0, 0.05, 0), 0.05, 0.054)], [shin], BR, sides=10, wave=ridge)
+        F.plate(bt, gv(Ft, 0, -0.02, 0.045), (0.1, 0.11, 0.21), [foot], LEATHER, bevel=0.35, taper=0.8, surf='0')
+    # ---- the helm: a closed Corinthian helm with a T of darkness, cheek flares, a towering red crest
+    F.hull(bt, [(gv(Hd, 0, 0.0, 0.01), 0.105, 0.12), (gv(Hd, 0, 0.1, 0.015), 0.125, 0.14), (gv(Hd, 0, 0.2, 0.0), 0.13, 0.14), (gv(Hd, 0, 0.28, -0.01), 0.1, 0.11), (gv(Hd, 0, 0.32, -0.015), 0.04, 0.045)], [hd], BR, sides=14, wave=lambda a, i: 1 + 0.06 * max(0.0, math.cos(a)) ** 8 if i in (1, 2) else 1)
+    F.plate(bt, gv(Hd, 0, 0.16, 0.135), (0.15, 0.024, 0.02), [hd], SLIT, bevel=0, surf='0')
+    F.plate(bt, gv(Hd, 0, 0.09, 0.14), (0.026, 0.11, 0.02), [hd], SLIT, bevel=0, surf='0')
+    F.plate(bt, gv(Hd, 0, 0.2, 0.135), (0.018, 0.07, 0.02), [hd], GOLD, bevel=0.3, rot=(-0.2, 0, 0))
+    F.ring(bt, gv(Hd, 0, 0.0, 0.01), 0.11, [hd], GOLD, width=0.015, thick=0.008, segs=14)
+    for k in range(17):
+        t = k / 16
+        a = math.pi * (0.08 + 0.86 * t)
+        root = gv(Hd, 0, 0.2, 0) + G(0, math.sin(a) * 0.13, math.cos(a) * 0.13)
+        tip = root + G(0, 0.09 + 0.07 * math.sin(a), math.cos(a) * 0.08 - (0.1 if t > 0.8 else 0))
+        F.blade(bt, root, tip, 0.06, [hd], RED if k % 3 else 0xb02a1c, thick=0.03, surf='0', side=G(0, 0, 1))
+    # ---- the cape
+    cape = [p.n['cape']]
+    while bt.child(cape[-1]) is not None:
+        cape.append(bt.child(cape[-1]))
+    cp = [p.B[k] for k in cape]
+    for i in range(5):
+        x = (i - 2) * 0.1
+        pts = [c + G(x * (1 + 0.3 * t), 0, -0.01 * abs(i - 2)) for t, c in enumerate(cp)]
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.5
+        F.ribbon(bt, pts + [tip], [0.11] * len(pts) + [0.09], G(1, 0, 0), cape, RED2 if i % 2 else RED)
+    for sd in (-1, 1):
+        F.gem(bt, gv(C, sd * 0.1, 0.22, 0.09), 0.022, [ch], GOLD, surf='1', glow=False)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 3000, surface='0'), ['0', '1', '2']
+# end:h-416c43fb
+
+
+def rag(bt, st, P, centre, width, rgb, reach=0.6, thick=0.01):
+    """A torn strip of cloth down a strand: it curves with the hem around `centre` and narrows to a ragged point."""
+    pts = [P(b) for b in st]
+    pts = pts + [pts[-1] + (pts[-1] - pts[-2]) * reach]
+    out = pts[0] - Vector(centre)
+    out.z = 0
+    side = Vector((-out.y, out.x, 0)).normalized() if out.length > 1e-4 else Vector((1, 0, 0))
+    n = len(pts)
+    F.ribbon(bt, pts, [width * (1 - 0.8 * i / (n - 1)) for i in range(n)], side, st, rgb, thick=thick)
+
+
+# forged:witch
+@builder('witch', 0x2a2440)
+def witch(bt):
+    """The Shade of Hecate: three masked faces under a crown of moons, a fan collar, a scalloped gown torn to tatters, crescent staff and violet torch."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    P = lambda i: Vector(B[i])
+    C, Hd = P(chest), P(head)
+    GOWN, GOWN2, TATTER, GOLD, MASK, CRONE, VIOLET, SKIN = 0x2c2440, 0x3a3054, 0x18121f, 0xd8b060, 0xe6e0d4, 0x8a8478, 0xb080ff, 0xb8b0c0
+    # ---- the gown: a flared bell, scalloped at the hem; a fitted bodice; a gold girdle
+    scal = lambda a, i: 1 + 0.06 * math.cos(a * 8) if i >= 3 else 1
+    F.hull(bt, [(gv(C, 0, -0.12, 0), 0.15, 0.13), (gv(C, 0, -0.32, 0), 0.2, 0.17), (gv(C, 0, -0.56, 0), 0.3, 0.26), (gv(C, 0, -0.76, 0), 0.4, 0.35), (gv(C, 0, -0.92, 0), 0.44, 0.39)], [chest, body], GOWN, sides=16, surf='fur', wave=scal)
+    for k in range(4):
+        a = k / 4 * math.tau + math.pi / 4
+        F.hull(bt, [(gv(C, 0, -0.3, 0), 0.205, 0.175), (gv(C, 0, -0.9, 0), 0.45, 0.4)], [chest, body], GOWN2, sides=16, surf='fur', arc=(a - 0.3, a + 0.3))
+    F.hull(bt, [(gv(C, 0, -0.14, 0), 0.15, 0.13), (gv(C, 0, 0.05, 0.01), 0.17, 0.14), (gv(C, 0, 0.2, 0), 0.15, 0.12), (gv(C, 0, 0.28, -0.01), 0.08, 0.07)], [chest], GOWN2, sides=14, surf='fur')
+    F.ring(bt, gv(C, 0, -0.14, 0), 0.155, [chest], GOLD, width=0.035, thick=0.012, segs=18, surf='shell')
+    F.gem(bt, gv(C, 0, -0.14, 0.17), 0.03, [chest], VIOLET)
+    for st in n['strands'][:12]:
+        rag(bt, st, P, P(body), 0.15, TATTER, reach=0.4, thick=0.008)
+    # A standing fan collar behind the head, gold-edged.
+    for k in range(11):
+        a = math.pi + (k - 5) * 0.26
+        b = gv(C, math.sin(a) * 0.1, 0.24, math.cos(a) * 0.08)
+        tip = b + G(math.sin(a) * 0.16, 0.3 - abs(k - 5) * 0.03, math.cos(a) * 0.12)
+        F.blade(bt, b, tip, 0.08, [chest], GOWN2 if k % 2 else TATTER, thick=0.012, side=G(math.cos(a), 0, -math.sin(a)))
+        F.spike(bt, tip - (tip - b) * 0.2, tip + (tip - b) * 0.08, 0.008, [chest], GOLD, surf='shell')
+    # ---- the head: a veil, three masks (maiden ahead, mother and crone to the sides), slits of violet light
+    F.hull(bt, [(gv(Hd, 0, -0.06, -0.01), 0.1, 0.1), (gv(Hd, 0, 0.05, -0.01), 0.125, 0.125), (gv(Hd, 0, 0.16, -0.02), 0.12, 0.12), (gv(Hd, 0, 0.22, -0.03), 0.06, 0.06)], [head], TATTER, sides=12, surf='fur')
+    for ang, col in ((0.0, MASK), (math.pi / 2, MASK), (-math.pi / 2, CRONE)):
+        f = G(math.sin(ang), 0, math.cos(ang))
+        s_ = G(math.cos(ang), 0, -math.sin(ang))
+        c = gv(Hd, 0, 0.06, 0) + f * 0.115
+        F.plate(bt, c, (0.11, 0.15, 0.03), [head], col, rot=(0.0, ang, 0), bevel=0.35, taper=0.8, surf='shell')
+        for sd in (-1, 1):
+            F.plate(bt, c + s_ * (sd * 0.025) + G(0, 0.025, 0) + f * 0.018, (0.03, 0.009, 0.01), [head], VIOLET, rot=(0, ang, -sd * 0.25), surf='glow', glow=True, bevel=0)
+        F.plate(bt, c + G(0, -0.04, 0) + f * 0.018, (0.035, 0.006, 0.01), [head], 0x1a1020, rot=(0, ang, 0), bevel=0, surf='fur')
+    # The crown: a gold band, spikes, three crescent moons of light.
+    F.ring(bt, gv(Hd, 0, 0.14, -0.01), 0.13, [head], GOLD, width=0.03, thick=0.012, segs=18, surf='shell')
+    for k in range(9):
+        a = k / 9 * math.tau
+        b = gv(Hd, math.sin(a) * 0.13, 0.15, math.cos(a) * 0.13 - 0.01)
+        F.spike(bt, b, b + G(math.sin(a) * 0.03, 0.09 + 0.04 * (k % 3 == 0), math.cos(a) * 0.03), 0.02, [head], GOLD, surf='shell')
+    for ang in (0.0, 2.1, -2.1):
+        c = gv(Hd, math.sin(ang) * 0.1, 0.3, math.cos(ang) * 0.1 - 0.01)
+        pts = [c + G(math.cos(ang) * math.sin(t) * 0.09, math.cos(t) * 0.09, -math.sin(ang) * math.sin(t) * 0.09) for t in [-2.2, -1.5, -0.8, 0.0, 0.8, 1.5, 2.2]]
+        F.chain(bt, pts, [0.004, 0.012, 0.018, 0.02, 0.018, 0.012, 0.004], [head], VIOLET, sides=5, surf='glow', glow=True)
+    for st in n['strands'][12:]:
+        pts = [P(b) for b in st]
+        F.ribbon(bt, pts + [pts[-1] + (pts[-1] - pts[-2]) * 0.8], 0.05, G(1, 0, 0), st, 0x120c16, thick=0.01)
+    # ---- arms: wide sleeves, pale clawed hands
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        U, M, L = P(up), P(mid), P(low)
+        F.loft(bt, [U, M, L.lerp(M, 0.1)], [0.07, 0.08, 0.13], [0.07, 0.08, 0.13], [up, mid, low], GOWN2, sides=8, surf='fur')
+        F.ring(bt, L.lerp(M, 0.1), 0.13, [low], GOLD, width=0.02, thick=0.008, axis=(0, 1, 0), segs=12, surf='shell')
+        for f in range(4):
+            k0 = L + G((f - 1.5) * 0.02, -0.03, 0.03)
+            F.chain(bt, [k0, k0 + G((f - 1.5) * 0.01, -0.08, 0.03), k0 + G((f - 1.5) * 0.012, -0.15, 0.08)], [0.012, 0.009, 0.002], [low], SKIN, sides=5, surf='shell')
+    # ---- the staff (right): a dark shaft, a gold crescent cradling a violet orb
+    right, left = n['arms'][0], n['arms'][1]
+    W, rl = P(right['low']), right['low']
+    F.prism(bt, W + G(0, -1.1, 0.04), W + G(0, 1.05, -0.02), 0.03, 0.03, [rl], 0x221830, sides=7, surf='fur')
+    for y in (-0.6, 0.0, 0.6):
+        F.ring(bt, W + G(0, y, 0.02 - y * 0.03), 0.034, [rl], GOLD, width=0.03, thick=0.008, segs=10, surf='shell')
+    top = W + G(0, 1.12, -0.02)
+    arc = [top + G(math.sin(t) * 0.2, -math.cos(t) * 0.16 + 0.04, 0) for t in [-1.9, -1.3, -0.65, 0.0, 0.65, 1.3, 1.9]]
+    F.chain(bt, arc, [0.006, 0.02, 0.028, 0.03, 0.028, 0.02, 0.006], [rl], GOLD, sides=6, surf='shell')
+    F.gem(bt, top + G(0, 0.06, 0), 0.075, [rl], VIOLET, stretch=1.0)
+    # ---- the torch (left): a wrapped haft and a tongue of violet flame
+    Wl, ll = P(left['low']), left['low']
+    F.prism(bt, Wl + G(0, -0.14, 0.04), Wl + G(0, 0.28, 0.06), 0.022, 0.032, [ll], 0x2a1c12, sides=6, surf='fur')
+    F.ring(bt, Wl + G(0, 0.26, 0.06), 0.04, [ll], GOLD, width=0.04, thick=0.01, segs=10, surf='shell')
+    for k in range(5):
+        a = k / 5 * math.tau
+        b = Wl + G(math.sin(a) * 0.025, 0.3, 0.06 + math.cos(a) * 0.025)
+        F.blade(bt, b, b + G(math.sin(a) * 0.02, 0.2 + 0.06 * (k % 2), math.cos(a) * 0.02), 0.07, [ll], VIOLET if k % 2 else 0x6a40d0, thick=0.02, surf='glow', glow=True)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+# end:witch
+
+
+# forged:reaper
+@builder('reaper', 0x15131a)
+def reaper(bt):
+    """The Reaper: a towering hooded void with cold green eyes, a ragged robe, a mantle of ribs, bony hands, a great scythe and a soul lantern."""
+    n, B = bt.n, bt.B
+    body, chest, head = n['body'], n['chest'], n['head']
+    P = lambda i: Vector(B[i])
+    C, Hd = P(chest), P(head)
+    ROBE, ROBE2, RAG, BONE, VOID, SOUL, IRON, WOOD = 0x17151c, 0x221e28, 0x0e0c12, 0xd0c6aa, 0x020203, 0x70ffb0, 0x3a3a40, 0x241a14
+    # ---- the robe: a long bell to the ground, torn into rags below
+    F.hull(bt, [(gv(C, 0, 0.1, 0), 0.22, 0.18), (gv(C, 0, -0.3, 0), 0.27, 0.22), (gv(C, 0, -0.8, 0), 0.38, 0.32), (gv(C, 0, -1.2, 0), 0.48, 0.42), (gv(C, 0, -1.45, 0), 0.52, 0.46)], [chest, body], ROBE, sides=14, surf='fur', wave=lambda a, i: 1 + 0.07 * math.cos(a * 7) if i >= 3 else 1)
+    for k in range(6):
+        a = k / 6 * math.tau
+        F.hull(bt, [(gv(C, 0, -0.2, 0), 0.26, 0.215), (gv(C, 0, -1.43, 0), 0.53, 0.47)], [chest, body], ROBE2, sides=14, surf='fur', arc=(a - 0.18, a + 0.18))
+    for st in n['strands']:
+        rag(bt, st, P, P(n['body']), 0.17, RAG, reach=0.45)
+    # ---- a mantle of ribs over the shoulders, a rope of bone at the waist
+    F.hull(bt, [(gv(C, 0, 0.2, 0), 0.3, 0.24), (gv(C, 0, 0.36, -0.01), 0.24, 0.2), (gv(C, 0, 0.44, -0.02), 0.13, 0.12)], [chest], ROBE2, sides=12, surf='fur')
+    for k in range(9):
+        a = math.pi + (k - 4) * 0.36
+        b = gv(C, math.sin(a) * 0.16, 0.38, math.cos(a) * 0.13)
+        pts = [b, b + G(math.sin(a) * 0.15, -0.08, math.cos(a) * 0.12), b + G(math.sin(a) * 0.24, -0.26, math.cos(a) * 0.18)]
+        F.chain(bt, pts, [0.022, 0.02, 0.006], [chest], BONE, sides=5, surf='shell')
+    for k in range(7):
+        a = (k - 3) * 0.32
+        b = gv(C, math.sin(a) * 0.2, 0.0, math.cos(a) * 0.17)
+        F.gem(bt, b, 0.04, [chest], BONE if k % 2 else 0xa89c80, surf='shell', glow=False)
+    # ---- the hood: tall and peaked, a void inside, two cold eyes
+    F.hull(bt, [(gv(Hd, 0, -0.18, -0.03), 0.16, 0.16), (gv(Hd, 0, -0.02, -0.02), 0.17, 0.18), (gv(Hd, 0, 0.14, -0.04), 0.15, 0.16), (gv(Hd, 0, 0.28, -0.09), 0.09, 0.1), (gv(Hd, 0, 0.38, -0.18), 0.02, 0.02)], [head], ROBE2, sides=12, surf='fur', arc=(0.75, math.tau - 0.75))
+    F.hull(bt, [(gv(Hd, 0, -0.14, 0.0), 0.12, 0.12), (gv(Hd, 0, 0.12, -0.02), 0.12, 0.12)], [head], VOID, sides=10, surf='fur')
+    for sd in (-1, 1):
+        F.gem(bt, gv(Hd, sd * 0.045, 0.02, 0.11), 0.022, [head], SOUL, stretch=0.6)
+    F.plate(bt, gv(Hd, 0, -0.1, 0.1), (0.1, 0.05, 0.05), [head], BONE, bevel=0.35, taper=0.8, surf='shell')
+    for k in range(5):
+        F.spike(bt, gv(Hd, (k - 2) * 0.018, -0.08, 0.125), gv(Hd, (k - 2) * 0.018, -0.12, 0.125), 0.007, [head], 0xe8e0c8, surf='shell')
+    # ---- sleeves and long bony hands
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        U, M, L = P(up), P(mid), P(low)
+        F.loft(bt, [U, M, L.lerp(M, 0.12)], [0.09, 0.1, 0.17], [0.09, 0.1, 0.17], [up, mid, low], ROBE, sides=8, surf='fur')
+        for st in range(3):
+            q = L.lerp(M, 0.12) + G((st - 1) * 0.08, -0.04, 0)
+            F.ribbon(bt, [q, q + G(0, -0.16, 0), q + G(0.01, -0.3, -0.02)], 0.07, G(1, 0, 0), [low], RAG, thick=0.008)
+        F.plate(bt, L + G(0, -0.02, 0.02), (0.06, 0.06, 0.04), [low], BONE, bevel=0.35, surf='shell')
+        for f in range(4):
+            k0 = L + G((f - 1.5) * 0.022, -0.04, 0.03)
+            F.chain(bt, [k0, k0 + G((f - 1.5) * 0.012, -0.1, 0.05), k0 + G((f - 1.5) * 0.014, -0.18, 0.11)], [0.012, 0.009, 0.002], [low], BONE, sides=5, surf='shell')
+    # ---- the scythe: a long black haft bound in iron, a great curved blade with a ghostly edge
+    rl = n['arms'][0]['low']
+    W = P(rl)
+    F.prism(bt, W + G(0.02, -1.5, -0.14), W + G(-0.03, 2.1, 0.12), 0.036, 0.036, [rl], WOOD, sides=7, surf='fur')
+    for y in (-1.2, -0.4, 0.6, 1.5):
+        F.ring(bt, W + G(0, y, y * 0.06), 0.04, [rl], IRON, width=0.07, thick=0.012, segs=10, surf='shell')
+    T0 = W + G(-0.03, 2.12, 0.12)
+    F.plate(bt, T0, (0.11, 0.2, 0.11), [rl], IRON, bevel=0.3, surf='shell')
+    F.spike(bt, T0 + G(0, 0.02, -0.04), T0 + G(0, 0.18, -0.36), 0.035, [rl], IRON, surf='shell')
+    spine = curve([T0 + G(0, 0.04, 0.04), T0 + G(0, 0.3, 0.7), T0 + G(0, 0.1, 1.4), T0 + G(0, -0.34, 1.85)], 4)
+    wid = [0.2 * (1 - i / (len(spine) - 1)) ** 0.7 + 0.006 for i in range(len(spine))]
+    mid = [p + G(0, -w * 0.5, 0) for p, w in zip(spine, wid)]
+    F.ribbon(bt, mid, wid, G(0, 1, 0), [rl], 0xa8b0b8, thick=0.012, surf='shell')
+    edge = [p + G(0, -w, 0) for p, w in zip(spine, wid)]
+    F.chain(bt, edge, [0.012 * (1 - i / (len(edge) - 1)) + 0.003 for i in range(len(edge))], [rl], SOUL, sides=4, surf='glow', glow=True)
+    # ---- the soul lantern at the left hip
+    lp = G(0.42, 1.45, 0.16)
+    F.prism(bt, G(0.34, 1.95, 0.08), lp + G(0, 0.16, 0), 0.008, 0.008, [body], IRON, sides=4, surf='shell')
+    F.plate(bt, lp + G(0, 0.13, 0), (0.14, 0.03, 0.14), [body], IRON, bevel=0.3, surf='shell')
+    F.plate(bt, lp + G(0, -0.13, 0), (0.14, 0.03, 0.14), [body], IRON, bevel=0.3, surf='shell')
+    F.spike(bt, lp + G(0, 0.14, 0), lp + G(0, 0.24, 0), 0.06, [body], IRON, sides=4, surf='shell')
+    for i in range(4):
+        a = (i / 4) * math.tau + math.pi / 4
+        F.prism(bt, lp + G(math.sin(a) * 0.065, 0.13, math.cos(a) * 0.065), lp + G(math.sin(a) * 0.065, -0.13, math.cos(a) * 0.065), 0.009, 0.009, [body], IRON, sides=4, surf='shell')
+    F.gem(bt, lp, 0.06, [body], SOUL, stretch=1.3)
+    bt.ao_floor = 0.6
+    return bt.build(0.01, 3000, surface='fur'), CREATURE_SURFACES
+# end:reaper
+
+
+# end:siren
+
+
+
+
+# forged:siren
+# forged:siren
+@builder('siren', 0x2f8a96)
+def siren(bt):
+    """
+    Queen Nerissa, cut in crisp facets: a fine face under a crown of coral and
+    pearls, sea-green hair falling in long locks, a bodice of leaf scales and
+    layered shell pauldrons; a gold belt frilled with fins, and below it a long
+    scaled tail curling along the ground to a great fluke. She bears a golden trident.
+    """
+    n, B = bt.n, bt.B
+    body, chest, head, tail = n['body'], n['chest'], n['head'], n['tail']
+    P = lambda i: Vector(B[i])
+    Bo, C, Hd = P(body), P(chest), P(head)
+    SKIN, SKIN2, HAIR, HAIR2, GOLD, PEARL, CORAL, CORAL2 = 0xcdeee6, 0xb0d8d2, 0x22606c, 0x2c7480, 0xe0bc64, 0xf2eee2, 0xf07a88, 0xf8a0a8
+    SCALE, SCALE2, TAIL, BELLY, FIN, FIN2, EYE = 0x4cbcc4, 0x3696a4, 0x3a9cac, 0x9ad8d0, 0x68cad2, 0x48aab6, 0x60fff0
+    bt.ao_floor = 0.68
+    # ---- the torso: a slender waist rising to the ribs, shoulders, a long neck
+    F.hull(bt, [(gv(Bo, 0, 0.08, 0), 0.14, 0.12), (gv(Bo, 0, 0.3, 0.005), 0.125, 0.105), (gv(C, 0, -0.12, 0.01), 0.15, 0.12), (gv(C, 0, 0.06, 0.01), 0.18, 0.13), (gv(C, 0, 0.2, 0), 0.2, 0.11), (gv(C, 0, 0.25, -0.005), 0.1, 0.07)], [body, chest], SKIN, sides=12, surf='fur')
+    F.hull(bt, [(gv(C, 0, 0.19, 0), 0.19, 0.1), (gv(C, 0, 0.26, -0.01), 0.1, 0.07), (gv(C, 0, 0.3, -0.005), 0.05, 0.045)], [chest], SKIN, sides=10, surf='fur')
+    F.prism(bt, gv(C, 0, 0.26, 0), gv(Hd, 0, -0.04, 0), 0.042, 0.036, [chest, head], SKIN, sides=7, surf='fur')
+    for sd in (-1, 1):
+        F.prism(bt, gv(C, sd * 0.02, 0.215, 0.09), gv(C, sd * 0.15, 0.225, 0.05), 0.012, 0.01, [chest], SKIN2, sides=4, surf='fur')
+    # ---- the head: a faceted skull, narrow at the chin, a fine nose, coral lips, glowing almond eyes
+    F.hull(bt, [(gv(Hd, 0, -0.085, 0.07), 0.02, 0.02), (gv(Hd, 0, -0.06, 0.04), 0.06, 0.07), (gv(Hd, 0, -0.01, 0.01), 0.088, 0.1), (gv(Hd, 0, 0.06, -0.005), 0.1, 0.112), (gv(Hd, 0, 0.13, -0.01), 0.088, 0.1), (gv(Hd, 0, 0.18, -0.015), 0.04, 0.05)], [head], SKIN, sides=10, surf='fur')
+    F.prism(bt, gv(Hd, 0, 0.045, 0.105), gv(Hd, 0, 0.0, 0.125), 0.012, 0.016, [head], SKIN, sides=4, surf='fur')
+    F.plate(bt, gv(Hd, 0, -0.035, 0.103), (0.036, 0.012, 0.012), [head], CORAL, bevel=0.4, surf='fur')
+    for sd in (-1, 1):
+        e = gv(Hd, sd * 0.042, 0.035, 0.095)
+        F.plate(bt, e, (0.034, 0.016, 0.012), [head], 0x0a2a30, rot=(0, sd * 0.35, sd * 0.12), bevel=0.3, surf='fur')
+        F.plate(bt, e + G(0, 0, 0.005), (0.024, 0.01, 0.01), [head], EYE, rot=(0, sd * 0.35, sd * 0.12), bevel=0.3, surf='glow', glow=True)
+        F.plate(bt, e + G(sd * 0.004, 0.026, 0.0), (0.04, 0.007, 0.01), [head], HAIR, rot=(0, sd * 0.35, -sd * 0.18), bevel=0, surf='fur')
+        F.plate(bt, gv(Hd, sd * 0.058, -0.005, 0.07), (0.03, 0.03, 0.02), [head], SKIN2, rot=(0, sd * 0.6, 0), bevel=0.4, surf='fur')
+        # Fin ears swept back, ribbed in dark rods.
+        ear = gv(Hd, sd * 0.095, 0.04, -0.005)
+        for tip, w in ((gv(Hd, sd * 0.2, 0.17, -0.1), 0.06), (gv(Hd, sd * 0.23, 0.06, -0.13), 0.07), (gv(Hd, sd * 0.18, -0.04, -0.09), 0.05)):
+            F.blade(bt, ear, tip, w, [head], FIN, thick=0.006, surf='membrane', side=G(0, 1, 0), belly=0.6)
+            F.spike(bt, ear, tip, 0.005, [head], 0x1e5058, surf='shell')
+    # ---- the hair: a cap over the crown, locks framing the face, long locks down each strand
+    F.hull(bt, [(gv(Hd, 0, 0.0, -0.06), 0.1, 0.06), (gv(Hd, 0, 0.08, -0.02), 0.112, 0.12), (gv(Hd, 0, 0.15, -0.015), 0.095, 0.105), (gv(Hd, 0, 0.2, -0.02), 0.04, 0.05)], [head], HAIR, sides=10, surf='fur')
+    for sd in (-1, 1):
+        run = [gv(Hd, sd * 0.03, 0.16, 0.09), gv(Hd, sd * 0.1, 0.1, 0.075), gv(Hd, sd * 0.12, 0.0, 0.05), gv(Hd, sd * 0.125, -0.12, 0.04), gv(C, sd * 0.12, 0.22, 0.08), gv(C, sd * 0.14, 0.1, 0.09)]
+        F.ribbon(bt, run, [0.05, 0.06, 0.06, 0.055, 0.045, 0.012], G(0, 0, 1), [head, chest], HAIR2, thick=0.012)
+    for si, st in enumerate(n['strands']):
+        pts = [P(b) for b in st]
+        out = pts[0] - Hd
+        out.z = 0
+        side = Vector((-out.y, out.x, 0)).normalized() if out.length > 1e-4 else Vector((1, 0, 0))
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+        root = Hd + (pts[0] - Hd) * 0.6
+        wv = lambda k: side * 0.025 * math.sin(k * 2.0 + si)
+        run = [root, pts[0], pts[1] + wv(1), pts[2] + wv(2), pts[2].lerp(tip, 0.5) + wv(3), tip]
+        F.ribbon(bt, run, [0.07, 0.09, 0.1, 0.085, 0.06, 0.012], side, [head] + st, HAIR if si % 3 else HAIR2, thick=0.014)
+    # ---- the crown: a gold band, branching coral, pearls, a burning gem at the brow
+    F.ring(bt, gv(Hd, 0, 0.135, -0.01), 0.113, [head], GOLD, width=0.03, thick=0.012, segs=14, surf='shell')
+    for i in range(9):
+        a = -1.5 + i * 0.375
+        out = G(math.sin(a), 0, math.cos(a))
+        side = G(math.cos(a), 0, -math.sin(a))
+        b0 = gv(Hd, math.sin(a) * 0.11, 0.14, -0.01 + math.cos(a) * 0.1)
+        h = 0.22 if i == 4 else 0.12 + 0.035 * (i % 2) - 0.012 * abs(i - 4)
+        p1 = b0 + out * 0.03 + G(0, h * 0.55, 0)
+        p2 = b0 + out * 0.06 + G(0, h, 0)
+        F.chain(bt, [b0, p1, p2], [0.016, 0.011, 0.004], [head], CORAL, sides=5, surf='fur')
+        for sgn in (-1, 1):
+            q = b0.lerp(p1, 0.7 + 0.2 * sgn)
+            F.chain(bt, [q, q + side * sgn * 0.035 + out * 0.02 + G(0, 0.035, 0), q + side * sgn * 0.045 + out * 0.035 + G(0, 0.065, 0)], [0.008, 0.005, 0.002], [head], CORAL2, sides=4, surf='fur')
+        if i == 4:
+            F.gem(bt, p2 + G(0, 0.03, 0), 0.026, [head], 0xa0fff8, stretch=1.5)
+        else:
+            F.gem(bt, p2 + G(0, 0.01, 0), 0.014, [head], PEARL, surf='shell', glow=False)
+    F.gem(bt, gv(Hd, 0, 0.135, 0.125), 0.02, [head], EYE, stretch=1.4)
+    # ---- the bodice: rows of leaf scales over breast and ribs, a gold rim, a pearl necklace, a gem at the heart
+    F.hull(bt, [(gv(C, 0, -0.15, 0.012), 0.155, 0.125), (gv(C, 0, 0.06, 0.012), 0.185, 0.135), (gv(C, 0, 0.19, 0.004), 0.2, 0.115)], [chest], SCALE2, sides=12, surf='shell', arc=(-1.75, 1.75))
+    for r in range(6):
+        y = 0.18 - r * 0.06
+        rx, rz = 0.195 - abs(r - 1.5) * 0.008 - (0.03 if r > 3 else 0), 0.125 + (0.012 if r in (1, 2) else 0)
+        for k in range(9):
+            a = -1.4 + 2.8 * (k + 0.5 * (r % 2)) / 8.5
+            b = gv(C, math.sin(a) * rx, y, 0.01 + math.cos(a) * rz)
+            F.blade(bt, b + G(0, 0.012, 0), b + G(math.sin(a) * 0.01, -0.07, math.cos(a) * 0.012), 0.052, [chest], SCALE if (r + k) % 2 else SCALE2, thick=0.007, surf='shell', side=G(math.cos(a), 0, -math.sin(a)), belly=0.55)
+    for k in range(13):
+        a = -1.4 + k * 2.8 / 12
+        F.gem(bt, gv(C, math.sin(a) * 0.2, 0.2 - 0.02 * math.cos(a), 0.008 + math.cos(a) * 0.118), 0.013, [chest], GOLD, surf='shell', glow=False)
+    for k in range(15):
+        a = -1.2 + k * 2.4 / 14
+        F.gem(bt, gv(C, math.sin(a) * 0.1, 0.285 - 0.08 * math.cos(a), 0.01 + math.cos(a) * 0.105), 0.012, [chest], PEARL, surf='shell', glow=False)
+    F.gem(bt, gv(C, 0, 0.165, 0.14), 0.028, [chest], EYE, stretch=1.3)
+    # ---- the arms: slender, gold-banded, finned at the elbow; layered shell pauldrons with gold spines
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        S, E, W = P(up), P(mid), P(low)
+        sd = 1 if W.x > 0 else -1
+        F.prism(bt, gv(S, -sd * 0.02, 0.01, 0), E, 0.05, 0.037, [up, mid], SKIN, sides=7, surf='fur')
+        F.prism(bt, E, W, 0.037, 0.027, [mid, low], SKIN, sides=7, surf='fur')
+        F.plate(bt, gv(W, 0, -0.055, 0.02), (0.06, 0.07, 0.025), [low], SKIN, bevel=0.4, taper=0.8, surf='fur')
+        for f in range(4):
+            k0 = gv(W, (f - 1.5) * 0.016, -0.09, 0.03)
+            F.chain(bt, [k0, k0 + G((f - 1.5) * 0.005, -0.04, 0.012), k0 + G((f - 1.5) * 0.008, -0.075, 0.03)], [0.009, 0.007, 0.004], [low], SKIN, sides=4, surf='fur')
+        F.chain(bt, [gv(W, -sd * 0.03, -0.05, 0.035), gv(W, -sd * 0.045, -0.09, 0.065)], [0.009, 0.005], [low], SKIN, sides=4, surf='fur')
+        for t in (0.12, 0.22):
+            F.prism(bt, W.lerp(E, t), W.lerp(E, t + 0.05), 0.033, 0.033, [low], GOLD, sides=8, surf='shell')
+        F.prism(bt, S.lerp(E, 0.55), S.lerp(E, 0.62), 0.046, 0.044, [up], GOLD, sides=8, surf='shell')
+        for k, (r, dy) in enumerate(((0.105, 0.03), (0.09, 0.0), (0.075, -0.03))):
+            F.dome(bt, gv(S, sd * (0.025 + k * 0.012), dy, 0), r, [up], SCALE if k % 2 else SCALE2, axis=G(sd * 0.7, 1, 0).normalized(), theta=1.0, thick=0.012, segs=10, rings=3, surf='shell', squash=(1, 0.7, 1))
+        for k in range(3):
+            q = gv(S, sd * (0.05 + k * 0.025), 0.1 - k * 0.025, -0.03 + k * 0.03)
+            F.spike(bt, q, q + G(sd * 0.05, 0.09, -0.02), 0.013, [up], GOLD, surf='shell')
+        base = E + G(sd * 0.02, 0.0, -0.03)
+        for tip, w in ((E + G(sd * 0.16, 0.06, -0.13), 0.07), (E + G(sd * 0.15, -0.12, -0.13), 0.08), (W + G(sd * 0.07, 0.06, -0.09), 0.05)):
+            F.blade(bt, base, tip, w, [mid], FIN, thick=0.006, surf='membrane', side=(tip - base).cross(G(1, 0, 0)), belly=0.6)
+            F.spike(bt, base, tip, 0.005, [mid], 0x1e5058, surf='shell')
+    # ---- the waist: a frill of fins where skin turns to scale, a gold belt strung with pearls
+    for k in range(16):
+        a = k / 16 * math.tau
+        d = G(math.sin(a), 0, math.cos(a))
+        side = G(math.cos(a), 0, -math.sin(a))
+        b0 = gv(Bo, 0, 0.12, 0) + d * 0.13
+        F.blade(bt, b0, b0 + d * 0.15 + G(0, -0.24, 0), 0.11, [body], FIN if k % 2 else FIN2, thick=0.006, surf='membrane', side=side, belly=0.4)
+    F.hull(bt, [(gv(Bo, 0, 0.1, 0), 0.15, 0.13), (gv(Bo, 0, 0.15, 0), 0.15, 0.13)], [body], GOLD, sides=14, surf='shell')
+    for k in range(12):
+        a = k / 12 * math.tau
+        F.gem(bt, gv(Bo, math.sin(a) * 0.155, 0.125, math.cos(a) * 0.135), 0.015, [body], PEARL, surf='shell', glow=False)
+    F.gem(bt, gv(Bo, 0, 0.125, 0.15), 0.026, [body], EYE, stretch=1.3)
+    # ---- the tail: swelling from the hips, then tapering as it curls along the ground; a pale belly keel, a fin crest
+    pts = [gv(Bo, 0, 0.08, 0)] + [P(t) for t in tail]
+    end = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+    run = pts + [end]
+    rr = [0.14, 0.195, 0.185, 0.165, 0.14, 0.112, 0.085, 0.06, 0.04, 0.026]
+    tb = [[body]] + [[tail[max(0, i - 1)], tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))]
+
+    def dorsal(d):
+        """The tail's back at a segment: up where it lies along the ground, behind where it hangs from the hips."""
+        up = Vector((0, 0, 1)) - d * d.z
+        if up.length < 0.5:
+            back = G(0, 0, -1)
+            up = up.normalized() * up.length + (back - d * d.dot(back)) * (0.5 - up.length) * 2
+        return up.normalized()
+
+    for i in range(len(run) - 1):
+        a_, b_ = run[i], run[i + 1]
+        F.loft(bt, [a_, b_], [rr[i], rr[i + 1]], [rr[i], rr[i + 1]], tb[i], TAIL, sides=10, surf='fur')
+        d = (b_ - a_).normalized()
+        up = dorsal(d)
+        side = d.cross(up).normalized()
+        # Overlapping leaf scales in staggered rows over the back and flanks.
+        L = (b_ - a_).length
+        rows = max(2, int(L / 0.09))
+        for r in range(rows):
+            t = (r + 0.5) / rows
+            q = a_.lerp(b_, t)
+            rad = rr[i] + (rr[i + 1] - rr[i]) * t
+            for k in range(7):
+                ang = (k - 3 + 0.5 * (r % 2)) * 0.42
+                nrm = up * math.cos(ang) + side * math.sin(ang)
+                c = q + nrm * rad * 1.01
+                F.blade(bt, c - d * rad * 0.35, c + d * rad * 0.45, rad * 0.55, tb[i], SCALE if (r + k) % 2 else SCALE2, thick=0.006, surf='shell', side=d.cross(nrm), belly=0.35)
+        # The pale keel of the belly.
+        if i >= 1:
+            F.loft(bt, [a_ - up * rr[i] * 0.55, b_ - up * rr[i + 1] * 0.55], [rr[i] * 0.75, rr[i + 1] * 0.75], [rr[i] * 0.5, rr[i + 1] * 0.5], tb[i], BELLY, sides=8, surf='fur')
+        if 2 <= i <= 6:
+            base_ = a_.lerp(b_, 0.5) + up * rr[i] * 0.9
+            hgt = 0.12 + 0.05 * math.sin((i - 2) / 4 * math.pi)
+            F.blade(bt, base_ - d * 0.09, base_ + d * 0.03 + up * hgt, 0.16, tb[i], FIN, thick=0.006, surf='membrane', side=d, belly=0.3)
+            F.spike(bt, base_ - d * 0.04, base_ + d * 0.02 + up * hgt, 0.006, tb[i], 0x1e5058, surf='shell')
+    # Hip fins.
+    for sd in (-1, 1):
+        h = G(sd * 0.17, 1.42, -0.06)
+        for tip, w in ((G(sd * 0.48, 1.4, -0.22), 0.16), (G(sd * 0.44, 1.12, -0.32), 0.14), (G(sd * 0.3, 1.0, -0.22), 0.1)):
+            F.blade(bt, h, tip, w, [body, tail[0]], FIN, thick=0.006, surf='membrane', side=(tip - h).cross(G(1, 0, 0)), belly=0.55)
+            F.spike(bt, h, tip, 0.006, [body, tail[0]], 0x1e5058, surf='shell')
+    # The fluke: two great lobes, ribbed.
+    te, last = end, tail[-1]
+    for sd in (-1, 1):
+        for tip, w in ((te + G(sd * 0.12, 0.62, -0.06), 0.22), (te + G(sd * 0.5, 0.56, -0.4), 0.3), (te + G(sd * 0.8, 0.16, -0.6), 0.3), (te + G(sd * 0.6, -0.15, -0.36), 0.22)):
+            F.blade(bt, te, tip, w, [last, tail[-2]], FIN if sd > 0 else FIN2, thick=0.008, surf='membrane', side=(tip - te).cross(G(0, 0, 1) if abs((tip - te).normalized().z) < 0.9 else G(1, 0, 0)), belly=0.6)
+            F.spike(bt, te, tip, 0.01, [last, tail[-2]], 0x1e5058, surf='shell')
+    # ---- the trident: a gilded shaft wound with gold, three barbed prongs, a burning gem where they meet
+    rl = n['arms'][0]['low']
+    W = P(rl)
+    F.prism(bt, W + G(0, -1.0, 0.03), W + G(0, 1.35, -0.03), 0.026, 0.026, [rl], 0xb8903a, sides=7, surf='shell')
+    for k in range(9):
+        y = -0.85 + k * 0.26
+        F.prism(bt, W + G(0, y, 0.0), W + G(0, y + 0.04, 0.0), 0.033, 0.033, [rl], GOLD, sides=7, surf='shell')
+    F.spike(bt, W + G(0, -1.0, 0.03), W + G(0, -1.16, 0.035), 0.032, [rl], GOLD, sides=5, surf='shell')
+    tp = W + G(0, 1.38, -0.03)
+    F.chain(bt, [tp + G(-0.19, 0.12, 0), tp + G(-0.1, -0.04, 0), tp + G(0, -0.08, 0), tp + G(0.1, -0.04, 0), tp + G(0.19, 0.12, 0)], [0.012, 0.024, 0.03, 0.024, 0.012], [rl], GOLD, sides=6, surf='shell')
+    for dx, h in ((0, 0.5), (-0.18, 0.38), (0.18, 0.38)):
+        base_ = tp + G(dx, 0.1 if dx else 0, 0)
+        tip_ = base_ + G(dx * 0.08, h, 0)
+        F.chain(bt, [base_, base_.lerp(tip_, 0.6), tip_], [0.022, 0.016, 0.001], [rl], GOLD, sides=4, surf='shell')
+        F.blade(bt, tip_ + G(0, -0.1, 0), tip_ + G(0.05 if dx >= 0 else -0.05, -0.2, 0), 0.03, [rl], GOLD, thick=0.008, surf='shell', side=G(0, 0, 1))
+        F.gem(bt, tip_ + G(0, -0.05, 0), 0.016, [rl], 0x80fff0, stretch=2.4)
+    F.gem(bt, tp + G(0, 0.0, 0.02), 0.04, [rl], EYE, stretch=1.3)
+    return bt.build(0.005, 6000, surface='fur'), CREATURE_SURFACES
+# end:siren
+# end:siren
+
+
+# end:serpent
+
+
+# forged:serpent
+# forged:serpent
+@builder('serpent', 0x24525e)
+def serpent(bt):
+    """The Leviathan, cut in crisp facets: a sea serpent rearing from the waves, a webbed sail down its back, an armoured horned head with glowing eyes, ivory scutes up its throat, two coils and a finned tail behind."""
+    n, B = bt.n, bt.B
+    neck, head, jaw, tail, coils = n['neck'], n['head'], n['jaw'], n['tail'], n['coils']
+    BACK, BACK2, BELLY, SPINE, WEB, IVORY, HORN, GLOW, DARK = 0x1e4e5a, 0x173e48, 0xd6d0b8, 0x0c2226, 0x2a8a96, 0xeae4d0, 0xd0c8a8, 0x50fff0, 0x061012
+    nb = neck + [head]
+    N = [B[k] for k in neck] + [B[head]]
+    path = curve(N + [G(0, 9.9, 4.6)], 3)
+    m = len(path)
+
+    def rad(i):
+        u = i / (m - 1)
+        sst = lambda a, b, x: max(0.0, min(1.0, (x - a) / (b - a))) ** 2 * (3 - 2 * max(0.0, min(1.0, (x - a) / (b - a))))
+        return 1.65 - 0.95 * sst(0, 1, u) - 0.25 * sst(0.85, 1, u)
+
+    def bone_at(p):
+        return sorted(nb, key=lambda b: (B[b] - p).length)[:2]
+
+    def body(pts, radii, bones_for, belly_dir, sail=True, glow_every=2, sail_h=None):
+        """A faceted run of body: hide, a pale keel of scutes under it, scale rows on the flanks, glowing spots, a webbed sail on top."""
+        for i in range(len(pts) - 1):
+            a, b = pts[i], pts[i + 1]
+            bn = bones_for(a.lerp(b, 0.5))
+            T = (b - a).normalized()
+            D = (belly_dir(a.lerp(b, 0.5)) - T * T.dot(belly_dir(a.lerp(b, 0.5)))).normalized()
+            S = T.cross(D).normalized()
+            r0, r1 = radii[i], radii[i + 1]
+            ov = (r0 + r1) * 0.12
+            F.loft(bt, [a - T * (ov if i else 0), b + T * ov], [r0, r1], [r0, r1], bn, BACK if i % 2 else BACK2, sides=10, surf='fur', roll=0.31)
+            # Scutes: overlapping ivory plates under the belly.
+            c = a.lerp(b, 0.5)
+            r = (r0 + r1) / 2
+            L = (b - a).length
+            for k in range(max(1, round(L / (r * 0.7)))):
+                q = a.lerp(b, (k + 0.5) / max(1, round(L / (r * 0.7))))
+                F.blade(bt, q + D * r * 0.92 - T * r * 0.35, q + D * r * 0.92 + T * r * 0.4, r * 1.25, bn, BELLY, thick=r * 0.08, surf='shell', side=S, belly=0.3)
+            # Leaf scales in a row down each flank.
+            for sd in (-1, 1):
+                for k, ang in enumerate((0.55, 1.05)):
+                    nrm = (S * sd * math.sin(ang * 1.4) - D * math.cos(ang * 1.4)).normalized()
+                    q = c + nrm * r * 0.97
+                    F.blade(bt, q - T * L * 0.4, q + T * L * 0.45, r * 0.4, bn, BACK2 if (i + k) % 2 else BACK, thick=r * 0.018, surf='fur', side=T.cross(nrm), belly=0.35)
+                if glow_every and i % glow_every == 0:
+                    F.gem(bt, c + (S * sd * 0.94 + D * 0.3).normalized() * r, r * 0.11, bn, GLOW, stretch=0.7)
+            if sail:
+                h = sail_h(i) if sail_h else r * 0.8
+                top = c - D * r * 0.92
+                F.spike(bt, top + D * 0.1, top - D * h - T * h * 0.35, r * 0.09, bn, SPINE, sides=5)
+                nxt = b - D * r1 * 0.92
+                F.ribbon(bt, [top - D * h * 0.04, top - D * h * 0.5 - T * h * 0.17 + T * L * 0.1, top - D * h * 0.92 - T * h * 0.32], [L * 0.95, L * 0.7, 0.04], -T, bn, WEB, thick=0.02, surf='membrane')
+
+    throat = G(0, -0.45, 1).normalized()
+    nrad = [rad(i) for i in range(m)]
+    body(path[:-1], nrad[:-1], bone_at, lambda p: throat, sail_h=lambda i: 0.5 + 0.9 * math.sin(i / m * math.pi) if i >= 2 else 0.3)
+    # ---- the head: an armoured skull, a long snout, heavy brows over glowing eyes, horns swept back, a fan at each cheek
+    hd, J = [head], [jaw]
+    F.loft(bt, [G(0, 9.7, 3.2), G(0, 9.85, 4.1), G(0, 9.82, 5.0), G(0, 9.6, 6.0), G(0, 9.4, 7.0)], [0.75, 0.95, 0.78, 0.5, 0.24], [0.6, 0.78, 0.66, 0.42, 0.2], hd, BACK, sides=10, surf='fur', roll=0.31)
+    F.loft(bt, [G(0, 9.5, 5.0), G(0, 9.3, 6.0), G(0, 9.2, 6.9)], [0.62, 0.45, 0.22], [0.3, 0.24, 0.13], hd, DARK, sides=8, surf='fur')
+    # Armour plates down the crown of the skull and snout.
+    for k in range(5):
+        z = 3.6 + k * 0.62
+        F.plate(bt, G(0, 10.55 - k * 0.14 - (k > 2) * 0.12 * (k - 2), z), (0.7 - k * 0.1, 0.12, 0.55), hd, BACK2, rot=(0.12 + k * 0.03, 0, 0), bevel=0.45, taper=0.7, surf='shell')
+    for sd in (-1, 1):
+        # Brow ridge, the eye socket, a glowing eye, a nostril.
+        F.plate(bt, G(sd * 0.6, 10.3, 4.9), (0.42, 0.16, 0.75), hd, SPINE, rot=(0.15, sd * 0.25, -sd * 0.35), bevel=0.4, taper=0.6, surf='shell')
+        F.gem(bt, G(sd * 0.7, 10.0, 5.05), 0.24, hd, DARK, surf='fur', glow=False, stretch=0.8)
+        F.gem(bt, G(sd * 0.78, 10.02, 5.12), 0.16, hd, GLOW, stretch=0.75)
+        F.gem(bt, G(sd * 0.18, 9.62, 6.95), 0.07, hd, 0x40d0e0, stretch=0.6)
+        # Horns swept back, ridged.
+        F.chain(bt, [G(sd * 0.45, 10.35, 4.1), G(sd * 0.85, 11.05, 3.55), G(sd * 1.1, 11.3, 2.6), G(sd * 1.05, 11.2, 1.6)], [0.26, 0.2, 0.12, 0.01], hd, HORN, sides=6, surf='shell')
+        for k in range(4):
+            F.spike(bt, G(sd * (0.5 - k * 0.06), 10.2 - k * 0.12, 3.7 - k * 0.32), G(sd * (0.8 - k * 0.06), 10.75 - k * 0.12, 3.25 - k * 0.34), 0.08, hd, SPINE)
+        # The cheek fan: spines webbed together.
+        base = G(sd * 0.82, 9.6, 3.75)
+        tips = [G(sd * 2.1, 10.7, 2.9), G(sd * 2.6, 9.8, 2.6), G(sd * 2.3, 8.8, 2.9), G(sd * 1.5, 8.3, 3.4)]
+        for t in tips:
+            F.blade(bt, base, t, 0.5, hd, WEB, thick=0.02, surf='membrane', side=(t - base).cross(G(1, 0, 0)), belly=0.6)
+            F.spike(bt, base, t + (t - base) * 0.1, 0.05, hd, SPINE, sides=4)
+        # Upper teeth, a whisker, glowing gills.
+        for k in range(8):
+            z, x = 5.0 + k * 0.27, sd * (0.58 - k * 0.045)
+            F.spike(bt, G(x, 9.36, z), G(x, 8.95, z + 0.06), 0.055, hd, IVORY, sides=4)
+        F.chain(bt, [G(sd * 0.5, 9.28, 6.5), G(sd * 0.95, 8.55, 6.7), G(sd * 1.15, 7.65, 6.4), G(sd * 1.05, 6.9, 6.0)], [0.08, 0.06, 0.035, 0.008], hd, SPINE, sides=5, surf='fur')
+        for g in range(3):
+            pts = [G(sd * 0.98, 8.0 - g * 0.32, 2.25 - g * 0.18), G(sd * 1.04, 7.82 - g * 0.32, 1.95 - g * 0.18), G(sd * 0.98, 7.6 - g * 0.32, 1.7 - g * 0.18)]
+            q = [p + G(sd * 0.04, 0, 0) for p in pts]
+            F.chain(bt, q, [0.04, 0.05, 0.04], [neck[4]], 0x40e8ff, sides=4, surf='glow', glow=True)
+    # ---- the jaw: a pale underjaw, lower teeth, barbels
+    F.loft(bt, [G(0, 9.05, 4.4), G(0, 9.02, 5.6), G(0, 8.98, 6.9)], [0.6, 0.42, 0.18], [0.26, 0.2, 0.1], J, BELLY, sides=8, surf='fur')
+    for sd in (-1, 1):
+        for k in range(6):
+            z, x = 5.15 + k * 0.28, sd * (0.48 - k * 0.05)
+            F.spike(bt, G(x, 9.05, z), G(x, 9.36, z + 0.05), 0.05, J, IVORY, sides=4)
+    for sd in (-1, 0, 1):
+        F.spike(bt, G(sd * 0.25, 8.85, 5.2 + abs(sd) * 0.3), G(sd * 0.32, 8.3, 5.0 + abs(sd) * 0.3), 0.07, J, SPINE)
+    # ---- two coils arching out of the sea, sailed along their crests
+    for root, (z0, top, r0) in zip(coils, ((-10.5, 3.7, 1.45), (-19.5, 3.1, 1.25))):
+        pts = [G(0, -2.8 + (top + 2.8) * math.sin(i / 10 * math.pi), z0 + 4.4 * math.cos(i / 10 * math.pi)) for i in range(11)]
+        mid = G(0, -2.8, z0)
+        body(pts, [r0] * 11, lambda p, root=root: [root], lambda p, mid=mid: (mid - p).normalized(), sail_h=lambda i, r0=r0: r0 * (0.5 + 0.4 * math.sin(i / 10 * math.pi)))
+    # ---- the tail standing up out of the water, a webbed paddle at the tip
+    tp = [G(0, -3.4, -27), G(0, -0.8, -27.3), G(0, 1.8, -27.6), G(0, 4.2, -27.9), G(0, 6.2, -28.2), G(0, 7.7, -28.5)]
+    rr = [1.1, 0.92, 0.74, 0.54, 0.34, 0.12]
+    body(tp, rr, lambda p: sorted(tail, key=lambda b: (B[b] - p).length)[:2], lambda p: G(0, 0, 1), sail_h=lambda i: rr[i] * 0.9, glow_every=0)
+    base = G(0, 6.9, -28.35)
+    last = sorted(tail, key=lambda b: (B[b] - base).length)[0]
+    for t in (G(0, 10.4, -28.9), G(0, 10.0, -30.2), G(0, 8.6, -31.0), G(0, 6.8, -30.6), G(0, 5.6, -29.6)):
+        F.blade(bt, base, t, 1.0, [last], WEB, thick=0.03, surf='membrane', side=G(1, 0, 0).cross(t - base), belly=0.6)
+        F.spike(bt, base, t, 0.08, [last], SPINE, sides=4)
+    bt.ao_floor = 0.6
+    return bt.build(0.06, 4000, surface='fur'), CREATURE_SURFACES
+# end:serpent
+# end:serpent
+
+
+# end:dragon
+
+
+
+
+# forged:dragon
+# forged:dragon
+@builder('dragon', 0x5a1a12)
+def dragon(bt):
+    """
+    Pyrrhax, the elder dragon, cut in crisp facets: a deep chest armoured in
+    scutes down the spine, tan belly plates with fire glowing between them,
+    an angular horned head with a burning maw, clawed legs, horned wing arms
+    (the game stretches the membrane between the fingers) and a tail ending
+    in a spiked club with two blades.
+    """
+    n, B = bt.n, bt.B
+    hips, chest, neck, head, jaw, tail = n['hips'], n['chest'], n['neck'], n['head'], n['jaw'], n['tail']
+    P = lambda i: Vector(B[i])
+    H, C, Hd, J = P(hips), P(chest), P(head), P(jaw)
+    HIDE, HIDE2, BELLY, SPINE, HORN, IVORY, FIRE, EYE, DARK = 0x5a1a12, 0x45140e, 0xc08a50, 0x1c1210, 0x3a2a1c, 0xe2d6b8, 0xff5a14, 0xffb020, 0x120806
+    torso = [hips, chest]
+    ridge = []
+    # ---- the body: a heavy belly, a deep chest, scutes down the spine, plates and fire beneath
+    tp = [gv(H, 0, 0.04, -0.45), gv(H, 0, 0.0, -0.05), H.lerp(C, 0.5) + G(0, -0.02, 0), gv(C, 0, 0.0, 0.0), gv(C, 0, 0.12, 0.35)]
+    trx, try_ = [0.36, 0.47, 0.53, 0.55, 0.4], [0.36, 0.47, 0.54, 0.57, 0.42]
+    F.loft(bt, tp, trx, try_, torso, HIDE, sides=12, surf='fur', roll=math.pi / 12)
+    for i in range(9):
+        t = i / 8
+        q = gv(C, 0, 0, 0.3).lerp(gv(H, 0, 0, -0.25), t)
+        ry = lerp(0.57, 0.47, t)
+        F.plate(bt, q + G(0, -ry * 0.94, 0), (0.54 - 0.06 * abs(t - 0.4), 0.07, 0.17), torso, BELLY, bevel=0.4, taper=1.0, surf='shell')
+        if i < 8:
+            F.plate(bt, q + G(0, -ry * 0.9 - 0.01, -0.07), (0.36, 0.03, 0.03), torso, FIRE, bevel=0, surf='glow', glow=True)
+    for i in range(8):
+        t = i / 7
+        q = gv(C, 0, 0, 0.25).lerp(gv(H, 0, 0, -0.35), t)
+        ry = lerp(0.57, 0.47, t)
+        F.plate(bt, q + G(0, ry * 0.97, 0), (0.24, 0.07, 0.19), torso, HIDE2, rot=(0.12, 0, 0), bevel=0.4, taper=0.6, surf='shell')
+        ridge.append((q + G(0, ry * 1.0, 0), 0.26 if t < 0.2 or t > 0.8 else 0.2, torso))
+    # Molten cracks over the flanks, glowing through the hide.
+    for sd in (-1, 1):
+        crack = [gv(C, sd * 0.54, -0.05 + 0.1 * math.sin(k * 2.3), 0.2 - k * 0.22) for k in range(6)]
+        crack = [p + G(sd * (-0.02 * abs(k - 2.5)), 0, 0) for k, p in enumerate(crack)]
+        F.chain(bt, crack, [0.03, 0.025, 0.022, 0.02, 0.016, 0.01], torso, FIRE, sides=4, surf='glow', glow=True)
+        for k in range(3):
+            q = gv(C, sd * 0.46, 0.2 - k * 0.12, 0.25 - k * 0.3)
+            F.plate(bt, q, (0.2, 0.05, 0.22), torso, HIDE2, rot=(0, 0, -sd * 0.9), bevel=0.4, taper=0.7, surf='shell')
+    # ---- the neck: long and thick at the shoulders, plated beneath, scuted above
+    path = [gv(C, 0, 0.12, 0.3)] + [P(k) for k in neck] + [Hd]
+    radii = [lerp(0.4, 0.2, i / (len(path) - 1)) for i in range(len(path))]
+    nbones = [[chest, neck[0]]] + [[neck[i], neck[min(i + 1, len(neck) - 1)]] for i in range(len(neck))]
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        T = (b - a).normalized()
+        ov = (radii[i] + radii[i + 1]) * 0.1
+        F.loft(bt, [a - T * (ov if i else 0), b + T * ov], [radii[i], radii[i + 1]], [radii[i], radii[i + 1]], nbones[i], HIDE if i % 2 else HIDE2, sides=10, surf='fur', roll=math.pi / 10)
+        down = (Vector((0, 0, -1)) - T * T.z).normalized()
+        up = -down
+        c = a.lerp(b, 0.5)
+        r = (radii[i] + radii[i + 1]) / 2
+        F.blade(bt, c + down * r * 0.9 - T * r * 0.7, c + down * r * 0.9 + T * r * 0.9, r * 1.3, nbones[i], BELLY, thick=r * 0.1, surf='shell', side=T.cross(down), belly=0.3)
+        ridge.append((c + up * r * 0.95, 0.14 + 0.06 * (i < 2), nbones[i]))
+    # ---- the head: an angular skull, heavy brows, a long snout, eyes of fire, a crown of horns
+    hy = Hd + G(0, 0.03, 0)
+    hd = [head]
+    F.loft(bt, [gv(hy, 0, 0.0, -0.2), gv(hy, 0, 0.02, 0.06), gv(hy, 0, 0.0, 0.3), gv(hy, 0, -0.05, 0.56), gv(hy, 0, -0.08, 0.8)], [0.17, 0.23, 0.18, 0.13, 0.07], [0.17, 0.2, 0.15, 0.1, 0.06], hd, HIDE, sides=8, surf='fur', roll=math.pi / 8)
+    F.plate(bt, gv(hy, 0, 0.17, 0.12), (0.22, 0.06, 0.4), hd, HIDE2, rot=(0.1, 0, 0), bevel=0.4, taper=0.6, surf='shell')
+    F.plate(bt, gv(hy, 0, 0.09, 0.48), (0.16, 0.05, 0.4), hd, HIDE2, rot=(0.16, 0, 0), bevel=0.4, taper=0.6, surf='shell')
+    F.spike(bt, gv(hy, 0, 0.06, 0.6), gv(hy, 0, 0.2, 0.55), 0.035, hd, HORN, sides=5)
+    F.plate(bt, gv(hy, 0, -0.11, 0.42), (0.18, 0.03, 0.5), hd, FIRE, bevel=0, surf='glow', glow=True)
+    for sd in (-1, 1):
+        F.plate(bt, gv(hy, sd * 0.13, 0.12, 0.22), (0.12, 0.06, 0.32), hd, SPINE, rot=(0.25, sd * 0.2, -sd * 0.4), bevel=0.4, taper=0.5, surf='shell')
+        F.gem(bt, gv(hy, sd * 0.16, 0.07, 0.27), 0.04, hd, DARK, surf='fur', glow=False, stretch=0.7)
+        F.plate(bt, gv(hy, sd * 0.165, 0.07, 0.28), (0.012, 0.03, 0.07), hd, EYE, rot=(0.0, sd * 0.35, -sd * 0.2), bevel=0.2, surf='glow', glow=True)
+        F.gem(bt, gv(hy, sd * 0.045, -0.03, 0.79), 0.018, hd, DARK, surf='fur', glow=False)
+        # A great pair of horns sweeping back, a lesser pair below, spikes down the cheeks.
+        F.chain(bt, [gv(hy, sd * 0.12, 0.13, -0.02), gv(hy, sd * 0.3, 0.36, -0.2), gv(hy, sd * 0.38, 0.32, -0.6), gv(hy, sd * 0.32, 0.42, -0.88)], [0.08, 0.06, 0.035, 0.004], hd, HORN, sides=6, surf='shell')
+        F.chain(bt, [gv(hy, sd * 0.17, 0.03, -0.06), gv(hy, sd * 0.37, 0.07, -0.22), gv(hy, sd * 0.46, -0.03, -0.48)], [0.05, 0.03, 0.003], hd, HORN, sides=5, surf='shell')
+        for k in range(4):
+            a = gv(hy, sd * 0.19, -0.06, 0.04 - k * 0.07)
+            F.spike(bt, a, a + G(sd * 0.12, -0.03, -0.11), 0.026, hd, SPINE)
+        for k in range(6):
+            a = gv(hy, sd * (0.12 - k * 0.012), -0.08, 0.34 + k * 0.075)
+            F.spike(bt, a, a + G(0, -0.075, 0.005), 0.015, hd, IVORY)
+    # ---- the jaw: tan underside, teeth, chin spikes
+    F.loft(bt, [gv(J, 0, -0.02, 0.0), gv(J, 0, -0.04, 0.32), gv(J, 0, -0.05, 0.64)], [0.15, 0.12, 0.05], [0.07, 0.06, 0.035], [jaw], BELLY, sides=8, surf='fur')
+    for sd in (-1, 1):
+        for k in range(5):
+            a = gv(J, sd * (0.1 - k * 0.012), -0.03, 0.28 + k * 0.075)
+            F.spike(bt, a, a + G(0, 0.07, 0.005), 0.014, [jaw], IVORY)
+    for sd in (-1, 0, 1):
+        a = gv(J, sd * 0.06, -0.08, 0.18)
+        F.spike(bt, a, a + G(sd * 0.03, -0.13, -0.1), 0.022, [jaw], SPINE)
+    # ---- legs: heavy thighs, scaled shins, hooked ivory claws, a spur at the knee
+    for leg in n['limbs']:
+        up, mid, low_, Ft = leg['up'], leg['mid'], leg['low'], G(*leg['foot'])
+        U, M, L = P(up), P(mid), P(low_)
+        sd, front = leg['side'], leg['front']
+        F.loft(bt, [gv(U, -sd * 0.03, 0.08, 0.0), gv(U, 0, -0.18, 0.02 if front else 0.06), M.lerp(U, 0.2)], [0.23, 0.23 if front else 0.27, 0.15], [0.27, 0.3 if front else 0.34, 0.16], [chest if front else hips, up, mid], HIDE, sides=8, surf='fur')
+        F.prism(bt, M, L, 0.13, 0.09, [mid, low_], HIDE2, sides=7, surf='fur')
+        F.prism(bt, L, Ft + G(0, 0.07, 0.02), 0.09, 0.085, [low_], HIDE2, sides=7, surf='fur')
+        F.plate(bt, Ft + G(0, 0.06, 0.07), (0.22, 0.11, 0.3), [low_], HIDE2, bevel=0.4, taper=0.7, surf='fur')
+        F.dome(bt, gv(U, sd * 0.06, 0.02, 0), 0.2, [up], HIDE2, axis=G(sd * 0.8, 1, 0).normalized(), theta=1.0, thick=0.03, segs=8, rings=2, surf='shell')
+        for dx in (-0.08, 0, 0.08):
+            a = Ft + G(dx, 0.07, 0.17)
+            F.chain(bt, [a, a + G(dx * 0.4, 0.0, 0.12), a + G(dx * 0.5, -0.07, 0.2)], [0.035, 0.022, 0.002], [low_], IVORY, sides=4, surf='shell')
+        a = Ft + G(0, 0.09, -0.06)
+        F.spike(bt, a, a + G(0, -0.06, -0.14), 0.03, [low_], IVORY)
+        a = M + G(0, 0.02, -0.08 if front else 0.06)
+        F.spike(bt, a, a + G(sd * 0.04, 0.06, -0.3 if front else 0.28), 0.05, [mid], SPINE, sides=5)
+    # ---- wings: horned arm, forearm and hand; finger bones out to each tip; a thumb claw
+    tips = [(1.5, -0.38, -0.37), (1.2, -0.64, -1.42), (0.6, -0.76, -2.17), (-0.25, -0.82, -2.57)]
+    for w in n['wings']:
+        root, fore, hand, fingers = w['root'], w['fore'], w['hand'], w['fingers']
+        S, E, W = P(root), P(fore), P(hand)
+        sd = 1 if W.x > 0 else -1
+        F.prism(bt, gv(S, -sd * 0.05, -0.05, 0), E, 0.15, 0.1, [root, fore], HIDE, sides=7, surf='fur')
+        F.prism(bt, E, W, 0.1, 0.065, [fore, hand], HIDE, sides=7, surf='fur')
+        F.gem(bt, W, 0.09, [hand], HIDE2, surf='fur', glow=False)
+        for f, t in zip(fingers, tips):
+            tip = W + G(sd * t[0], t[1], t[2])
+            F.chain(bt, [W, W.lerp(tip, 0.5) + G(0, 0.04, 0), tip], [0.048, 0.03, 0.006], [f], SPINE, sides=5, surf='fur')
+        a = W + G(0, 0.02, 0)
+        F.chain(bt, [a, a + G(sd * 0.05, 0.12, 0.2), a + G(sd * 0.02, 0.06, 0.34)], [0.05, 0.03, 0.003], [hand], IVORY, sides=4, surf='shell')
+        for f in (0.3, 0.6):
+            p = S.lerp(E, f)
+            F.spike(bt, p + G(0, 0.06, 0), p + G(sd * 0.05, 0.3, -0.15), 0.04, [root], SPINE)
+        F.spike(bt, E + G(0, 0.05, 0), E + G(sd * 0.1, 0.36, -0.12), 0.05, [fore], SPINE, sides=5)
+    # ---- the tail: tapering, scuted, ending in a spiked club and two blades
+    pts = [gv(H, 0, 0.02, -0.3)] + [P(t) for t in tail]
+    end = pts[-1] + (pts[-1] - pts[-2]) * 0.6
+    pts.append(end)
+    tb = [[hips, tail[0]]] + [[tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))]
+    rr = [lerp(0.34, 0.035, (i / (len(pts) - 1)) ** 0.9) for i in range(len(pts))]
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        T = (b - a).normalized()
+        ov = (rr[i] + rr[i + 1]) * 0.1
+        F.loft(bt, [a - T * (ov if i else 0), b + T * ov], [rr[i], rr[i + 1]], [rr[i], rr[i + 1]], tb[i], HIDE if i % 2 else HIDE2, sides=8, surf='fur', roll=math.pi / 8)
+        c = a.lerp(b, 0.5)
+        r = (rr[i] + rr[i + 1]) / 2
+        F.plate(bt, c + G(0, -r * 0.9, 0), (r * 1.3, 0.04, (b - a).length * 0.8), tb[i], BELLY, bevel=0.4, surf='shell')
+        ridge.append((c + G(0, r * 0.95, 0), 0.22 * (1 - i / len(pts)) + 0.06, tb[i]))
+    last = tail[-1]
+    F.gem(bt, end + G(0, 0.02, 0.05), 0.17, [last], SPINE, surf='fur', glow=False, stretch=0.75)
+    for dy, dz, dx in ((0.12, 0.08, 0), (0.14, -0.08, 0), (-0.1, 0.02, 0), (0.0, 0.0, 0.12), (0.0, 0.0, -0.12)):
+        a = end + G(dx * 0.5, dy * 0.5, dz)
+        F.spike(bt, a, a + G(dx * 2.4, dy * 2.6, dz - 0.12), 0.045, [last], SPINE, sides=5)
+    for sd in (-1, 1):
+        F.blade(bt, end + G(0, 0, 0.1), end + G(sd * 0.42, 0.0, -0.2), 0.22, [last], IVORY, thick=0.02, surf='shell', side=G(0, 0, 1), belly=0.5)
+    # ---- spines down the back: neck, body and tail
+    for p, L, bn in ridge:
+        F.spike(bt, p - G(0, 0.04, 0), p + G(0, L, -L * 0.55), L * 0.25, bn, SPINE, sides=4)
+    bt.ao_floor = 0.55
+    return bt.build(0.012, 4000, surface='fur'), ['fur', 'shell', 'glow', 'scale', 'ghost']
+# end:dragon
+# end:dragon
+
+
+# forged:dragon
+# forged:dragon
+@builder('dragon', 0x5a1a12)
+def dragon(bt):
+    """
+    Pyrrhax, the elder dragon, cut in crisp facets: a deep chest armoured in
+    scutes down the spine, tan belly plates with fire glowing between them,
+    an angular horned head with a burning maw, clawed legs, horned wing arms
+    (the game stretches the membrane between the fingers) and a tail ending
+    in a spiked club with two blades.
+    """
+    n, B = bt.n, bt.B
+    hips, chest, neck, head, jaw, tail = n['hips'], n['chest'], n['neck'], n['head'], n['jaw'], n['tail']
+    P = lambda i: Vector(B[i])
+    H, C, Hd, J = P(hips), P(chest), P(head), P(jaw)
+    HIDE, HIDE2, BELLY, SPINE, HORN, IVORY, FIRE, EYE, DARK = 0x5a1a12, 0x45140e, 0xc08a50, 0x1c1210, 0x3a2a1c, 0xe2d6b8, 0xff5a14, 0xffb020, 0x120806
+    torso = [hips, chest]
+    ridge = []
+    # ---- the body: a heavy belly, a deep chest, scutes down the spine, plates and fire beneath
+    tp = [gv(H, 0, 0.04, -0.45), gv(H, 0, 0.0, -0.05), H.lerp(C, 0.5) + G(0, -0.02, 0), gv(C, 0, 0.0, 0.0), gv(C, 0, 0.12, 0.35)]
+    trx, try_ = [0.36, 0.47, 0.53, 0.55, 0.4], [0.36, 0.47, 0.54, 0.57, 0.42]
+    F.loft(bt, tp, trx, try_, torso, HIDE, sides=12, surf='fur', roll=math.pi / 12)
+    for i in range(9):
+        t = i / 8
+        q = gv(C, 0, 0, 0.08).lerp(gv(H, 0, 0, -0.25), t)
+        ry = lerp(0.57, 0.47, t)
+        F.plate(bt, q + G(0, -ry * 0.94, 0), (0.54 - 0.06 * abs(t - 0.4), 0.07, 0.17), torso, BELLY, bevel=0.4, taper=1.0, surf='shell')
+        if i < 8:
+            F.plate(bt, q + G(0, -ry * 0.9 - 0.01, -0.07), (0.36, 0.03, 0.03), torso, FIRE, bevel=0, surf='glow', glow=True)
+    for i in range(8):
+        t = i / 7
+        q = gv(C, 0, 0, 0.25).lerp(gv(H, 0, 0, -0.35), t)
+        ry = lerp(0.57, 0.47, t)
+        F.plate(bt, q + G(0, ry * 0.97, 0), (0.24, 0.07, 0.19), torso, HIDE2, rot=(0.12, 0, 0), bevel=0.4, taper=0.6, surf='shell')
+        ridge.append((q + G(0, ry * 1.0, 0), 0.26 if t < 0.2 or t > 0.8 else 0.2, torso))
+    # Molten cracks over the flanks, glowing through the hide.
+    for sd in (-1, 1):
+        crack = [gv(C, sd * 0.54, -0.05 + 0.1 * math.sin(k * 2.3), 0.2 - k * 0.22) for k in range(6)]
+        crack = [p + G(sd * (-0.02 * abs(k - 2.5)), 0, 0) for k, p in enumerate(crack)]
+        F.chain(bt, crack, [0.03, 0.025, 0.022, 0.02, 0.016, 0.01], torso, FIRE, sides=4, surf='glow', glow=True)
+        for k in range(3):
+            q = gv(C, sd * 0.46, 0.2 - k * 0.12, 0.25 - k * 0.3)
+            F.plate(bt, q, (0.2, 0.05, 0.22), torso, HIDE2, rot=(0, 0, -sd * 0.9), bevel=0.4, taper=0.7, surf='shell')
+    # ---- the neck: long and thick at the shoulders, plated beneath, scuted above
+    path = [gv(C, 0, 0.12, 0.3)] + [P(k) for k in neck] + [Hd]
+    radii = [lerp(0.4, 0.2, i / (len(path) - 1)) for i in range(len(path))]
+    nbones = [[chest, neck[0]]] + [[neck[i], neck[min(i + 1, len(neck) - 1)]] for i in range(len(neck))]
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        T = (b - a).normalized()
+        ov = (radii[i] + radii[i + 1]) * 0.1
+        F.loft(bt, [a - T * (ov if i else 0), b + T * ov], [radii[i], radii[i + 1]], [radii[i], radii[i + 1]], nbones[i], HIDE if i % 2 else HIDE2, sides=10, surf='fur', roll=math.pi / 10)
+        down = (Vector((0, 0, -1)) - T * T.z).normalized()
+        up = -down
+        c = a.lerp(b, 0.5)
+        r = (radii[i] + radii[i + 1]) / 2
+        F.blade(bt, c + down * r * 0.9 - T * r * 0.7, c + down * r * 0.9 + T * r * 0.9, r * 1.3, nbones[i], BELLY, thick=r * 0.1, surf='shell', side=T.cross(down), belly=0.3)
+        ridge.append((c + up * r * 0.95, 0.14 + 0.06 * (i < 2), nbones[i]))
+    # ---- the head: an angular skull, heavy brows, a long snout, eyes of fire, a crown of horns
+    hy = Hd + G(0, 0.03, 0)
+    hd = [head]
+    F.loft(bt, [gv(hy, 0, 0.0, -0.2), gv(hy, 0, 0.02, 0.06), gv(hy, 0, 0.0, 0.3), gv(hy, 0, -0.05, 0.56), gv(hy, 0, -0.08, 0.8)], [0.17, 0.23, 0.18, 0.13, 0.07], [0.17, 0.2, 0.15, 0.1, 0.06], hd, HIDE, sides=8, surf='fur', roll=math.pi / 8)
+    F.plate(bt, gv(hy, 0, 0.17, 0.12), (0.22, 0.06, 0.4), hd, HIDE2, rot=(0.1, 0, 0), bevel=0.4, taper=0.6, surf='shell')
+    F.plate(bt, gv(hy, 0, 0.09, 0.48), (0.16, 0.05, 0.4), hd, HIDE2, rot=(0.16, 0, 0), bevel=0.4, taper=0.6, surf='shell')
+    F.spike(bt, gv(hy, 0, 0.06, 0.6), gv(hy, 0, 0.2, 0.55), 0.035, hd, HORN, sides=5)
+    F.plate(bt, gv(hy, 0, -0.11, 0.42), (0.18, 0.03, 0.5), hd, FIRE, bevel=0, surf='glow', glow=True)
+    for sd in (-1, 1):
+        F.plate(bt, gv(hy, sd * 0.13, 0.12, 0.22), (0.12, 0.06, 0.32), hd, SPINE, rot=(0.25, sd * 0.2, -sd * 0.4), bevel=0.4, taper=0.5, surf='shell')
+        F.gem(bt, gv(hy, sd * 0.16, 0.07, 0.27), 0.04, hd, DARK, surf='fur', glow=False, stretch=0.7)
+        F.plate(bt, gv(hy, sd * 0.165, 0.07, 0.28), (0.012, 0.03, 0.07), hd, EYE, rot=(0.0, sd * 0.35, -sd * 0.2), bevel=0.2, surf='glow', glow=True)
+        F.gem(bt, gv(hy, sd * 0.045, -0.03, 0.79), 0.018, hd, DARK, surf='fur', glow=False)
+        # A great pair of horns sweeping back, a lesser pair below, spikes down the cheeks.
+        F.chain(bt, [gv(hy, sd * 0.12, 0.13, -0.02), gv(hy, sd * 0.3, 0.36, -0.2), gv(hy, sd * 0.38, 0.32, -0.6), gv(hy, sd * 0.32, 0.42, -0.88)], [0.08, 0.06, 0.035, 0.004], hd, HORN, sides=6, surf='shell')
+        F.chain(bt, [gv(hy, sd * 0.17, 0.03, -0.06), gv(hy, sd * 0.37, 0.07, -0.22), gv(hy, sd * 0.46, -0.03, -0.48)], [0.05, 0.03, 0.003], hd, HORN, sides=5, surf='shell')
+        for k in range(4):
+            a = gv(hy, sd * 0.19, -0.06, 0.04 - k * 0.07)
+            F.spike(bt, a, a + G(sd * 0.12, -0.03, -0.11), 0.026, hd, SPINE)
+        for k in range(6):
+            a = gv(hy, sd * (0.12 - k * 0.012), -0.08, 0.34 + k * 0.075)
+            F.spike(bt, a, a + G(0, -0.075, 0.005), 0.015, hd, IVORY)
+    # ---- the jaw: tan underside, teeth, chin spikes
+    F.loft(bt, [gv(J, 0, -0.02, 0.0), gv(J, 0, -0.04, 0.32), gv(J, 0, -0.05, 0.64)], [0.15, 0.12, 0.05], [0.07, 0.06, 0.035], [jaw], BELLY, sides=8, surf='fur')
+    for sd in (-1, 1):
+        for k in range(5):
+            a = gv(J, sd * (0.1 - k * 0.012), -0.03, 0.28 + k * 0.075)
+            F.spike(bt, a, a + G(0, 0.07, 0.005), 0.014, [jaw], IVORY)
+    for sd in (-1, 0, 1):
+        a = gv(J, sd * 0.06, -0.08, 0.18)
+        F.spike(bt, a, a + G(sd * 0.03, -0.13, -0.1), 0.022, [jaw], SPINE)
+    # ---- legs: heavy thighs, scaled shins, hooked ivory claws, a spur at the knee
+    for leg in n['limbs']:
+        up, mid, low_, Ft = leg['up'], leg['mid'], leg['low'], G(*leg['foot'])
+        U, M, L = P(up), P(mid), P(low_)
+        sd, front = leg['side'], leg['front']
+        F.loft(bt, [gv(U, -sd * 0.03, 0.08, 0.0), gv(U, 0, -0.18, 0.02 if front else 0.06), M.lerp(U, 0.2)], [0.23, 0.23 if front else 0.27, 0.15], [0.27, 0.3 if front else 0.34, 0.16], [chest if front else hips, up, mid], HIDE, sides=8, surf='fur')
+        F.prism(bt, M, L, 0.13, 0.09, [mid, low_], HIDE2, sides=7, surf='fur')
+        F.prism(bt, L, Ft + G(0, 0.07, 0.02), 0.09, 0.085, [low_], HIDE2, sides=7, surf='fur')
+        F.plate(bt, Ft + G(0, 0.06, 0.07), (0.22, 0.11, 0.3), [low_], HIDE2, bevel=0.4, taper=0.7, surf='fur')
+        F.dome(bt, gv(U, sd * 0.06, 0.02, 0), 0.2, [up], HIDE2, axis=G(sd * 0.8, 1, 0).normalized(), theta=1.0, thick=0.03, segs=8, rings=2, surf='shell')
+        for dx in (-0.08, 0, 0.08):
+            a = Ft + G(dx, 0.07, 0.17)
+            F.chain(bt, [a, a + G(dx * 0.4, 0.0, 0.12), a + G(dx * 0.5, -0.07, 0.2)], [0.035, 0.022, 0.002], [low_], IVORY, sides=4, surf='shell')
+        a = Ft + G(0, 0.09, -0.06)
+        F.spike(bt, a, a + G(0, -0.06, -0.14), 0.03, [low_], IVORY)
+        a = M + G(0, 0.02, -0.08 if front else 0.06)
+        F.spike(bt, a, a + G(sd * 0.04, 0.06, -0.3 if front else 0.28), 0.05, [mid], SPINE, sides=5)
+    # ---- wings: horned arm, forearm and hand; finger bones out to each tip; a thumb claw
+    tips = [(1.5, -0.38, -0.37), (1.2, -0.64, -1.42), (0.6, -0.76, -2.17), (-0.25, -0.82, -2.57)]
+    for w in n['wings']:
+        root, fore, hand, fingers = w['root'], w['fore'], w['hand'], w['fingers']
+        S, E, W = P(root), P(fore), P(hand)
+        sd = 1 if W.x > 0 else -1
+        F.prism(bt, gv(S, -sd * 0.05, -0.05, 0), E, 0.15, 0.1, [root, fore], HIDE, sides=7, surf='fur')
+        F.prism(bt, E, W, 0.1, 0.065, [fore, hand], HIDE, sides=7, surf='fur')
+        F.gem(bt, W, 0.09, [hand], HIDE2, surf='fur', glow=False)
+        for f, t in zip(fingers, tips):
+            tip = W + G(sd * t[0], t[1], t[2])
+            F.chain(bt, [W, W.lerp(tip, 0.5) + G(0, 0.04, 0), tip], [0.048, 0.03, 0.006], [f], SPINE, sides=5, surf='fur')
+        a = W + G(0, 0.02, 0)
+        F.chain(bt, [a, a + G(sd * 0.05, 0.12, 0.2), a + G(sd * 0.02, 0.06, 0.34)], [0.05, 0.03, 0.003], [hand], IVORY, sides=4, surf='shell')
+        for f in (0.3, 0.6):
+            p = S.lerp(E, f)
+            F.spike(bt, p + G(0, 0.06, 0), p + G(sd * 0.05, 0.3, -0.15), 0.04, [root], SPINE)
+        F.spike(bt, E + G(0, 0.05, 0), E + G(sd * 0.1, 0.36, -0.12), 0.05, [fore], SPINE, sides=5)
+    # ---- the tail: tapering, scuted, ending in a spiked club and two blades
+    pts = [gv(H, 0, 0.02, -0.3)] + [P(t) for t in tail]
+    end = pts[-1] + (pts[-1] - pts[-2]) * 0.6
+    pts.append(end)
+    tb = [[hips, tail[0]]] + [[tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))]
+    rr = [lerp(0.34, 0.035, (i / (len(pts) - 1)) ** 0.9) for i in range(len(pts))]
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        T = (b - a).normalized()
+        ov = (rr[i] + rr[i + 1]) * 0.1
+        F.loft(bt, [a - T * (ov if i else 0), b + T * ov], [rr[i], rr[i + 1]], [rr[i], rr[i + 1]], tb[i], HIDE if i % 2 else HIDE2, sides=8, surf='fur', roll=math.pi / 8)
+        c = a.lerp(b, 0.5)
+        r = (rr[i] + rr[i + 1]) / 2
+        F.plate(bt, c + G(0, -r * 0.9, 0), (r * 1.3, 0.04, (b - a).length * 0.8), tb[i], BELLY, bevel=0.4, surf='shell')
+        ridge.append((c + G(0, r * 0.95, 0), 0.22 * (1 - i / len(pts)) + 0.06, tb[i]))
+    last = tail[-1]
+    F.gem(bt, end + G(0, 0.02, 0.05), 0.17, [last], SPINE, surf='fur', glow=False, stretch=0.75)
+    for dy, dz, dx in ((0.12, 0.08, 0), (0.14, -0.08, 0), (-0.1, 0.02, 0), (0.0, 0.0, 0.12), (0.0, 0.0, -0.12)):
+        a = end + G(dx * 0.5, dy * 0.5, dz)
+        F.spike(bt, a, a + G(dx * 2.4, dy * 2.6, dz - 0.12), 0.045, [last], SPINE, sides=5)
+    for sd in (-1, 1):
+        F.blade(bt, end + G(0, 0, 0.1), end + G(sd * 0.42, 0.0, -0.2), 0.22, [last], IVORY, thick=0.02, surf='shell', side=G(0, 0, 1), belly=0.5)
+    # ---- spines down the back: neck, body and tail
+    for p, L, bn in ridge:
+        F.spike(bt, p - G(0, 0.04, 0), p + G(0, L, -L * 0.55), L * 0.25, bn, SPINE, sides=4)
+    bt.ao_floor = 0.55
+    return bt.build(0.012, 4000, surface='fur'), ['fur', 'shell', 'glow', 'scale', 'ghost']
+# end:dragon
+# end:dragon
+
+
+# end:spider
+
+
+# forged:spider
+# forged:spider
+@builder('spider', 0x2a221c)
+def spider(bt):
+    """
+    The Broodmother (and her spiderlings and tangle spiders, in their own
+    colours), cut in crisp facets: a plated head with eight burning eyes,
+    venom-tipped fangs, a great armoured abdomen with a glowing hourglass,
+    and eight high-kneed legs, banded and bristled.
+    """
+    n, B = bt.n, bt.B
+    head, fangs, abdomen = n['head'], n['fangs'], n['abdomen']
+    P = lambda i: Vector(B[i])
+    Hd = P(head)
+    MARK, EYE, VENOM, FANG = 0xff3a18, 0xff2a10, 0x9aff40, 0x1a1410
+    # ---- the head: a faceted dome, a ridged carapace, eight eyes, palps
+    F.hull(bt, [(gv(Hd, 0, -0.09, -0.2), 0.12, 0.1), (gv(Hd, 0, -0.1, -0.05), 0.21, 0.22), (gv(Hd, 0, -0.06, 0.12), 0.19, 0.18), (gv(Hd, 0, 0.02, 0.22), 0.12, 0.1)], [head], 'main', sides=10, surf='fur')
+    F.hull(bt, [(gv(Hd, 0, 0.0, -0.15), 0.16, 0.13), (gv(Hd, 0, 0.08, -0.02), 0.17, 0.2), (gv(Hd, 0, 0.1, 0.12), 0.12, 0.13), (gv(Hd, 0, 0.08, 0.2), 0.06, 0.05)], [head], 'dark', sides=10, surf='shell')
+    F.plate(bt, gv(Hd, 0, 0.13, 0.0), (0.05, 0.04, 0.3), [head], 'main', bevel=0.4, taper=0.5, surf='shell')
+    for sd in (-1, 1):
+        for x, y, z, r in ((0.045, 0.08, 0.2, 0.032), (0.1, 0.06, 0.17, 0.022), (0.06, 0.12, 0.15, 0.018), (0.13, 0.09, 0.1, 0.016)):
+            F.gem(bt, gv(Hd, sd * x, y, z), r, [head], EYE, stretch=0.9)
+        F.chain(bt, [gv(Hd, sd * 0.1, -0.04, 0.2), gv(Hd, sd * 0.16, 0.02, 0.3), gv(Hd, sd * 0.13, -0.1, 0.38)], [0.025, 0.02, 0.008], [head], 'main', sides=5, surf='fur')
+    for f in fangs:
+        Fg = P(f)
+        sd = 1 if Fg.x > 0 else -1
+        F.plate(bt, gv(Fg, 0, -0.02, 0.0), (0.08, 0.1, 0.08), [f], 'main', bevel=0.4, taper=0.7, surf='fur')
+        F.chain(bt, [gv(Fg, 0, -0.06, 0.03), gv(Fg, sd * 0.01, -0.15, 0.08), gv(Fg, -sd * 0.04, -0.2, 0.05)], [0.025, 0.016, 0.002], [f], FANG, sides=5, surf='shell')
+        F.gem(bt, gv(Fg, -sd * 0.035, -0.19, 0.055), 0.012, [f], VENOM)
+    # ---- the abdomen: a great faceted sac, plated along the back, an hourglass of fire, spots down the flanks
+    A = gv(P(abdomen), 0, 0.12, -0.36)
+    F.prism(bt, gv(Hd, 0, -0.02, -0.18), A + G(0, -0.05, 0.3), 0.08, 0.12, [head, abdomen], 'dark', sides=6, surf='fur')
+    F.loft(bt, [A + G(0, -0.04, 0.42), A + G(0, 0.0, 0.3), A + G(0, 0.02, 0.06), A + G(0, 0.0, -0.2), A + G(0, -0.04, -0.38), A + G(0, -0.07, -0.47)], [0.12, 0.27, 0.35, 0.32, 0.18, 0.04], [0.1, 0.24, 0.31, 0.29, 0.16, 0.04], [abdomen], 'main', sides=12, surf='fur', roll=math.pi / 12)
+    for k in range(5):
+        z = 0.26 - k * 0.15
+        rr = [0.24, 0.31, 0.31, 0.27, 0.18][k]
+        F.plate(bt, A + G(0, rr * 0.97, z), (0.2 - abs(k - 2) * 0.03, 0.05, 0.13), [abdomen], 'dark', rot=(0.25 - k * 0.12, 0, 0), bevel=0.4, taper=0.7, surf='shell')
+    top = A + G(0, 0.33, 0.0)
+    for dz in (1, -1):
+        F.blade(bt, top + G(0, 0.0, 0.0), top + G(0, -0.01, dz * 0.13), 0.13, [abdomen], MARK, thick=0.012, surf='glow', glow=True, side=G(1, 0, 0), belly=0.92)
+    for sd in (-1, 1):
+        for i in range(3):
+            F.gem(bt, A + G(sd * (0.33 - i * 0.02), 0.08 - i * 0.05, 0.05 - i * 0.14), 0.035 - i * 0.005, [abdomen], MARK, stretch=0.6)
+        F.spike(bt, A + G(sd * 0.04, -0.05, -0.42), A + G(sd * 0.05, -0.08, -0.53), 0.025, [abdomen], 'dark')
+    for i in range(22):
+        a = i * 2.39996
+        u = 0.12 + 0.5 * ((i + 0.5) / 22)
+        dx, dy, dz = math.cos(a) * math.sin(u * math.pi), math.cos(u * math.pi), math.sin(a) * math.sin(u * math.pi)
+        p = A + G(dx * 0.33, 0.01 + dy * 0.3, -0.04 + dz * 0.42)
+        F.spike(bt, p - G(dx, dy, dz) * 0.02, p + G(dx, dy, dz) * 0.07, 0.012, [abdomen], 'dark', sides=3)
+    # ---- legs: high knees, long shins, banded, bristled, a hooked claw
+    for leg in n['limbs']:
+        up, mid, low = leg['up'], leg['mid'], leg['low']
+        U, K, Fo, T = P(up), P(mid), P(low), G(*leg['foot'])
+        sd = leg['side']
+        F.prism(bt, U, K, 0.05, 0.045, [up], 'main', sides=6, surf='fur')
+        F.prism(bt, K, Fo, 0.045, 0.03, [mid], 'main', sides=6, surf='fur')
+        F.prism(bt, Fo, T, 0.03, 0.006, [low], 'dark', sides=5, surf='fur')
+        F.gem(bt, K, 0.058, [up, mid], 'dark', surf='shell', glow=False)
+        F.gem(bt, Fo, 0.04, [mid, low], 'dark', surf='shell', glow=False)
+        for t in (0.35, 0.7):
+            F.prism(bt, U.lerp(K, t), U.lerp(K, t + 0.06), 0.053, 0.05, [up], 'dark', sides=6, surf='shell')
+            F.prism(bt, K.lerp(Fo, t), K.lerp(Fo, t + 0.06), 0.044, 0.04, [mid], 'dark', sides=6, surf='shell')
+        for f in (0.3, 0.6):
+            p = U.lerp(K, f)
+            F.spike(bt, p, p + G(sd * 0.02, 0.08, 0), 0.01, [up], 'dark', sides=3)
+            q = K.lerp(Fo, f)
+            F.spike(bt, q, q + G(sd * 0.06, 0.03, 0), 0.008, [mid], 'dark', sides=3)
+    bt.ao_floor = 0.6
+    return bt.build(0.0065, 3000, surface='fur'), CREATURE_SURFACES
+# end:spider
+# end:spider
+
+
+# forged:siren
+# forged:siren
+@builder('siren', 0x2f8a96)
+def siren(bt):
+    """
+    Queen Nerissa, cut in crisp facets: a fine face under a crown of coral and
+    pearls, sea-green hair falling in long locks, a bodice of leaf scales and
+    layered shell pauldrons; a gold belt frilled with fins, and below it a long
+    scaled tail curling along the ground to a great fluke. She bears a golden trident.
+    """
+    n, B = bt.n, bt.B
+    body, chest, head, tail = n['body'], n['chest'], n['head'], n['tail']
+    P = lambda i: Vector(B[i])
+    Bo, C, Hd = P(body), P(chest), P(head)
+    SKIN, SKIN2, HAIR, HAIR2, GOLD, PEARL, CORAL, CORAL2 = 0xcdeee6, 0xb0d8d2, 0x22606c, 0x2c7480, 0xe0bc64, 0xf2eee2, 0xf07a88, 0xf8a0a8
+    SCALE, SCALE2, TAIL, BELLY, FIN, FIN2, EYE = 0x4cbcc4, 0x3696a4, 0x3a9cac, 0x9ad8d0, 0x68cad2, 0x48aab6, 0x60fff0
+    bt.ao_floor = 0.68
+    # ---- the torso: a slender waist rising to the ribs, shoulders, a long neck
+    F.hull(bt, [(gv(Bo, 0, 0.08, 0), 0.14, 0.12), (gv(Bo, 0, 0.3, 0.005), 0.125, 0.105), (gv(C, 0, -0.12, 0.01), 0.15, 0.12), (gv(C, 0, 0.06, 0.01), 0.18, 0.13), (gv(C, 0, 0.2, 0), 0.2, 0.11), (gv(C, 0, 0.25, -0.005), 0.1, 0.07)], [body, chest], SKIN, sides=12, surf='fur')
+    F.hull(bt, [(gv(C, 0, 0.19, 0), 0.19, 0.1), (gv(C, 0, 0.26, -0.01), 0.1, 0.07), (gv(C, 0, 0.3, -0.005), 0.05, 0.045)], [chest], SKIN, sides=10, surf='fur')
+    F.prism(bt, gv(C, 0, 0.26, 0), gv(Hd, 0, -0.04, 0), 0.042, 0.036, [chest, head], SKIN, sides=7, surf='fur')
+    for sd in (-1, 1):
+        F.prism(bt, gv(C, sd * 0.02, 0.215, 0.09), gv(C, sd * 0.15, 0.225, 0.05), 0.012, 0.01, [chest], SKIN2, sides=4, surf='fur')
+    # ---- the head: a faceted skull, narrow at the chin, a fine nose, coral lips, glowing almond eyes
+    F.hull(bt, [(gv(Hd, 0, -0.085, 0.07), 0.02, 0.02), (gv(Hd, 0, -0.06, 0.04), 0.06, 0.07), (gv(Hd, 0, -0.01, 0.01), 0.088, 0.1), (gv(Hd, 0, 0.06, -0.005), 0.1, 0.112), (gv(Hd, 0, 0.13, -0.01), 0.088, 0.1), (gv(Hd, 0, 0.18, -0.015), 0.04, 0.05)], [head], SKIN, sides=10, surf='fur')
+    F.prism(bt, gv(Hd, 0, 0.045, 0.105), gv(Hd, 0, 0.0, 0.125), 0.012, 0.016, [head], SKIN, sides=4, surf='fur')
+    F.plate(bt, gv(Hd, 0, -0.035, 0.103), (0.036, 0.012, 0.012), [head], CORAL, bevel=0.4, surf='fur')
+    for sd in (-1, 1):
+        e = gv(Hd, sd * 0.042, 0.035, 0.095)
+        F.plate(bt, e, (0.034, 0.016, 0.012), [head], 0x0a2a30, rot=(0, sd * 0.35, sd * 0.12), bevel=0.3, surf='fur')
+        F.plate(bt, e + G(0, 0, 0.005), (0.024, 0.01, 0.01), [head], EYE, rot=(0, sd * 0.35, sd * 0.12), bevel=0.3, surf='glow', glow=True)
+        F.plate(bt, e + G(sd * 0.004, 0.026, 0.0), (0.04, 0.007, 0.01), [head], HAIR, rot=(0, sd * 0.35, -sd * 0.18), bevel=0, surf='fur')
+        F.plate(bt, gv(Hd, sd * 0.058, -0.005, 0.07), (0.03, 0.03, 0.02), [head], SKIN2, rot=(0, sd * 0.6, 0), bevel=0.4, surf='fur')
+        # Fin ears swept back, ribbed in dark rods.
+        ear = gv(Hd, sd * 0.095, 0.04, -0.005)
+        for tip, w in ((gv(Hd, sd * 0.2, 0.17, -0.1), 0.06), (gv(Hd, sd * 0.23, 0.06, -0.13), 0.07), (gv(Hd, sd * 0.18, -0.04, -0.09), 0.05)):
+            F.blade(bt, ear, tip, w, [head], FIN, thick=0.006, surf='membrane', side=G(0, 1, 0), belly=0.6)
+            F.spike(bt, ear, tip, 0.005, [head], 0x1e5058, surf='shell')
+    # ---- the hair: a cap over the crown, locks framing the face, long locks down each strand
+    F.hull(bt, [(gv(Hd, 0, 0.0, -0.06), 0.1, 0.06), (gv(Hd, 0, 0.08, -0.02), 0.112, 0.12), (gv(Hd, 0, 0.15, -0.015), 0.095, 0.105), (gv(Hd, 0, 0.2, -0.02), 0.04, 0.05)], [head], HAIR, sides=10, surf='fur')
+    for sd in (-1, 1):
+        run = [gv(Hd, sd * 0.03, 0.16, 0.09), gv(Hd, sd * 0.1, 0.1, 0.075), gv(Hd, sd * 0.12, 0.0, 0.05), gv(Hd, sd * 0.125, -0.12, 0.04), gv(C, sd * 0.12, 0.22, 0.08), gv(C, sd * 0.14, 0.1, 0.09)]
+        F.ribbon(bt, run, [0.05, 0.06, 0.06, 0.055, 0.045, 0.012], G(0, 0, 1), [head, chest], HAIR2, thick=0.012)
+    for si, st in enumerate(n['strands']):
+        pts = [P(b) for b in st]
+        out = pts[0] - Hd
+        out.z = 0
+        side = Vector((-out.y, out.x, 0)).normalized() if out.length > 1e-4 else Vector((1, 0, 0))
+        tip = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+        root = Hd + (pts[0] - Hd) * 0.6
+        wv = lambda k: side * 0.025 * math.sin(k * 2.0 + si)
+        run = [root, pts[0], pts[1] + wv(1), pts[2] + wv(2), pts[2].lerp(tip, 0.5) + wv(3), tip]
+        F.ribbon(bt, run, [0.07, 0.09, 0.1, 0.085, 0.06, 0.012], side, [head] + st, HAIR if si % 3 else HAIR2, thick=0.014)
+    # ---- the crown: a gold band, branching coral, pearls, a burning gem at the brow
+    F.ring(bt, gv(Hd, 0, 0.135, -0.01), 0.113, [head], GOLD, width=0.03, thick=0.012, segs=14, surf='shell')
+    for i in range(9):
+        a = -1.5 + i * 0.375
+        out = G(math.sin(a), 0, math.cos(a))
+        side = G(math.cos(a), 0, -math.sin(a))
+        b0 = gv(Hd, math.sin(a) * 0.11, 0.14, -0.01 + math.cos(a) * 0.1)
+        h = 0.22 if i == 4 else 0.12 + 0.035 * (i % 2) - 0.012 * abs(i - 4)
+        p1 = b0 + out * 0.03 + G(0, h * 0.55, 0)
+        p2 = b0 + out * 0.06 + G(0, h, 0)
+        F.chain(bt, [b0, p1, p2], [0.016, 0.011, 0.004], [head], CORAL, sides=5, surf='fur')
+        for sgn in (-1, 1):
+            q = b0.lerp(p1, 0.7 + 0.2 * sgn)
+            F.chain(bt, [q, q + side * sgn * 0.035 + out * 0.02 + G(0, 0.035, 0), q + side * sgn * 0.045 + out * 0.035 + G(0, 0.065, 0)], [0.008, 0.005, 0.002], [head], CORAL2, sides=4, surf='fur')
+        if i == 4:
+            F.gem(bt, p2 + G(0, 0.03, 0), 0.026, [head], 0xa0fff8, stretch=1.5)
+        else:
+            F.gem(bt, p2 + G(0, 0.01, 0), 0.014, [head], PEARL, surf='shell', glow=False)
+    F.gem(bt, gv(Hd, 0, 0.135, 0.125), 0.02, [head], EYE, stretch=1.4)
+    # ---- the bodice: rows of leaf scales over breast and ribs, a gold rim, a pearl necklace, a gem at the heart
+    F.hull(bt, [(gv(C, 0, -0.15, 0.012), 0.155, 0.125), (gv(C, 0, 0.06, 0.012), 0.185, 0.135), (gv(C, 0, 0.19, 0.004), 0.2, 0.115)], [chest], SCALE2, sides=12, surf='shell', arc=(-1.75, 1.75))
+    for r in range(6):
+        y = 0.18 - r * 0.06
+        rx, rz = 0.195 - abs(r - 1.5) * 0.008 - (0.03 if r > 3 else 0), 0.125 + (0.012 if r in (1, 2) else 0)
+        for k in range(9):
+            a = -1.4 + 2.8 * (k + 0.5 * (r % 2)) / 8.5
+            b = gv(C, math.sin(a) * rx, y, 0.01 + math.cos(a) * rz)
+            F.blade(bt, b + G(0, 0.012, 0), b + G(math.sin(a) * 0.01, -0.07, math.cos(a) * 0.012), 0.052, [chest], SCALE if (r + k) % 2 else SCALE2, thick=0.007, surf='shell', side=G(math.cos(a), 0, -math.sin(a)), belly=0.55)
+    for k in range(13):
+        a = -1.4 + k * 2.8 / 12
+        F.gem(bt, gv(C, math.sin(a) * 0.2, 0.2 - 0.02 * math.cos(a), 0.008 + math.cos(a) * 0.118), 0.013, [chest], GOLD, surf='shell', glow=False)
+    for k in range(15):
+        a = -1.2 + k * 2.4 / 14
+        F.gem(bt, gv(C, math.sin(a) * 0.1, 0.285 - 0.08 * math.cos(a), 0.01 + math.cos(a) * 0.105), 0.012, [chest], PEARL, surf='shell', glow=False)
+    F.gem(bt, gv(C, 0, 0.165, 0.14), 0.028, [chest], EYE, stretch=1.3)
+    # ---- the arms: slender, gold-banded, finned at the elbow; layered shell pauldrons with gold spines
+    for arm in n['arms']:
+        up, mid, low = arm['up'], arm['mid'], arm['low']
+        S, E, W = P(up), P(mid), P(low)
+        sd = 1 if W.x > 0 else -1
+        F.prism(bt, gv(S, -sd * 0.02, 0.01, 0), E, 0.05, 0.037, [up, mid], SKIN, sides=7, surf='fur')
+        F.prism(bt, E, W, 0.037, 0.027, [mid, low], SKIN, sides=7, surf='fur')
+        F.plate(bt, gv(W, 0, -0.055, 0.02), (0.06, 0.07, 0.025), [low], SKIN, bevel=0.4, taper=0.8, surf='fur')
+        for f in range(4):
+            k0 = gv(W, (f - 1.5) * 0.016, -0.09, 0.03)
+            F.chain(bt, [k0, k0 + G((f - 1.5) * 0.005, -0.04, 0.012), k0 + G((f - 1.5) * 0.008, -0.075, 0.03)], [0.009, 0.007, 0.004], [low], SKIN, sides=4, surf='fur')
+        F.chain(bt, [gv(W, -sd * 0.03, -0.05, 0.035), gv(W, -sd * 0.045, -0.09, 0.065)], [0.009, 0.005], [low], SKIN, sides=4, surf='fur')
+        for t in (0.12, 0.22):
+            F.prism(bt, W.lerp(E, t), W.lerp(E, t + 0.05), 0.033, 0.033, [low], GOLD, sides=8, surf='shell')
+        F.prism(bt, S.lerp(E, 0.55), S.lerp(E, 0.62), 0.046, 0.044, [up], GOLD, sides=8, surf='shell')
+        for k, (r, dy) in enumerate(((0.105, 0.03), (0.09, 0.0), (0.075, -0.03))):
+            F.dome(bt, gv(S, sd * (0.025 + k * 0.012), dy, 0), r, [up], SCALE if k % 2 else SCALE2, axis=G(sd * 0.7, 1, 0).normalized(), theta=1.0, thick=0.012, segs=10, rings=3, surf='shell', squash=(1, 0.7, 1))
+        for k in range(3):
+            q = gv(S, sd * (0.05 + k * 0.025), 0.1 - k * 0.025, -0.03 + k * 0.03)
+            F.spike(bt, q, q + G(sd * 0.05, 0.09, -0.02), 0.013, [up], GOLD, surf='shell')
+        base = E + G(sd * 0.02, 0.0, -0.03)
+        for tip, w in ((E + G(sd * 0.16, 0.06, -0.13), 0.07), (E + G(sd * 0.15, -0.12, -0.13), 0.08), (W + G(sd * 0.07, 0.06, -0.09), 0.05)):
+            F.blade(bt, base, tip, w, [mid], FIN, thick=0.006, surf='membrane', side=(tip - base).cross(G(1, 0, 0)), belly=0.6)
+            F.spike(bt, base, tip, 0.005, [mid], 0x1e5058, surf='shell')
+    # ---- the waist: a frill of fins where skin turns to scale, a gold belt strung with pearls
+    for k in range(16):
+        a = k / 16 * math.tau
+        d = G(math.sin(a), 0, math.cos(a))
+        side = G(math.cos(a), 0, -math.sin(a))
+        b0 = gv(Bo, 0, 0.12, 0) + d * 0.13
+        F.blade(bt, b0, b0 + d * 0.15 + G(0, -0.24, 0), 0.11, [body], FIN if k % 2 else FIN2, thick=0.006, surf='membrane', side=side, belly=0.4)
+    F.hull(bt, [(gv(Bo, 0, 0.1, 0), 0.15, 0.13), (gv(Bo, 0, 0.15, 0), 0.15, 0.13)], [body], GOLD, sides=14, surf='shell')
+    for k in range(12):
+        a = k / 12 * math.tau
+        F.gem(bt, gv(Bo, math.sin(a) * 0.155, 0.125, math.cos(a) * 0.135), 0.015, [body], PEARL, surf='shell', glow=False)
+    F.gem(bt, gv(Bo, 0, 0.125, 0.15), 0.026, [body], EYE, stretch=1.3)
+    # ---- the tail: swelling from the hips, then tapering as it curls along the ground; a pale belly keel, a fin crest
+    pts = [gv(Bo, 0, 0.08, 0)] + [P(t) for t in tail]
+    end = pts[-1] + (pts[-1] - pts[-2]) * 0.9
+    run = pts + [end]
+    rr = [0.14, 0.195, 0.185, 0.165, 0.14, 0.112, 0.085, 0.06, 0.04, 0.026]
+    tb = [[body]] + [[tail[max(0, i - 1)], tail[i], tail[min(i + 1, len(tail) - 1)]] for i in range(len(tail))]
+
+    def dorsal(d):
+        """The tail's back at a segment: up where it lies along the ground, behind where it hangs from the hips."""
+        up = Vector((0, 0, 1)) - d * d.z
+        if up.length < 0.5:
+            back = G(0, 0, -1)
+            up = up.normalized() * up.length + (back - d * d.dot(back)) * (0.5 - up.length) * 2
+        return up.normalized()
+
+    for i in range(len(run) - 1):
+        a_, b_ = run[i], run[i + 1]
+        d = (b_ - a_).normalized()
+        ov = (rr[i] + rr[i + 1]) * 0.12
+        F.loft(bt, [a_ - d * (ov if i else 0), b_ + d * ov], [rr[i], rr[i + 1]], [rr[i], rr[i + 1]], tb[i], TAIL, sides=10, surf='fur')
+        up = dorsal(d)
+        side = d.cross(up).normalized()
+        # Overlapping leaf scales in staggered rows over the back and flanks.
+        L = (b_ - a_).length
+        rows = max(2, int(L / 0.09))
+        for r in range(rows):
+            t = (r + 0.5) / rows
+            q = a_.lerp(b_, t)
+            rad = rr[i] + (rr[i + 1] - rr[i]) * t
+            for k in range(7):
+                ang = (k - 3 + 0.5 * (r % 2)) * 0.42
+                nrm = up * math.cos(ang) + side * math.sin(ang)
+                c = q + nrm * rad * 1.01
+                F.blade(bt, c - d * rad * 0.35, c + d * rad * 0.45, rad * 0.55, tb[i], SCALE if (r + k) % 2 else SCALE2, thick=0.006, surf='shell', side=d.cross(nrm), belly=0.35)
+        # The pale keel of the belly.
+        if i >= 1:
+            F.loft(bt, [a_ - up * rr[i] * 0.55, b_ - up * rr[i + 1] * 0.55], [rr[i] * 0.75, rr[i + 1] * 0.75], [rr[i] * 0.5, rr[i + 1] * 0.5], tb[i], BELLY, sides=8, surf='fur')
+        if 2 <= i <= 6:
+            base_ = a_.lerp(b_, 0.5) + up * rr[i] * 0.9
+            hgt = 0.12 + 0.05 * math.sin((i - 2) / 4 * math.pi)
+            F.blade(bt, base_ - d * 0.09, base_ + d * 0.03 + up * hgt, 0.16, tb[i], FIN, thick=0.006, surf='membrane', side=d, belly=0.3)
+            F.spike(bt, base_ - d * 0.04, base_ + d * 0.02 + up * hgt, 0.006, tb[i], 0x1e5058, surf='shell')
+    # Hip fins.
+    for sd in (-1, 1):
+        h = G(sd * 0.17, 1.42, -0.06)
+        for tip, w in ((G(sd * 0.48, 1.4, -0.22), 0.16), (G(sd * 0.44, 1.12, -0.32), 0.14), (G(sd * 0.3, 1.0, -0.22), 0.1)):
+            F.blade(bt, h, tip, w, [body, tail[0]], FIN, thick=0.006, surf='membrane', side=(tip - h).cross(G(1, 0, 0)), belly=0.55)
+            F.spike(bt, h, tip, 0.006, [body, tail[0]], 0x1e5058, surf='shell')
+    # The fluke: two great lobes, ribbed.
+    te, last = end, tail[-1]
+    for sd in (-1, 1):
+        for tip, w in ((te + G(sd * 0.12, 0.62, -0.06), 0.22), (te + G(sd * 0.5, 0.56, -0.4), 0.3), (te + G(sd * 0.8, 0.16, -0.6), 0.3), (te + G(sd * 0.6, -0.15, -0.36), 0.22)):
+            F.blade(bt, te, tip, w, [last, tail[-2]], FIN if sd > 0 else FIN2, thick=0.008, surf='membrane', side=(tip - te).cross(G(0, 0, 1) if abs((tip - te).normalized().z) < 0.9 else G(1, 0, 0)), belly=0.6)
+            F.spike(bt, te, tip, 0.01, [last, tail[-2]], 0x1e5058, surf='shell')
+    # ---- the trident: a gilded shaft wound with gold, three barbed prongs, a burning gem where they meet
+    rl = n['arms'][0]['low']
+    W = P(rl)
+    F.prism(bt, W + G(0, -1.0, 0.03), W + G(0, 1.35, -0.03), 0.026, 0.026, [rl], 0xb8903a, sides=7, surf='shell')
+    for k in range(9):
+        y = -0.85 + k * 0.26
+        F.prism(bt, W + G(0, y, 0.0), W + G(0, y + 0.04, 0.0), 0.033, 0.033, [rl], GOLD, sides=7, surf='shell')
+    F.spike(bt, W + G(0, -1.0, 0.03), W + G(0, -1.16, 0.035), 0.032, [rl], GOLD, sides=5, surf='shell')
+    tp = W + G(0, 1.38, -0.03)
+    F.chain(bt, [tp + G(-0.19, 0.12, 0), tp + G(-0.1, -0.04, 0), tp + G(0, -0.08, 0), tp + G(0.1, -0.04, 0), tp + G(0.19, 0.12, 0)], [0.012, 0.024, 0.03, 0.024, 0.012], [rl], GOLD, sides=6, surf='shell')
+    for dx, h in ((0, 0.5), (-0.18, 0.38), (0.18, 0.38)):
+        base_ = tp + G(dx, 0.1 if dx else 0, 0)
+        tip_ = base_ + G(dx * 0.08, h, 0)
+        F.chain(bt, [base_, base_.lerp(tip_, 0.6), tip_], [0.022, 0.016, 0.001], [rl], GOLD, sides=4, surf='shell')
+        F.blade(bt, tip_ + G(0, -0.1, 0), tip_ + G(0.05 if dx >= 0 else -0.05, -0.2, 0), 0.03, [rl], GOLD, thick=0.008, surf='shell', side=G(0, 0, 1))
+        F.gem(bt, tip_ + G(0, -0.05, 0), 0.016, [rl], 0x80fff0, stretch=2.4)
+    F.gem(bt, tp + G(0, 0.0, 0.02), 0.04, [rl], EYE, stretch=1.3)
+    return bt.build(0.005, 6000, surface='fur'), CREATURE_SURFACES
+# end:siren
+# end:siren
+
 
 # -------------------------------------------------------------------- main --
 
