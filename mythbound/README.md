@@ -363,3 +363,12 @@ terrain shader blends them into each zone's colours:
 The game loads these files before building the world and falls back to the
 models made in code for anything it lacks (or, for a creature, whose skeleton
 has changed since: dump and rebuild it after changing a creature in code).
+
+On a slow connection the loading screen shows the download and offers **Start
+now**: the game starts with the models made in code while the files keep
+downloading for the next game (after 12 s it starts by itself, and on 2G or with
+Save-Data at once). The build packs the files on the way out
+(`scripts/pack-models.mjs`: the .glb gzipped, positions and indices
+delta-coded in the .bin.gz files, about 2.5 MB in place of 3.8 MB), and in the
+published game a service worker (`public/sw.js`) keeps the game's files on the
+device, so a later visit starts at once and solo play works offline.

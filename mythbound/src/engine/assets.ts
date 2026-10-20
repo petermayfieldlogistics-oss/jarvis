@@ -187,15 +187,58 @@ function fetchGzipped(url: string): Promise<ArrayBuffer> {
     });
 }
 
+/** 'MBPK': a creatures or scenery file the build packed (see scripts/pack-models.mjs). */
+const PACKED = 0x4b50424d;
+
+/**
+ * A model file as Blender wrote it. The build packs them: each model's (or
+ * surface's) positions and triangle indices delta-coded and split into byte
+ * planes, which gzip squeezes far better. This undoes that, finding them from
+ * the header just as scripts/pack-models.mjs does.
+ */
+export function unpack(buf: ArrayBuffer): ArrayBuffer {
+  if (buf.byteLength < 4 || new DataView(buf).getUint32(0, true) !== PACKED) return buf;
+  const out = new Uint8Array(buf.slice(4));
+  const hl = new DataView(out.buffer).getUint32(4, true);
+  type Block = { verts: number; tris: number; big: boolean; bytes: number; surfaces?: Block[] };
+  const heads = JSON.parse(new TextDecoder().decode(out.subarray(8, 8 + hl))) as Block[];
+  let off = 8 + hl;
+  for (const b of heads.flatMap((h) => (Array.isArray(h.surfaces) ? h.surfaces : [h]))) {
+    const w = b.big ? 4 : 2;
+    decode(out, off, b.verts * 3, 2, 3);
+    decode(out, off + b.bytes - b.tris * 3 * w, b.tris * 3, w, 1);
+    off += b.bytes;
+  }
+  return out.buffer;
+}
+
+/** Byte planes back to values (u16 or u32), each the zigzagged change from the one `stride` before. */
+function decode(buf: Uint8Array, at: number, count: number, w: 2 | 4, stride: number) {
+  const vals = new Uint32Array(count);
+  for (let i = 0; i < count; i++) {
+    let zz = 0;
+    for (let k = 0; k < w; k++) zz |= buf[at + k * count + i] << (8 * k);
+    zz >>>= 0;
+    const d = (zz >>> 1) ^ -(zz & 1);
+    const p = i >= stride ? vals[i - stride] : 0;
+    vals[i] = w === 2 ? (p + d) & 0xffff : (p + d) >>> 0;
+  }
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  for (let i = 0; i < count; i++) {
+    if (w === 2) dv.setUint16(at + i * 2, vals[i], true);
+    else dv.setUint32(at + i * 4, vals[i], true);
+  }
+}
+
 function loadCreatures(): Promise<void> {
   return fetchGzipped(creaturesUrl)
-    .then((buf) => arrive(() => readCreatures(buf)))
+    .then((buf) => arrive(() => readCreatures(unpack(buf))))
     .catch((err) => console.warn('Blender creatures not loaded; using the built-in ones.', err));
 }
 
 function loadWorld(): Promise<void> {
   return fetchGzipped(worldUrl)
-    .then((buf) => arrive(() => readWorld(buf)))
+    .then((buf) => arrive(() => readWorld(unpack(buf))))
     .catch((err) => console.warn('Blender scenery not loaded; using the built-in one.', err));
 }
 
@@ -277,7 +320,7 @@ export function worldGeometry(m: WorldMesh, slots: number[] = []): THREE.BufferG
 }
 
 function loadWeapons(): Promise<void> {
-  // The build ships the .glb gzipped (see vite.config.ts).
+  // The build ships the .glb gzipped (see scripts/pack-models.mjs).
   return fetchGzipped(weaponsUrl)
     .then((buf) => new GLTFLoader().parseAsync(buf, ''))
     .then((gltf) => arrive(() => {
