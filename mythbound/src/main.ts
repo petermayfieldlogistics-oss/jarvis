@@ -10,6 +10,7 @@ import { showFront } from './ui/account';
 import { showCreator, showTitle } from './ui/creator';
 import { cleanEdits } from './engine/builder';
 import { holdAssets, loadAssets } from './engine/assets';
+import { keepOffline } from './engine/offline';
 import { waitForModels } from './ui/loading';
 
 const app = document.getElementById('app')!;
@@ -148,7 +149,7 @@ declare global {
   }
 }
 window.mythbound = { game: () => game, height: heightAt, cloud };
-// Fetch the Blender models while the title screen shows.
-void loadAssets();
+// Fetch the Blender models while the title screen shows, then keep the game on this device.
+void loadAssets().then(keepOffline);
 
 title();
