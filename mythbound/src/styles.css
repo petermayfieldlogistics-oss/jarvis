@@ -63,7 +63,7 @@ small { color: var(--ink-dim); }
 * { scrollbar-width: thin; scrollbar-color: #6b5430 rgba(0, 0, 0, 0.3); }
 
 /* Beveled bronze buttons. */
-button.primary, .title .tbtns button, .cnav button, .opts button, .btnrow button, .row button, .sslot, .mtabs .resume, .wtile, .wchans button, .wfoot button {
+button.primary, .title .tbtns button, .loading .startnow, .cnav button, .opts button, .btnrow button, .row button, .sslot, .mtabs .resume, .wtile, .wchans button, .wfoot button {
   background: linear-gradient(#2e271d, #18140f 58%, #110e0a);
   color: var(--ink);
   border: 1px solid rgba(216, 180, 104, 0.42);
@@ -136,6 +136,11 @@ button:not(:disabled):active { transform: translateY(1px); }
 .loading div { font-family: var(--display); font-size: 22px; letter-spacing: 0.2em; color: var(--gold); animation: pulse 1.2s infinite alternate; }
 .loading div::after { content: ''; display: block; width: 260px; margin: 10px auto 0; height: 16px; background: var(--orn-diamond) center / 16px 16px no-repeat, var(--rule) center / 100% 1px no-repeat; }
 @keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
+/* The models' download, and on a slow connection a way to start without them. */
+.loading { align-content: center; }
+.loading .lprog { margin: 18px 0 0; min-height: 1.3em; color: var(--ink-dim); font-size: 16px; font-variant-numeric: tabular-nums; }
+.loading .startnow { margin-top: 14px; font-size: 17px; padding: 10px 24px; }
+.loading .startnow small { display: block; margin-top: 3px; font-family: var(--serif); font-size: 13px; letter-spacing: 0; }
 
 /* --------------------------------------------------------- accounts -- */
 /* Scrolls when taller than the screen (phones), centred otherwise. */

@@ -97,8 +97,79 @@ export const blendMisses = new Set<string>();
 
 /** Loads every Blender model (at most once). Never rejects: what fails to load is simply left out. */
 export function loadAssets(): Promise<void> {
-  loading ??= Promise.all([loadWeapons(), loadCreatures(), loadWorld()]).then(() => {});
+  loading ??= Promise.all([loadWeapons(), loadCreatures(), loadWorld()]).then(() => {
+    settled = true;
+  });
   return loading;
+}
+
+let settled = false;
+/** Each model file's bytes so far, and in all (-1 while not known: the server hasn't said, or won't). */
+const downloads: { got: number; size: number }[] = [];
+
+/** How far the models' download has got, in bytes (total 0 while not yet known), and whether it's over. */
+export function assetProgress(): { loaded: number; total: number; done: boolean } {
+  let loaded = 0, total = 0;
+  for (const d of downloads) {
+    loaded += d.got;
+    total = d.size >= 0 && total >= 0 ? total + d.size : -1;
+  }
+  return { loaded, total: Math.max(0, total), done: settled };
+}
+
+/** A file's bytes, counted as they come in (see assetProgress). */
+async function download(url: string): Promise<ArrayBuffer> {
+  const d = { got: 0, size: -1 };
+  downloads.push(d);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(String(r.status));
+    // A length is only the file's own when the server didn't compress it on the way.
+    d.size = r.headers.get('content-encoding') ? -1 : Number(r.headers.get('content-length')) || -1;
+    if (!r.body) return await r.arrayBuffer();
+    const reader = r.body.getReader();
+    const parts: Uint8Array[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      d.got += value.length;
+    }
+    const out = new Uint8Array(d.got);
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out.buffer;
+  } finally {
+    d.size = d.got;
+  }
+}
+
+let held = false;
+const kept: (() => void)[] = [];
+/** Puts a model that arrived into use, or keeps it for the next game while one runs (see holdAssets). */
+function arrive(use: () => void) {
+  if (held) kept.push(use);
+  else use();
+}
+
+/**
+ * While a game runs, models that arrive (on a slow connection the game may
+ * start without them) wait for the next one, so a world never mixes the
+ * built-in models and the Blender ones.
+ */
+export function holdAssets(hold: boolean) {
+  held = hold;
+  if (hold) return;
+  for (const use of kept.splice(0)) {
+    try {
+      use();
+    } catch (err) {
+      console.warn('Blender models not loaded; using the built-in ones.', err);
+    }
+  }
 }
 
 /**
@@ -107,8 +178,7 @@ export function loadAssets(): Promise<void> {
  * encoding); what arrives still packed is unpacked here.
  */
 function fetchGzipped(url: string): Promise<ArrayBuffer> {
-  return fetch(url)
-    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+  return download(url)
     .then((buf) => {
       const head = new Uint8Array(buf, 0, 2);
       if (head[0] !== 0x1f || head[1] !== 0x8b) return buf;
@@ -119,13 +189,13 @@ function fetchGzipped(url: string): Promise<ArrayBuffer> {
 
 function loadCreatures(): Promise<void> {
   return fetchGzipped(creaturesUrl)
-    .then(readCreatures)
+    .then((buf) => arrive(() => readCreatures(buf)))
     .catch((err) => console.warn('Blender creatures not loaded; using the built-in ones.', err));
 }
 
 function loadWorld(): Promise<void> {
   return fetchGzipped(worldUrl)
-    .then(readWorld)
+    .then((buf) => arrive(() => readWorld(buf)))
     .catch((err) => console.warn('Blender scenery not loaded; using the built-in one.', err));
 }
 
@@ -207,9 +277,10 @@ export function worldGeometry(m: WorldMesh, slots: number[] = []): THREE.BufferG
 }
 
 function loadWeapons(): Promise<void> {
-  return new GLTFLoader()
-    .loadAsync(weaponsUrl)
-    .then((gltf) => {
+  // The build ships the .glb gzipped (see vite.config.ts).
+  return fetchGzipped(weaponsUrl)
+    .then((buf) => new GLTFLoader().parseAsync(buf, ''))
+    .then((gltf) => arrive(() => {
       for (const o of [...gltf.scene.children]) {
         o.traverse((m) => {
           if ((m as THREE.Mesh).isMesh) {
@@ -223,7 +294,7 @@ function loadWeapons(): Promise<void> {
         o.position.set(0, 0, 0);
         models.set(o.name, o);
       }
-    })
+    }))
     .catch((err) => console.warn('Blender models not loaded; using the built-in ones.', err));
 }
 

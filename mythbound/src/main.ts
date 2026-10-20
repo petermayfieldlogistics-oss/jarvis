@@ -9,7 +9,8 @@ import type { Character } from './rules/character';
 import { showFront } from './ui/account';
 import { showCreator, showTitle } from './ui/creator';
 import { cleanEdits } from './engine/builder';
-import { loadAssets } from './engine/assets';
+import { holdAssets, loadAssets } from './engine/assets';
+import { waitForModels } from './ui/loading';
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
@@ -26,6 +27,8 @@ function stopGame() {
   sync = null;
   game?.stop();
   game = null;
+  // Models that arrived during that game are for the next one.
+  holdAssets(false);
 }
 
 /** The front screen: log in, your account's heroes, or play offline. */
@@ -67,8 +70,10 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
   loading.className = 'loading';
   loading.innerHTML = '<div>Forging the world…</div>';
   app.appendChild(loading);
-  // Let the loading text paint before the heavy world build (the Blender models load first).
-  setTimeout(() => void loadAssets().then(() => {
+  // Let the loading text paint before the heavy world build (the Blender models load first,
+  // unless the connection is too slow to wait for them).
+  setTimeout(() => void waitForModels(loading).then((early) => {
+    holdAssets(true);
     const host = document.createElement('div');
     host.className = 'game';
     app.appendChild(host);
@@ -101,6 +106,7 @@ function start(character: Character, world: WorldState, fresh = false, slot?: { 
     loading.remove();
     g.audio.unlock();
     g.start();
+    if (early) g.hud.toast('Slow connection: simpler models for now. The full ones keep downloading for next time.', 'skill');
     if (fresh) g.story.intro();
     if (invite) joinInvite(g, invite);
   }), 50);
