@@ -812,6 +812,8 @@ export class Coop {
   private addRemote(id: number, name: string) {
     if (this.remotes.has(id)) return;
     this.link(id);
+    // A newcomer hears all of our hero's values in the next update.
+    this.stFullAt = 0;
     this.remotes.set(id, new RemoteHero(id, name, this.g.scene));
     this.g.refreshHeroes();
   }
@@ -1102,10 +1104,10 @@ export class Coop {
 
   /**
    * Host, to a newer guest: only what changed since they last heard, nearest
-   * and busiest monsters first. Near ones (and any fighting them, and bosses)
-   * go every bundle; further ones less often, and less still when their line
-   * is full; monsters standing still get a short word now and then. What does
-   * not fit the line's budget waits for the next bundle.
+   * and busiest monsters first. Every bundle carries the changes, except on a
+   * full line, where monsters further off go less often; monsters standing
+   * still get a short word now and then. What does not fit the line's budget
+   * waits for the next bundle.
    */
   private sendChanges(r: RemoteHero, L: Link, t: number) {
     const g = this.g;
@@ -1137,8 +1139,8 @@ export class Coop {
         entry = [e.nid, 0];
       }
       const mask = entry[1];
-      const close = d < 45 || (e.aware && e.target === r);
-      const every = close ? 1 : tight ? (d < 90 ? 2 : 4) : d < 90 ? 1 : 2;
+      // On a full line, monsters further off and not after this friend wait their turn longer.
+      const every = !tight || d < 45 || (e.aware && e.target === r) ? 1 : d < 90 ? 2 : 4;
       // First sight, a blow, a new move, being seen or hidden: at once.
       const urgent = !sent || (mask & (W.HP | W.FLAGS | W.STATUS)) !== 0 || (sent.w.atk < 0 && cur.atk >= 0);
       if (!urgent && age < every * SEND_EVERY - 0.01 && age < KEEPALIVE) continue;

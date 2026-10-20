@@ -160,6 +160,8 @@ export class SendBudget {
   private holdUntil = 0;
   /** Reports in a row that saw a queue (one alone may be a hiccup). */
   private high = 0;
+  /** What got through when the line last filled up: above it the budget only creeps. */
+  private ceiling = Infinity;
   /** Round trip to the friend and back, ms (0 until measured). */
   rtt = 0;
   /** Their latest report: queue (ms) and jitter (ms) on our line to them. */
@@ -174,10 +176,14 @@ export class SendBudget {
       // A queue is building: send less than actually got through (a deep queue drains faster).
       if (now >= this.holdUntil) {
         const through = got > 0 ? Math.min(this.rate, got) : this.rate;
+        this.ceiling = Math.max(SendBudget.MIN, through);
         this.rate = Math.max(SendBudget.MIN, through * (queue > 600 ? 0.5 : 0.8));
         this.holdUntil = now + Math.max(700, this.rtt + 200);
       }
-    } else if (queue < 80 && now >= this.holdUntil) this.rate = Math.min(SendBudget.MAX, this.rate * 1.2 + 1000);
+    } else if (queue < 80 && now >= this.holdUntil) {
+      // Quickly back up to what the line carried before, then slowly feel for more.
+      this.rate = Math.min(SendBudget.MAX, this.rate < this.ceiling ? Math.min(this.ceiling, this.rate * 1.2 + 1000) : this.rate + 300);
+    }
   }
 
   /** Refills the allowance; returns what may be sent now. */
