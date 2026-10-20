@@ -17,6 +17,7 @@ import { animateHumanoid, type Rig } from './humanoid';
 import type { Hero } from './hero';
 import { buildBoat, disposeObject } from './models';
 import { DEFAULT_SERVER, Net, type ServerMsg } from './net';
+import { applyWire, encodeWire, MIN_DELAY, PeerClock, SendBudget, W, type MirrorWire } from './netsync';
 import { attachGear, BLADE, buildPlayerRig, chargeSparks, ELEMENT_COLOR, heroDressed, limbTrail, poseBowString, RAGE_RED, RIDER_HIP, TIMING } from './player';
 import { decodeOutfit, encodeOutfit, isPlain, outfitKey } from '../rules/outfit';
 import { rankOf } from '../rules/pvp';
@@ -29,8 +30,20 @@ export type CoopRole = 'off' | 'host' | 'guest';
 
 /** Messages go out in bundles this often (the server allows 90 a second per player). */
 const SEND_EVERY = 1 / 12;
-/** Others are drawn this far in the past so their motion can be smoothed between updates. */
-const INTERP = 0.13;
+/**
+ * What this game understands beyond the first co-op messages (sent in 'hi';
+ * older games send none). 2: bundles carry their send time ('ts'), link
+ * reports ('lk'), and monster updates as changes only ('sd').
+ */
+const NET_VERSION = 2;
+/** The game draws monsters' copies this far behind (game.ts); their updates are placed for the delay the line needs. */
+const GAME_INTERP = 0.13;
+/** A monster nobody needs news of still gets a word this often, so a friend's copy is not forgotten. */
+const KEEPALIVE = 1;
+/** A friend whose copy has not heard of a monster for this long may have forgotten it: start it afresh. */
+const STALE = 2;
+/** Our own unsent bytes beyond which updates that a newer one replaces are skipped (our upload is full). */
+const BACKLOG = 48_000;
 /** The host tells each guest about monsters within this many metres of them. */
 const RANGE = 150;
 /** A guest forgets a monster it has not heard about for this long. */
@@ -68,6 +81,9 @@ const str = (x: unknown) => (typeof x === 'string' ? x : '');
 const runeOf = (x: unknown) => (Object.hasOwn(RUNES, str(x)) ? (str(x) as RuneId) : undefined);
 const arr = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
 const now = () => performance.now() / 1000;
+const nowMs = () => performance.now();
+/** A hero's state values that every game reads as these when they are left out (see RemoteHero.receive). */
+const ANIM_DEFAULTS = [-1, 0, 0, -1, 0, 0, 0, 0, 0, -1, 0];
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 export type Msg = Record<string, unknown> & { k: string };
@@ -154,6 +170,8 @@ export class RemoteHero implements Hero {
   hostile = false;
   weaponId = '';
   weaponRune: RuneId | undefined;
+  /** Their game's co-op extras (NET_VERSION; 0: an older game). */
+  nv = 0;
   rig: Rig | null = null;
   /** Their horse while they ride (and its coat). */
   private horse: HorseRig | null = null;
@@ -169,6 +187,10 @@ export class RemoteHero implements Hero {
   private tv = new THREE.Vector3();
   private tv2 = new THREE.Vector3();
   private looks = '';
+  /** Where they were drawn last frame (before smoothing), and the correction still being eased out. */
+  private lastView = new THREE.Vector3();
+  private drawnAt = -1;
+  private ease = new THREE.Vector3();
 
   constructor(public id: number, public name: string, private scene: THREE.Scene) {}
 
@@ -197,6 +219,7 @@ export class RemoteHero implements Hero {
     this.roleId = ro;
     const sc = str(m.sc) as SubclassId;
     this.subclassId = LOOK_SUBCLASSES.has(sc) ? sc : null;
+    this.nv = Math.max(0, Math.floor(num(m.nv)));
     // A zombie shambles unless its player stood it up straight.
     const hunched = num(m.hu, 1) !== 0;
     // Their outfit (garments and colours), if they wear one; older builds send none.
@@ -281,7 +304,7 @@ export class RemoteHero implements Hero {
     this.makeTag();
   }
 
-  /** A state update from their game. */
+  /** A state update from their game; `t`: its place on our timeline (seconds). */
   receive(m: Msg, t: number) {
     const p = arr(m.p), v = arr(m.v), a = arr(m.a);
     const s: HeroSample = {
@@ -305,7 +328,7 @@ export class RemoteHero implements Hero {
     if (!this.latest) this.pos.set(s.x, s.y, s.z);
     this.latest = s;
     this.samples.push(s);
-    if (this.samples.length > 8) this.samples.shift();
+    if (this.samples.length > 16) this.samples.shift();
     const hp = num(m.hp, this.hp);
     if (hp < this.hp - 0.5) this.anim.hurt = 1;
     this.hp = hp;
@@ -358,8 +381,8 @@ export class RemoteHero implements Hero {
     }
   }
 
-  /** Moves and animates the model, drawing it `INTERP` behind the newest update. */
-  update(dt: number, g: Game, t: number) {
+  /** Moves and animates the model, drawing it `delay` seconds behind (what their line needs, see PeerClock). */
+  update(dt: number, g: Game, t: number, delay = MIN_DELAY) {
     const L = this.latest;
     const rig = this.rig;
     if (!L || !rig) return;
@@ -369,8 +392,8 @@ export class RemoteHero implements Hero {
     this.vel.set(L.vx, L.vy, L.vz);
     this.yaw = L.yaw;
 
-    // Where to draw them: between the two updates around (t - INTERP).
-    const at = t - INTERP;
+    // Where to draw them: between the two updates around (t - delay).
+    const at = t - delay;
     const s = this.samples;
     let j = -1;
     for (let k = s.length - 1; k >= 0; k--) {
@@ -384,10 +407,11 @@ export class RemoteHero implements Hero {
     const span = B.t - A.t;
     const k = j < 0 ? 0 : span > 1e-4 ? Math.min(1, (at - A.t) / span) : 1;
     const view = this.view.set(A.x + (B.x - A.x) * k, A.y + (B.y - A.y) * k, A.z + (B.z - A.z) * k);
-    if (j === s.length - 1) view.set(A.x + A.vx * Math.min(0.2, at - A.t), A.y, A.z + A.vz * Math.min(0.2, at - A.t));
+    if (j === s.length - 1) view.set(A.x + A.vx * Math.min(0.25, at - A.t), A.y, A.z + A.vz * Math.min(0.25, at - A.t));
     const yaw = A.yaw + wrap(B.yaw - A.yaw) * k;
     const vx = A.vx + (B.vx - A.vx) * k, vz = A.vz + (B.vz - A.vz) * k;
     while (s.length > 2 && s[1].t <= at) s.shift();
+    this.smooth(view, Math.hypot(vx, A.vy, vz), dt, t);
 
     const a = this.anim;
     const f = A.flags;
@@ -475,6 +499,25 @@ export class RemoteHero implements Hero {
     this.updatePets(dt);
   }
 
+  /**
+   * A late update after guessing ahead moves the target suddenly: keep drawing
+   * them where they were and ease the difference out over a moment instead of
+   * jumping. Far jumps (a teleport, a respawn) snap.
+   */
+  private smooth(view: THREE.Vector3, speed: number, dt: number, t: number) {
+    const drawn = this.drawnAt >= 0;
+    const step = drawn ? view.distanceTo(this.lastView) : 0;
+    // How far they could have gone since the last frame (in real time: a slow frame is no jump).
+    const reach = speed * Math.max(dt, t - this.drawnAt) * 2 + 0.3;
+    if (!drawn || step > 8) this.ease.set(0, 0, 0);
+    else if (step > reach) this.ease.add(this.tv.subVectors(this.lastView, view));
+    this.drawnAt = t;
+    this.lastView.copy(view);
+    this.ease.multiplyScalar(Math.exp(-dt / 0.12));
+    if (this.ease.lengthSq() < 1e-6) this.ease.set(0, 0, 0);
+    view.add(this.ease);
+  }
+
   /** The weapon trail through the active part of a swing, as the hero's own game draws it. */
   private trail(g: Game) {
     const a = this.anim;
@@ -554,6 +597,38 @@ export class RemoteHero implements Hero {
 
 // -------------------------------------------------------------- the link --
 
+/** What a monster's copy is told in one update (see Coop.mirrorUpdate). */
+interface MirrorValues {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  hp: number;
+  flags: number;
+  attack: number;
+  windup: number;
+  style: number;
+  draw: number;
+  fury: number;
+  /** Effects on it, or null when this update says nothing about them. */
+  status: number[] | null;
+  dmg: number;
+}
+
+/** One friend's line, both ways. */
+interface Link {
+  /** Their updates to us: timing, lateness, and how far behind to draw them. */
+  clock: PeerClock;
+  /** Ours to them: bytes a second their line takes, from their reports. */
+  budget: SendBudget;
+  /** Host: each monster as this friend last heard of it (when, and when its effects were last sent). */
+  sent: Map<number, { w: MirrorWire; at: number; statusAt: number }>;
+  /** Host: numbers this friend's monster updates ('sd') so a missing one is noticed. */
+  seq: number;
+  /** Host: when this friend next hears the time of day. */
+  gmAt: number;
+}
+
 export class Coop {
   role: CoopRole = 'off';
   /** True while connecting (waking the server can take a minute). */
@@ -580,11 +655,29 @@ export class Coop {
   /** Guest: the host's clock (game minutes) and when we heard it, to run the day in step. */
   private hostMinutes = 0;
   private hostMinutesAt = 0;
+  /** Each friend's line (see Link). */
+  private links = new Map<number, Link>();
+  /** Guest: monsters as the host last described them in 'sd' updates (the next changes apply to these). */
+  private wires = new Map<number, MirrorWire>();
+  private sdSeq = -1;
+  /** Bundles sent (some updates go every other one on a crowded line). */
+  private ticks = 0;
+  private reportAt = 0;
+  /**
+   * When our latest frame ran, and how long the one before it took (ms). A
+   * message handled after a long frame (or long after the last one) waited
+   * on our own busy game, not on the line, so its timing is not counted.
+   */
+  private frameAt = 0;
+  private frameGap = 0;
+  /** Our hero's rarely changing values as last sent (see sendState), and when all of them go again. */
+  private stSent = new Map<string, string>();
+  private stFullAt = 0;
   /** The name friends know this player by. */
   myName = 'Hero';
 
   constructor(private g: Game) {
-    this.net.onMessage = (m) => this.onServer(m);
+    this.net.onMessage = (m, size) => this.onServer(m, size);
     this.net.onDrop = () => {
       if (this.role !== 'off') this.backToSolo('Lost the connection to the co-op server.');
     };
@@ -655,7 +748,7 @@ export class Coop {
     this.onChange();
   }
 
-  private onServer(m: ServerMsg) {
+  private onServer(m: ServerMsg, size = 0) {
     const g = this.g;
     switch (m.t) {
       case 'created':
@@ -704,13 +797,21 @@ export class Coop {
         g.hud.toast(m.message, 'warn');
         break;
       case 'msg':
-        this.onPeer(m.from, m.d);
+        this.onPeer(m.from, m.d, size);
         break;
     }
   }
 
+  /** A friend's line (made on first use). */
+  private link(id: number): Link {
+    let L = this.links.get(id);
+    if (!L) this.links.set(id, (L = { clock: new PeerClock(), budget: new SendBudget(), sent: new Map(), seq: 0, gmAt: 0 }));
+    return L;
+  }
+
   private addRemote(id: number, name: string) {
     if (this.remotes.has(id)) return;
+    this.link(id);
     this.remotes.set(id, new RemoteHero(id, name, this.g.scene));
     this.g.refreshHeroes();
   }
@@ -722,6 +823,7 @@ export class Coop {
     r.dispose();
     this.remotes.delete(id);
     this.known.delete(id);
+    this.links.delete(id);
     this.out.delete(id);
     this.g.refreshHeroes();
   }
@@ -732,6 +834,8 @@ export class Coop {
     if (g.activeTrial) g.endTrial(false);
     g.clearEnemies();
     this.mirrors.clear();
+    this.wires.clear();
+    this.sdSeq = -1;
     this.need.clear();
   }
 
@@ -745,6 +849,10 @@ export class Coop {
     for (const id of [...this.remotes.keys()]) this.removeRemote(id);
     this.out.clear();
     this.known.clear();
+    this.links.clear();
+    this.wires.clear();
+    this.sdSeq = -1;
+    this.stSent.clear();
     if (wasGuest) {
       if (g.activeTrial) g.endTrial(false);
       g.clearEnemies();
@@ -767,10 +875,24 @@ export class Coop {
   }
 
   private flush() {
+    // With one friend, what goes to everyone and what goes to them travel as one bundle (half the messages).
+    const all = this.out.get('all');
+    if (all && this.remotes.size === 1) {
+      const [id] = this.remotes.keys();
+      const to = this.isGuest && id === this.hostId ? 'host' : id;
+      this.out.delete('all');
+      this.out.set(to, [...all, ...(this.out.get(to) ?? [])]);
+    }
+    // When this was sent (our clock): friends' games use it to smooth over a jittery line.
+    const ts = Math.round(nowMs());
     for (const [to, list] of this.out) {
       if (!list.length) continue;
+      let bytes = 0;
       // Keep each bundle well under the server's size limit.
-      for (let i = 0; i < list.length; i += 40) this.net.send(to, { k: 'b', m: list.slice(i, i + 40) });
+      for (let i = 0; i < list.length; i += 40) bytes += this.net.send(to, { k: 'b', m: list.slice(i, i + 40), ts });
+      // What each friend's line carried (the host keeps within each one's budget).
+      if (to === 'all') for (const L of this.links.values()) L.budget.spend(bytes);
+      else this.links.get(to === 'host' ? this.hostId : to)?.budget.spend(bytes);
     }
     this.out.clear();
   }
@@ -780,7 +902,7 @@ export class Coop {
     const dressed = heroDressed(c);
     this.queue(to, {
       k: 'hi', n: this.myName, c: c.classId, sc: c.subclassId ?? '', r: c.raceId, ro: c.roleId, hu: c.hunched === false ? 0 : 1, lv: c.level, w: mainWeapon(c).id, wr: mainWeapon(c).rune ?? '',
-      pv: 1, gl: c.pvp.glory,
+      pv: 1, gl: c.pvp.glory, nv: NET_VERSION,
       ...(isPlain(dressed) ? {} : { o: encodeOutfit(dressed) }),
     });
   }
@@ -804,8 +926,13 @@ export class Coop {
     if (this.active) this.queue(to, m);
   }
 
-  /** Our hero's state, for everyone else to draw. */
-  private sendState() {
+  /**
+   * Our hero's state, for everyone else to draw. Values left out are read as
+   * their defaults by every game (RemoteHero.receive), and the ones that rarely
+   * change go when they change and every two seconds; so the message stays the
+   * same to older games, only shorter.
+   */
+  private sendState(t: number) {
     const g = this.g;
     const p = g.player;
     const a = p.anim;
@@ -817,32 +944,99 @@ export class Coop {
       if (pets.length >= 6 || !al.alive) continue;
       pets.push([PET_KINDS.indexOf(al.kind), r2(al.pos.x), r2(al.pos.y), r2(al.pos.z), r2(al.yaw), r2(al.anim.attack)]);
     }
-    this.queue('all', {
-      k: 'st',
-      p: vec(p.pos),
-      v: [r2(p.vel.x), r2(p.vel.y), r2(p.vel.z)],
-      y: r2(p.yaw),
-      a: [r2(a.attack), STYLE_INDEX.get(a.attackStyle) ?? 0, r2(a.draw), r2(a.rolling), r2(a.fury), r2(a.landing), flags, a.rollKind, r2(a.windup), p.charge ? BURSTS.indexOf(p.charge.burst) : -1, p.charge ? r2(p.charge.level) : 0],
-      hp: r1(p.hp),
-      mh: Math.round(p.maxHp),
-      al: p.alive ? 1 : 0,
-      sf: r2(p.stealthFactor()),
-      lv: p.c.level,
-      w: mainWeapon(p.c).id,
-      wr: mainWeapon(p.c).rune ?? '',
-      it: g.inTrial ? 1 : 0,
-      hc: p.horse ? p.c.steed.coat : -1,
-      ha: p.horse && !p.riding ? [r2(p.horse.pos.x), r2(p.horse.pos.y), r2(p.horse.pos.z), r2(p.horse.yaw), r2(p.horse.speed)] : undefined,
-      pt: pets,
-    });
+    const anim = [r2(a.attack), STYLE_INDEX.get(a.attackStyle) ?? 0, r2(a.draw), r2(a.rolling), r2(a.fury), r2(a.landing), flags, a.rollKind, r2(a.windup), p.charge ? BURSTS.indexOf(p.charge.burst) : -1, p.charge ? r2(p.charge.level) : 0];
+    while (anim.length > 1 && anim[anim.length - 1] === ANIM_DEFAULTS[anim.length - 1]) anim.pop();
+    const m: Msg = { k: 'st', p: vec(p.pos), y: r2(p.yaw), a: anim };
+    const v = [r2(p.vel.x), r2(p.vel.y), r2(p.vel.z)];
+    if (v.some((x) => x !== 0)) m.v = v;
+    if (!p.alive) m.al = 0;
+    const sf = r2(p.stealthFactor());
+    if (sf !== 1) m.sf = sf;
+    if (g.inTrial) m.it = 1;
+    if (p.horse) m.hc = p.c.steed.coat;
+    if (p.horse && !p.riding) m.ha = [r2(p.horse.pos.x), r2(p.horse.pos.y), r2(p.horse.pos.z), r2(p.horse.yaw), r2(p.horse.speed)];
+    if (pets.length) m.pt = pets;
+    const all = t >= this.stFullAt;
+    if (all) this.stFullAt = t + 2;
+    const weapon = mainWeapon(p.c);
+    // The weapon and its rune always go together (a game sets both from one message).
+    const rare: [string, Record<string, unknown>][] = [
+      ['hp', { hp: r1(p.hp) }],
+      ['mh', { mh: Math.round(p.maxHp) }],
+      ['lv', { lv: p.c.level }],
+      ['w', { w: weapon.id, wr: weapon.rune ?? '' }],
+    ];
+    for (const [key, part] of rare) {
+      const text = JSON.stringify(part);
+      if (!all && this.stSent.get(key) === text) continue;
+      this.stSent.set(key, text);
+      Object.assign(m, part);
+    }
+    this.queue('all', m);
   }
 
-  /** Host: each guest hears about the monsters near them. */
-  private sendSnapshots() {
+  /** How often our hero's state goes: every bundle, or less when every friend reports our line backed up. */
+  private stateEvery(): number {
+    let q = Infinity;
+    for (const [id, L] of this.links) if ((this.remotes.get(id)?.nv ?? 0) >= 2) q = Math.min(q, L.budget.queue);
+    return !Number.isFinite(q) ? 1 : q > 600 ? 3 : q > 250 ? 2 : 1;
+  }
+
+  /** Every half second: how our end of each friend's line looks (they adapt what they send us). */
+  private sendReports() {
+    const ms = nowMs();
+    for (const r of this.remotes.values()) {
+      if (r.nv < 2) continue;
+      const c = this.link(r.id).clock;
+      const m: Msg = { k: 'lk', q: Math.round(c.queue(ms)), j: Math.round(c.jitter()), r: Math.round(c.rate(ms)) };
+      if (Number.isFinite(c.heardTs)) {
+        m.e = c.heardTs;
+        m.h = Math.round(ms - c.heardAt);
+      }
+      this.queue(r.id, m);
+    }
+  }
+
+  /** A friend's report on our line to them. */
+  private onReport(from: number, m: Msg) {
+    const L = this.links.get(from);
+    if (!L) return;
+    const ms = nowMs();
+    const B = L.budget;
+    if (typeof m.e === 'number') {
+      const rtt = ms - m.e - num(m.h);
+      if (rtt >= 0 && rtt < 30_000) B.rtt = B.rtt ? B.rtt * 0.7 + rtt * 0.3 : rtt;
+    }
+    B.jitter = Math.max(0, num(m.j));
+    B.report(Math.max(0, num(m.q)), Math.max(0, num(m.r)), ms);
+  }
+
+  /** The line to each friend as this game sees it (for tests and the curious). */
+  linkInfo() {
+    const ms = nowMs();
+    return [...this.links].map(([id, L]) => ({
+      id,
+      nv: this.remotes.get(id)?.nv ?? 0,
+      delayMs: Math.round(L.clock.delay * 1000),
+      lateMs: Math.round(L.clock.jitter()),
+      queueInMs: Math.round(L.clock.queue(ms)),
+      inBps: Math.round(L.clock.rate(ms)),
+      rttMs: Math.round(L.budget.rtt),
+      queueOutMs: L.budget.queue,
+      budgetBps: Math.round(L.budget.rate),
+    }));
+  }
+
+  /** Host: each guest hears about the monsters near them (newer games: changes only, within their line's budget). */
+  private sendSnapshots(t: number) {
     const g = this.g;
     this.snapTick++;
     for (const r of this.remotes.values()) {
       if (!r.ready) continue;
+      if (r.nv >= 2) {
+        this.sendChanges(r, this.link(r.id), t);
+        continue;
+      }
       let known = this.known.get(r.id);
       if (!known || known.size > 600) this.known.set(r.id, (known = new Set()));
       const near: [number, Enemy][] = [];
@@ -877,6 +1071,104 @@ export class Coop {
       }
       this.queue(r.id, { k: 'sn', gm: r1(g.state.gameMinutes), e: list, nw: fresh });
     }
+  }
+
+  /** A monster's state in whole units (see MirrorWire). */
+  private wireOf(e: Enemy): MirrorWire {
+    const a = e.anim;
+    const boss = e instanceof Boss ? e : null;
+    return {
+      x: Math.round(e.pos.x * 100),
+      y: Math.round(e.pos.y * 100),
+      z: Math.round(e.pos.z * 100),
+      yaw: Math.round(wrap(e.yaw) * 100),
+      hp: Math.round(e.hp * 10),
+      flags: (e.aware ? 1 : 0) | (e.model.root.visible || !boss ? 2 : 0) | (boss && boss.phase === 2 ? 4 : 0),
+      atk: Math.round(a.attack * 100),
+      win: Math.round(a.windup * 100),
+      style: STYLE_INDEX.get(a.attackStyle) ?? 0,
+      draw: Math.round(a.draw * 100),
+      fury: Math.round(a.fury * 100),
+      status: STATUS_KEYS.map((k) => Math.round(e.status[k] * 10)),
+      dmg: Math.round(e.damageDealt),
+    };
+  }
+
+  /** What a guest needs to make its copy of a monster. */
+  private freshOf(e: Enemy): unknown[] {
+    if (e instanceof Boss) return [e.nid, 'boss', e.bdef.id, e.place || (this.g.activeTrial?.id ?? ''), Math.round(e.maxHp)];
+    return [e.nid, e.def.id, e.levelBonus, Math.round(e.maxHp), e.summoned ? 1 : 0];
+  }
+
+  /**
+   * Host, to a newer guest: only what changed since they last heard, nearest
+   * and busiest monsters first. Near ones (and any fighting them, and bosses)
+   * go every bundle; further ones less often, and less still when their line
+   * is full; monsters standing still get a short word now and then. What does
+   * not fit the line's budget waits for the next bundle.
+   */
+  private sendChanges(r: RemoteHero, L: Link, t: number) {
+    const g = this.g;
+    const B = L.budget;
+    let allow = B.refill(t * 1000);
+    const tight = B.tight;
+    const near: [number, Enemy][] = [];
+    for (const e of g.enemies) {
+      if (!e.alive || e.pvpId) continue;
+      const d = Math.abs(e.pos.x - r.pos.x) + Math.abs(e.pos.z - r.pos.z);
+      if (d < RANGE * 1.3 || e instanceof Boss) near.push([e instanceof Boss ? -1 : d, e]);
+    }
+    if (near.length > MAX_SNAPSHOT) near.sort((x, y) => x[0] - y[0]).length = MAX_SNAPSHOT;
+    const due: { e: Enemy; entry: number[]; age: number; rank: number; status: boolean }[] = [];
+    for (const [d, e] of near) {
+      let sent = L.sent.get(e.nid);
+      if (sent && t - sent.at > STALE) {
+        L.sent.delete(e.nid);
+        sent = undefined;
+      }
+      const cur = this.wireOf(e);
+      // Effects are counted down by the guest's copy too: send them only when one is stronger than that.
+      const since = sent ? (t - sent.statusAt) * 10 : 0;
+      const status = !sent || cur.status.some((v, i) => v > Math.max(0, (sent.w.status[i] ?? 0) - since) + 3);
+      const age = sent ? t - sent.at : Infinity;
+      let entry = encodeWire(e.nid, sent?.w, cur, status);
+      if (!entry) {
+        if (age < KEEPALIVE) continue;
+        entry = [e.nid, 0];
+      }
+      const mask = entry[1];
+      const close = d < 45 || (e.aware && e.target === r);
+      const every = close ? 1 : tight ? (d < 90 ? 2 : 4) : d < 90 ? 1 : 2;
+      // First sight, a blow, a new move, being seen or hidden: at once.
+      const urgent = !sent || (mask & (W.HP | W.FLAGS | W.STATUS)) !== 0 || (sent.w.atk < 0 && cur.atk >= 0);
+      if (!urgent && age < every * SEND_EVERY - 0.01 && age < KEEPALIVE) continue;
+      due.push({ e, entry, age, rank: urgent ? 1e6 - d : age / (every * SEND_EVERY) / Math.max(1, d / 30), status: (mask & W.STATUS) !== 0 });
+    }
+    due.sort((x, y) => y.rank - x.rank);
+    const list: unknown[] = [];
+    const fresh: unknown[] = [];
+    for (const it of due) {
+      const size = it.entry.join(',').length + 3 + (it.age === Infinity ? 40 : 0);
+      // Over budget: wait, unless the guest's copy would soon be forgotten.
+      if (size > allow && !(it.age > STALE - 0.5 && it.age !== Infinity)) continue;
+      allow -= size;
+      const nid = it.e.nid;
+      const sent = L.sent.get(nid);
+      if (!sent) fresh.push(this.freshOf(it.e));
+      list.push(it.entry);
+      L.sent.set(nid, { w: applyWire(sent?.w, it.entry, STATUS_KEYS.length)!.wire, at: t, statusAt: it.status || !sent ? t : sent.statusAt });
+    }
+    // Forget monsters long gone (killed, or far away).
+    if (this.snapTick % 60 === 0) for (const [nid, s] of L.sent) if (t - s.at > 5) L.sent.delete(nid);
+    const m: Msg = { k: 'sd', e: list };
+    if (fresh.length) m.nw = fresh;
+    if (t >= L.gmAt) {
+      L.gmAt = t + 1;
+      m.gm = r1(g.state.gameMinutes);
+    }
+    if (!list.length && m.gm === undefined) return;
+    m.q = ++L.seq;
+    this.queue(r.id, m);
   }
 
   // ------------------------------------------------------ game -> net --
@@ -994,7 +1286,10 @@ export class Coop {
 
   /** Guest: the copy of a monster is gone from this world. */
   forget(e: Enemy) {
-    if (e.net && this.mirrors.get(e.nid) === e) this.mirrors.delete(e.nid);
+    if (e.net && this.mirrors.get(e.nid) === e) {
+      this.mirrors.delete(e.nid);
+      this.wires.delete(e.nid);
+    }
   }
 
   /** Should this game reward the local hero for a kill? */
@@ -1006,15 +1301,21 @@ export class Coop {
 
   // ------------------------------------------------------ net -> game --
 
-  private onPeer(from: number, d: unknown) {
+  private onPeer(from: number, d: unknown, size: number) {
     if (!d || typeof d !== 'object') return;
     const m = d as Msg;
+    const at = nowMs();
+    const clock = this.link(from).clock;
+    clock.received(size, at);
     if (m.k === 'b') {
-      for (const inner of arr(m.m)) if (inner && typeof inner === 'object') this.handle(from, inner as Msg);
-    } else this.handle(from, m);
+      // Where this bundle belongs on our timeline (its send time, when the sender's game gives it).
+      const t = clock.stamp(typeof m.ts === 'number' ? m.ts : undefined, at, at - this.frameAt < 150 && this.frameGap < 150);
+      for (const inner of arr(m.m)) if (inner && typeof inner === 'object') this.handle(from, inner as Msg, t);
+    } else this.handle(from, m, at / 1000);
   }
 
-  private handle(from: number, m: Msg) {
+  /** `t`: the message's place on our timeline (seconds), see PeerClock.stamp. */
+  private handle(from: number, m: Msg, t: number) {
     const g = this.g;
     const fromHost = from === this.hostId;
     const r = this.remotes.get(from);
@@ -1026,9 +1327,11 @@ export class Coop {
         this.onChange();
         return;
       case 'st':
-        r?.receive(m, now());
+        r?.receive(m, t);
         this.joinedWorld(r);
         return;
+      case 'lk':
+        return this.onReport(from, m);
       case 'fx':
         g.sfx.play(str(m.f), arr(m.a));
         return;
@@ -1112,15 +1415,22 @@ export class Coop {
           else g.startTrial(t, from);
           return;
         }
-        case 'need':
-          for (const id of arr(m.ids)) this.known.get(from)?.delete(num(id));
+        case 'need': {
+          const sent = this.links.get(from)?.sent;
+          for (const id of arr(m.ids)) {
+            this.known.get(from)?.delete(num(id));
+            sent?.delete(num(id));
+          }
           return;
+        }
       }
     }
     if (this.isGuest && fromHost) {
       switch (m.k) {
         case 'sn':
-          return this.onSnapshot(m);
+          return this.onSnapshot(m, t);
+        case 'sd':
+          return this.onChanges(m, t);
         case 'hurt': {
           const el = str(m.e) as DamageElement;
           if (ELEMENTS.has(el)) g.damagePlayer(Math.min(2000, num(m.a)), el, this.mirrors.get(num(m.s)) ?? null);
@@ -1211,17 +1521,13 @@ export class Coop {
     );
   }
 
-  private onSnapshot(m: Msg) {
+  /** Monster updates from an older host: everything about each one, every time. */
+  private onSnapshot(m: Msg, t: number) {
     const g = this.g;
-    const t = now();
     // Day and night follow the host.
     this.hostMinutes = num(m.gm, g.state.gameMinutes);
-    this.hostMinutesAt = t;
-    for (const raw of arr(m.nw)) {
-      const n = arr(raw);
-      const nid = num(n[0]);
-      if (!this.mirrors.has(nid)) this.makeMirror(nid, n);
-    }
+    this.hostMinutesAt = now();
+    this.makeMirrors(arr(m.nw));
     for (const raw of arr(m.e)) {
       const n = arr(raw);
       const nid = num(n[0]);
@@ -1230,41 +1536,101 @@ export class Coop {
         this.need.add(nid);
         continue;
       }
-      const net = e.net!;
-      const s: MirrorSample = {
-        t,
-        x: num(n[1]), y: num(n[2]), z: num(n[3]), yaw: num(n[4]),
-        attack: num(n[7], -1), windup: num(n[8]), style: STYLES[num(n[9])] ?? 'slash', draw: num(n[10]), fury: num(n[11]),
-      };
-      if (!net.samples.length) {
-        e.pos.set(s.x, s.y, s.z);
-        e.yaw = s.yaw;
-      }
-      net.samples.push(s);
-      if (net.samples.length > 10) net.samples.shift();
-      net.seen = t;
-      const hp = num(n[5], e.hp);
-      // Someone else's blow: flinch.
-      if (hp < e.hp - 0.5) {
-        e.anim.hurt = Math.max(e.anim.hurt, 0.7);
-        e.hitFlash = 0.12;
-      }
-      e.hp = hp;
-      const flags = num(n[6]);
-      e.aware = (flags & 1) !== 0;
-      net.visible = (flags & 2) !== 0;
-      net.phase2 = (flags & 4) !== 0;
-      if (e instanceof Boss) e.phase = net.phase2 ? 2 : 1;
       const st = n[12];
-      if (Array.isArray(st)) {
-        STATUS_KEYS.forEach((k, i) => {
-          const v = num(st[i]);
-          if (v > e.status[k]) e.status[k] = v;
-          net.prevStatus[k] = e.status[k];
-        });
-      }
-      e.damageDealt = num(n[13], e.damageDealt);
+      this.mirrorUpdate(e, {
+        x: num(n[1]), y: num(n[2]), z: num(n[3]), yaw: num(n[4]), hp: num(n[5], e.hp), flags: num(n[6]),
+        attack: num(n[7], -1), windup: num(n[8]), style: num(n[9]), draw: num(n[10]), fury: num(n[11]),
+        status: Array.isArray(st) ? st.map((v) => num(v)) : null,
+        dmg: num(n[13], e.damageDealt),
+      }, t);
     }
+  }
+
+  /** Monster updates from a newer host ('sd'): only what changed, applied to what we last heard. */
+  private onChanges(m: Msg, t: number) {
+    if (typeof m.gm === 'number') {
+      this.hostMinutes = num(m.gm, this.g.state.gameMinutes);
+      this.hostMinutesAt = now();
+    }
+    // A missing update (the server drops messages past its rate limit) breaks the chain of changes: ask for whole values again.
+    const seq = num(m.q, -1);
+    if (this.sdSeq >= 0 && seq !== this.sdSeq + 1) {
+      this.wires.clear();
+      for (const id of this.mirrors.keys()) this.need.add(id);
+    }
+    this.sdSeq = seq;
+    this.makeMirrors(arr(m.nw));
+    for (const raw of arr(m.e)) {
+      const n = arr(raw);
+      const nid = num(n[0]);
+      const got = applyWire(this.wires.get(nid), n, STATUS_KEYS.length);
+      if (!got) {
+        this.need.add(nid);
+        continue;
+      }
+      this.wires.set(nid, got.wire);
+      const e = this.mirrors.get(nid);
+      if (!e) {
+        this.need.add(nid);
+        continue;
+      }
+      const w = got.wire;
+      this.mirrorUpdate(e, {
+        x: w.x / 100, y: w.y / 100, z: w.z / 100, yaw: w.yaw / 100, hp: w.hp / 10, flags: w.flags,
+        attack: w.atk / 100, windup: w.win / 100, style: w.style, draw: w.draw / 100, fury: w.fury / 100,
+        status: got.mask & W.STATUS ? w.status.map((v) => v / 10) : null,
+        dmg: w.dmg,
+      }, t);
+    }
+  }
+
+  private makeMirrors(list: unknown[]) {
+    for (const raw of list) {
+      const n = arr(raw);
+      const nid = num(n[0]);
+      if (!this.mirrors.has(nid)) this.makeMirror(nid, n);
+    }
+  }
+
+  /**
+   * One update for a monster's copy. The game draws copies GAME_INTERP behind;
+   * the sample is placed so they are drawn as far behind as the host's line
+   * needs instead (PeerClock.delay).
+   */
+  private mirrorUpdate(e: Enemy, v: MirrorValues, t: number) {
+    const net = e.net!;
+    const shift = (this.links.get(this.hostId)?.clock.delay ?? GAME_INTERP) - GAME_INTERP;
+    const s: MirrorSample = {
+      t: t + shift,
+      x: v.x, y: v.y, z: v.z, yaw: v.yaw,
+      attack: v.attack, windup: v.windup, style: STYLES[v.style] ?? 'slash', draw: v.draw, fury: v.fury,
+    };
+    if (!net.samples.length) {
+      e.pos.set(s.x, s.y, s.z);
+      e.yaw = s.yaw;
+    }
+    net.samples.push(s);
+    if (net.samples.length > 16) net.samples.shift();
+    net.seen = now();
+    // Someone else's blow: flinch.
+    if (v.hp < e.hp - 0.5) {
+      e.anim.hurt = Math.max(e.anim.hurt, 0.7);
+      e.hitFlash = 0.12;
+    }
+    e.hp = v.hp;
+    e.aware = (v.flags & 1) !== 0;
+    net.visible = (v.flags & 2) !== 0;
+    net.phase2 = (v.flags & 4) !== 0;
+    if (e instanceof Boss) e.phase = net.phase2 ? 2 : 1;
+    if (v.status) {
+      const st = v.status;
+      STATUS_KEYS.forEach((k, i) => {
+        const x = num(st[i]);
+        if (x > e.status[k]) e.status[k] = x;
+        net.prevStatus[k] = e.status[k];
+      });
+    }
+    e.damageDealt = v.dmg;
   }
 
   private makeMirror(nid: number, n: unknown[]) {
@@ -1311,6 +1677,7 @@ export class Coop {
     const e = this.mirrors.get(num(m.nid));
     if (e) {
       this.mirrors.delete(e.nid);
+      this.wires.delete(e.nid);
       g.killMirror(e);
     }
     g.remoteKill(info);
@@ -1322,7 +1689,11 @@ export class Coop {
     if (!this.active) return;
     const g = this.g;
     const t = now();
-    for (const r of this.remotes.values()) r.update(dt, g, t);
+    const ms = t * 1000;
+    this.frameGap = ms - this.frameAt;
+    this.frameAt = ms;
+    for (const L of this.links.values()) L.clock.tick(dt, ms);
+    for (const r of this.remotes.values()) r.update(dt, g, t, this.links.get(r.id)?.clock.delay);
     if (this.isGuest) {
       // The host's clock, carried forward in real time between updates (a game minute a second).
       if (this.hostMinutesAt) g.state.gameMinutes = this.hostMinutes + Math.min(3, t - this.hostMinutesAt);
@@ -1345,8 +1716,15 @@ export class Coop {
     if (t >= this.nextSend && this.net.open) {
       // A steady 12 a second; after a stall, start afresh rather than catch up.
       this.nextSend = this.nextSend + SEND_EVERY < t ? t + SEND_EVERY : this.nextSend + SEND_EVERY;
-      this.sendState();
-      if (this.isHost) this.sendSnapshots();
+      this.ticks++;
+      if (t >= this.reportAt) {
+        this.reportAt = t + 0.5;
+        this.sendReports();
+      }
+      // Our own upload is full: skip the updates a newer one replaces (blows, kills and the like still go).
+      const jammed = this.net.backlog > BACKLOG;
+      if (!jammed && this.ticks % this.stateEvery() === 0) this.sendState(t);
+      if (this.isHost && !jammed) this.sendSnapshots(t);
       this.flush();
     }
   }

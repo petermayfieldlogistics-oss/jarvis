@@ -102,13 +102,18 @@ export function httpBase(ws: string): string {
 
 export class Net {
   private ws: WebSocket | null = null;
-  /** Called for every message from the server. */
-  onMessage: (m: ServerMsg) => void = () => {};
+  /** Called for every message from the server (`size`: its length, to measure what a line carries). */
+  onMessage: (m: ServerMsg, size: number) => void = () => {};
   /** Called once when an open connection drops. */
   onDrop: () => void = () => {};
 
   get open() {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Bytes sent but still waiting to go out (our own upload is the limit when this grows). */
+  get backlog() {
+    return this.ws?.bufferedAmount ?? 0;
   }
 
   /**
@@ -157,7 +162,7 @@ export class Net {
         } catch {
           return;
         }
-        if (m && typeof m === 'object' && typeof m.t === 'string') this.onMessage(m);
+        if (m && typeof m === 'object' && typeof m.t === 'string') this.onMessage(m, ev.data.length);
       };
     });
   }
@@ -170,8 +175,9 @@ export class Net {
     this.raw({ t: 'join', room, name, version: PROTOCOL_VERSION });
   }
 
-  send(to: Destination, d: unknown) {
-    this.raw({ t: 'send', to, d });
+  /** Sends `d` to `to`; returns the bytes it took (0 when not connected). */
+  send(to: Destination, d: unknown): number {
+    return this.raw({ t: 'send', to, d });
   }
 
   close() {
@@ -186,7 +192,10 @@ export class Net {
     }
   }
 
-  private raw(m: object) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
+  private raw(m: object): number {
+    if (this.ws?.readyState !== WebSocket.OPEN) return 0;
+    const text = JSON.stringify(m);
+    this.ws.send(text);
+    return text.length;
   }
 }
