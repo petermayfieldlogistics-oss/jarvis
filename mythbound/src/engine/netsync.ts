@@ -43,7 +43,7 @@ export function quantile(xs: readonly number[], q: number): number {
 
 /** How far behind others are drawn: never less than before (a good line looks as it always did), never more than this. */
 export const MIN_DELAY = 0.13;
-export const MAX_DELAY = 0.7;
+export const MAX_DELAY = 0.5;
 
 /** One sender's updates as this game receives them (times in ms unless noted). */
 export class PeerClock {
@@ -172,8 +172,9 @@ export class SendBudget {
   report(queue: number, got: number, now: number) {
     this.queue = queue;
     this.high = queue > 200 ? this.high + 1 : 0;
-    if (this.high >= 2 || queue > 600) {
-      // A queue is building: send less than actually got through (a deep queue drains faster).
+    if (this.high >= 2) {
+      // A queue is building (two reports running: one alone may be a hiccup on their side):
+      // send less than actually got through (a deep queue drains faster).
       if (now >= this.holdUntil) {
         const through = got > 0 ? Math.min(this.rate, got) : this.rate;
         this.ceiling = Math.max(SendBudget.MIN, through);
@@ -181,8 +182,8 @@ export class SendBudget {
         this.holdUntil = now + Math.max(700, this.rtt + 200);
       }
     } else if (queue < 80 && now >= this.holdUntil) {
-      // Quickly back up to what the line carried before, then slowly feel for more.
-      this.rate = Math.min(SendBudget.MAX, this.rate < this.ceiling ? Math.min(this.ceiling, this.rate * 1.2 + 1000) : this.rate + 300);
+      // Quickly back up to what the line carried before, then feel for more more gently.
+      this.rate = Math.min(SendBudget.MAX, this.rate < this.ceiling ? Math.min(this.ceiling, this.rate * 1.2 + 1000) : this.rate * 1.05 + 300);
     }
   }
 

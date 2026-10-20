@@ -83,12 +83,14 @@ describe('SendBudget', () => {
     const low = b.rate;
     b.report(400, 30_000, 1600);
     expect(b.rate).toBe(low); // waits for the queue to drain before backing off again
-    for (let t = 2000; t < 6000; t += 500) b.report(10, low, t);
-    // Back to what got through before, then only slowly beyond.
+    for (let t = 2000; t < 3500; t += 500) b.report(10, low, t);
+    // Back to what got through before within a second or two, then more gently beyond.
     expect(b.rate).toBeGreaterThanOrEqual(30_000);
     expect(b.rate).toBeLessThan(33_000);
-    for (let t = 6000; t < 66_000; t += 500) b.report(10, low, t);
-    expect(b.rate).toBeGreaterThan(60_000);
+    for (let t = 3500; t < 5500; t += 500) b.report(10, low, t);
+    expect(b.rate).toBeLessThan(40_000);
+    for (let t = 5500; t < 35_000; t += 500) b.report(10, low, t);
+    expect(b.rate).toBeGreaterThan(SendBudget.START);
     expect(b.rate).toBeLessThanOrEqual(SendBudget.MAX);
   });
 

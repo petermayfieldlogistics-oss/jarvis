@@ -871,6 +871,8 @@ export class Coop {
   // ---------------------------------------------------------- sending --
 
   private queue(to: number | 'all' | 'host', m: Msg) {
+    // A guest's messages to the host by number share the host's bundle.
+    if (this.isGuest && to === this.hostId) to = 'host';
     let list = this.out.get(to);
     if (!list) this.out.set(to, (list = []));
     list.push(m);
