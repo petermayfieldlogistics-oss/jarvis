@@ -51,3 +51,21 @@ blades.Parent = viewportFrame    -- or the WorldModel inside it
 ```
 
 The blades point up, show their flat side to the camera and spin around their middle.
+
+## Weapons from the "Aot gear" asset
+
+[`WeaponModel.lua`](WeaponModel.lua) shows the swords and spears from the **Aot gear** model inserted from the Toolbox.
+
+1. Move **Aot gear** into **ReplicatedStorage**.
+2. Add `WeaponModel.lua` to **ReplicatedStorage** as a ModuleScript named `WeaponModel`.
+3. In the inventory script, get the weapon for the selected tab:
+
+```lua
+local WeaponModel = require(game.ReplicatedStorage.WeaponModel)
+local model = WeaponModel.get("Blades") -- or "Spears"
+model.Parent = viewportFrame
+```
+
+It finds the weapon by name (blade/sword, or spear/thunder spear), copies it without any scripts, stands it upright and
+centres it so it spins around its middle. If it can't find one, it lists what is inside **Aot gear** in the Output
+window and uses `BladeModel` instead.
