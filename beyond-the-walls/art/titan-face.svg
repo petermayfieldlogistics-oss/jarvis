@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1024" height="1024">
+  <defs>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f1efec"/>
+      <stop offset="1" stop-color="#d9d6d2"/>
+    </linearGradient>
+    <linearGradient id="socket" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#140806"/>
+      <stop offset="0.24" stop-color="#1d0a07"/>
+      <stop offset="0.36" stop-color="#8f2410"/>
+      <stop offset="0.5" stop-color="#d8431b"/>
+      <stop offset="1" stop-color="#c63a16"/>
+    </linearGradient>
+    <linearGradient id="muscle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e04a1e"/>
+      <stop offset="1" stop-color="#b53213"/>
+    </linearGradient>
+    <pattern id="fibres" width="34" height="1000" patternUnits="userSpaceOnUse">
+      <path d="M8 0 L12 1000" stroke="#ff7a45" stroke-width="3" opacity="0.55"/>
+      <path d="M24 0 L21 1000" stroke="#8a2210" stroke-width="2.5" opacity="0.45"/>
+    </pattern>
+    <clipPath id="eyes">
+      <path d="M95 225 L425 225 L425 635 L275 635 L95 485 Z"/>
+      <path d="M905 225 L575 225 L575 635 L725 635 L905 485 Z"/>
+    </clipPath>
+    <clipPath id="reds">
+      <path d="M85 525 L295 715 L120 915 L85 915 Z"/>
+      <path d="M915 525 L705 715 L880 915 L915 915 Z"/>
+      <path d="M330 725 L670 725 L700 870 L300 870 Z"/>
+      <path d="M255 905 L745 905 L715 975 L285 975 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- face block -->
+  <rect x="35" y="35" width="930" height="930" rx="70" fill="url(#skin)" stroke="#111" stroke-width="22"/>
+  <!-- soft grey shading on the bone -->
+  <path d="M440 240 L560 240 L555 650 L500 700 L445 650 Z" fill="#c9c6c2" opacity="0.6"/>
+  <path d="M120 90 Q500 160 880 90" fill="none" stroke="#c9c6c2" stroke-width="40" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- eye sockets -->
+  <g stroke="#111" stroke-width="20" stroke-linejoin="round">
+    <path d="M95 225 L425 225 L425 635 L275 635 L95 485 Z" fill="url(#socket)"/>
+    <path d="M905 225 L575 225 L575 635 L725 635 L905 485 Z" fill="url(#socket)"/>
+  </g>
+  <rect x="0" y="340" width="1000" height="300" fill="url(#fibres)" clip-path="url(#eyes)"/>
+  <!-- tiny glinting pupils -->
+  <path d="M300 320 l14 -6 l-4 14 z" fill="#fff"/>
+  <path d="M760 312 l14 -6 l-4 14 z" fill="#fff"/>
+
+  <!-- cheek muscles, upper and lower jaw, chin -->
+  <g stroke="#111" stroke-width="20" stroke-linejoin="round" fill="url(#muscle)">
+    <path d="M85 525 L295 715 L120 915 L85 915 Z"/>
+    <path d="M915 525 L705 715 L880 915 L915 915 Z"/>
+    <path d="M330 725 L670 725 L700 870 L300 870 Z"/>
+    <path d="M255 905 L745 905 L715 975 L285 975 Z"/>
+  </g>
+  <rect x="0" y="500" width="1000" height="480" fill="url(#fibres)" clip-path="url(#reds)"/>
+
+  <!-- teeth -->
+  <g>
+    <rect x="320" y="768" width="360" height="62" rx="8" fill="#2a0c06"/>
+    <g fill="#f6f4ef" stroke="#555" stroke-width="3">
+      <g id="row">
+        <rect x="326" y="772" width="24" height="27" rx="6"/>
+        <rect x="352" y="772" width="24" height="27" rx="6"/>
+        <rect x="378" y="772" width="24" height="27" rx="6"/>
+        <rect x="404" y="772" width="24" height="27" rx="6"/>
+        <rect x="430" y="772" width="24" height="27" rx="6"/>
+        <rect x="456" y="772" width="24" height="27" rx="6"/>
+        <rect x="482" y="772" width="24" height="27" rx="6"/>
+        <rect x="508" y="772" width="24" height="27" rx="6"/>
+        <rect x="534" y="772" width="24" height="27" rx="6"/>
+        <rect x="560" y="772" width="24" height="27" rx="6"/>
+        <rect x="586" y="772" width="24" height="27" rx="6"/>
+        <rect x="612" y="772" width="24" height="27" rx="6"/>
+        <rect x="638" y="772" width="24" height="27" rx="6"/>
+      </g>
+      <use href="#row" transform="translate(0 28)"/>
+    </g>
+  </g>
+</svg>
