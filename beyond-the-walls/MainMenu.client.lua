@@ -165,7 +165,11 @@ local ACTIONS = {
 		hideMenu()
 	end,
 	Inventory = function()
-		print("Inventory pressed")
+		local inventory = playerGui:FindFirstChild("Inventory")
+		if inventory then
+			hideMenu()
+			inventory.Enabled = true
+		end
 	end,
 	Shop = function()
 		print("Shop pressed")
