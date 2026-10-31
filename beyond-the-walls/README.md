@@ -37,3 +37,17 @@ To put it on a block in Studio:
 1. Insert a **Part** and make it a cube (for example, Size `20, 20, 20`).
 2. Right-click the Part and choose **Insert Object > Decal**. Leave its **Face** set to `Front`.
 3. Click the Decal's **Texture** property, choose **Add Image**, and pick `titan-face.png`.
+
+## Detailed blade model
+
+[`BladeModel.lua`](BladeModel.lua) is a ModuleScript that builds ODM blades out of parts, with segment lines, a bright
+edge, a dark spine, an angled tip, a collar, the handle box, grip wraps, a trigger and a pommel. Put it in
+**ReplicatedStorage**, name it `BladeModel`, and use it wherever the inventory shows the blades:
+
+```lua
+local BladeModel = require(game.ReplicatedStorage.BladeModel)
+local blades = BladeModel.pair() -- or BladeModel.new() for one blade
+blades.Parent = viewportFrame    -- or the WorldModel inside it
+```
+
+The blades point up, show their flat side to the camera and spin around their middle.
